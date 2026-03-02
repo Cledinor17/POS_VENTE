@@ -1,0 +1,114 @@
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import "@fortawesome/fontawesome-free/css/all.min.css";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #1e293b;
+  --brand-blue: #0a4d8f;
+  --brand-blue-strong: #083a6d;
+  --brand-orange: #f59e0b;
+  --brand-orange-strong: #ea7a00;
+  --brand-blue-soft: #eaf3ff;
+  --brand-orange-soft: #fff2db;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    var(--font-plus-jakarta),
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Arial,
+    sans-serif;
+}
+
+.app-shell-bg {
+  background: var(--background);
+}
+
+.app-sidebar-surface {
+  background: linear-gradient(180deg, #ffffff 0%, var(--brand-blue-soft) 100%);
+}
+
+.app-topbar-surface {
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.brand-primary-btn {
+  background: var(--brand-blue);
+  color: white;
+  transition:
+    transform 0.18s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+  box-shadow: 0 8px 18px rgba(10, 77, 143, 0.24);
+}
+
+.brand-primary-btn:hover {
+  background: var(--brand-blue-strong);
+  transform: translateY(-1px);
+}
+
+.brand-secondary-btn {
+  background: var(--brand-orange);
+  color: white;
+  transition:
+    transform 0.18s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+  box-shadow: 0 8px 18px rgba(245, 158, 11, 0.22);
+}
+
+.brand-secondary-btn:hover {
+  background: var(--brand-orange-strong);
+  transform: translateY(-1px);
+}
+
+button.border-slate-300.text-slate-700:not(.cancel-default),
+a.border-slate-300.text-slate-700:not(.cancel-default) {
+  border-color: var(--brand-blue);
+  color: var(--brand-blue);
+  background: #ffffff;
+  transition:
+    transform 0.18s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+button.border-slate-300.text-slate-700:not(.cancel-default):hover,
+a.border-slate-300.text-slate-700:not(.cancel-default):hover {
+  border-color: var(--brand-blue-strong);
+  background: var(--brand-blue);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(10, 77, 143, 0.2);
+  transform: translateY(-1px);
+}
+
+button.border-slate-300.text-slate-700:not(.cancel-default):focus-visible,
+a.border-slate-300.text-slate-700:not(.cancel-default):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.35);
+}
+
+button.border-slate-300.text-slate-700:not(.cancel-default):disabled {
+  border-color: #cbd5e1;
+  color: #94a3b8;
+  background: #f8fafc;
+  box-shadow: none;
+  transform: none;
+}
