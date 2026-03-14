@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
 import { convertAmount, formatMoney } from "@/lib/currency";
@@ -75,7 +75,6 @@ function isCommandCharge(label: string | null | undefined): boolean {
 
 export default function HotelFoliosPage() {
   const params = useParams<{ business: string }>();
-  const searchParams = useSearchParams();
   const business = params?.business ?? "";
 
   const [reservations, setReservations] = useState<HotelReservation[]>([]);
@@ -213,11 +212,13 @@ export default function HotelFoliosPage() {
   }, [business]);
 
   useEffect(() => {
-    const reservationFromQuery = searchParams.get("reservation");
+    if (typeof window === "undefined") return;
+
+    const reservationFromQuery = new URLSearchParams(window.location.search).get("reservation");
     if (!reservationFromQuery) return;
     if (selectedReservationId === reservationFromQuery) return;
     setSelectedReservationId(reservationFromQuery);
-  }, [searchParams, selectedReservationId]);
+  }, [selectedReservationId]);
 
   useEffect(() => {
     void loadFolio(selectedReservationId);
