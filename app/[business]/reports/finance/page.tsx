@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { formatMoney as formatCurrency } from "@/lib/currency";
 import {
   getBalanceSheet,
   getProfitAndLoss,
@@ -13,17 +14,20 @@ import {
 } from "@/lib/reportsApi";
 
 const EMPTY_TB: TrialBalanceResult = {
+  currency: "USD",
   rows: [],
   totals: { debit: 0, credit: 0, balanced: false },
 };
 
 const EMPTY_PL: ProfitAndLossResult = {
+  currency: "USD",
   income: [],
   expenses: [],
   totals: { totalIncome: 0, totalExpenses: 0, netProfit: 0 },
 };
 
 const EMPTY_BS: BalanceSheetResult = {
+  currency: "USD",
   asOf: "",
   assets: [],
   liabilities: [],
@@ -37,12 +41,8 @@ function getErrorMessage(error: unknown): string {
   return "Une erreur est survenue.";
 }
 
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
+function formatMoney(amount: number, currency: string): string {
+  return formatCurrency(amount, currency);
 }
 
 function todayIso(): string {
@@ -67,6 +67,7 @@ export default function FinanceReportsPage() {
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetResult>(EMPTY_BS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const reportCurrency = profitLoss.currency || trialBalance.currency || balanceSheet.currency || "USD";
 
   useEffect(() => {
     let mounted = true;
@@ -147,9 +148,9 @@ export default function FinanceReportsPage() {
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Total revenus" value={formatMoney(profitLoss.totals.totalIncome)} tone="text-emerald-700" />
-        <StatCard label="Total charges" value={formatMoney(profitLoss.totals.totalExpenses)} tone="text-rose-700" />
-        <StatCard label="Resultat net" value={formatMoney(profitLoss.totals.netProfit)} tone="text-indigo-700" />
+        <StatCard label="Total revenus" value={formatMoney(profitLoss.totals.totalIncome, reportCurrency)} tone="text-emerald-700" />
+        <StatCard label="Total charges" value={formatMoney(profitLoss.totals.totalExpenses, reportCurrency)} tone="text-rose-700" />
+        <StatCard label="Resultat net" value={formatMoney(profitLoss.totals.netProfit, reportCurrency)} tone="text-indigo-700" />
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -178,9 +179,9 @@ export default function FinanceReportsPage() {
                     <tr key={`${row.accountId}-${row.code}`} className="border-b last:border-0">
                       <td className="py-3 pr-3 px-4 text-slate-700">{row.code}</td>
                       <td className="py-3 pr-3 text-slate-700">{row.name}</td>
-                      <td className="py-3 pr-3 font-semibold text-slate-800">{formatMoney(row.debit)}</td>
-                      <td className="py-3 pr-3 font-semibold text-slate-800">{formatMoney(row.credit)}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">{formatMoney(row.balance)}</td>
+                      <td className="py-3 pr-3 font-semibold text-slate-800">{formatMoney(row.debit, reportCurrency)}</td>
+                      <td className="py-3 pr-3 font-semibold text-slate-800">{formatMoney(row.credit, reportCurrency)}</td>
+                      <td className="py-3 px-4 font-semibold text-slate-800">{formatMoney(row.balance, reportCurrency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -191,9 +192,9 @@ export default function FinanceReportsPage() {
 
         <aside className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
           <h2 className="font-bold text-slate-900">Balance Sheet</h2>
-          <div className="text-sm text-slate-600">Assets: {formatMoney(balanceSheet.totals.assets)}</div>
-          <div className="text-sm text-slate-600">Liabilities: {formatMoney(balanceSheet.totals.liabilities)}</div>
-          <div className="text-sm text-slate-600">Equity: {formatMoney(balanceSheet.totals.equity)}</div>
+          <div className="text-sm text-slate-600">Assets: {formatMoney(balanceSheet.totals.assets, reportCurrency)}</div>
+          <div className="text-sm text-slate-600">Liabilities: {formatMoney(balanceSheet.totals.liabilities, reportCurrency)}</div>
+          <div className="text-sm text-slate-600">Equity: {formatMoney(balanceSheet.totals.equity, reportCurrency)}</div>
           <div
             className={
               balanceSheet.totals.balanced

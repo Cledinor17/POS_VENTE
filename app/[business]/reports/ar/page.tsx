@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { formatMoney as formatCurrency } from "@/lib/currency";
 import { getArAging, getArSummary, type ArAgingResult, type ArSummaryResult } from "@/lib/reportsApi";
 
-const EMPTY_SUMMARY: ArSummaryResult = { asOf: "", rows: [], totalAr: 0 };
+const EMPTY_SUMMARY: ArSummaryResult = { currency: "USD", asOf: "", rows: [], totalAr: 0 };
 const EMPTY_AGING: ArAgingResult = {
+  currency: "USD",
   asOf: "",
   totals: { current: 0, bucket1_30: 0, bucket31_60: 0, bucket61_90: 0, bucket90Plus: 0 },
   details: { current: [], bucket1_30: [], bucket31_60: [], bucket61_90: [], bucket90Plus: [] },
@@ -18,12 +20,8 @@ function getErrorMessage(error: unknown): string {
   return "Une erreur est survenue.";
 }
 
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
+function formatMoney(amount: number, currency: string): string {
+  return formatCurrency(amount, currency);
 }
 
 export default function ArReportsPage() {
@@ -35,6 +33,7 @@ export default function ArReportsPage() {
   const [aging, setAging] = useState<ArAgingResult>(EMPTY_AGING);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const reportCurrency = summary.currency || aging.currency || "USD";
 
   useEffect(() => {
     let mounted = true;
@@ -96,9 +95,9 @@ export default function ArReportsPage() {
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Total AR" value={formatMoney(summary.totalAr)} tone="text-indigo-700" />
-        <StatCard label="Current" value={formatMoney(aging.totals.current)} tone="text-emerald-700" />
-        <StatCard label="90+ jours" value={formatMoney(aging.totals.bucket90Plus)} tone="text-rose-700" />
+        <StatCard label="Total AR" value={formatMoney(summary.totalAr, reportCurrency)} tone="text-indigo-700" />
+        <StatCard label="Current" value={formatMoney(aging.totals.current, reportCurrency)} tone="text-emerald-700" />
+        <StatCard label="90+ jours" value={formatMoney(aging.totals.bucket90Plus, reportCurrency)} tone="text-rose-700" />
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -121,7 +120,7 @@ export default function ArReportsPage() {
                   {summary.rows.map((row) => (
                     <tr key={`${row.customerId}-${row.name}`} className="border-b last:border-0">
                       <td className="py-3 pr-3 px-4 text-slate-700">{row.name}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">{formatMoney(row.balance)}</td>
+                      <td className="py-3 px-4 font-semibold text-slate-800">{formatMoney(row.balance, reportCurrency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -133,11 +132,11 @@ export default function ArReportsPage() {
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
           <div className="text-sm font-semibold text-slate-700 mb-3">Aging buckets</div>
           <div className="space-y-2 text-sm">
-            <Bucket label="Current" value={aging.totals.current} />
-            <Bucket label="1-30 jours" value={aging.totals.bucket1_30} />
-            <Bucket label="31-60 jours" value={aging.totals.bucket31_60} />
-            <Bucket label="61-90 jours" value={aging.totals.bucket61_90} />
-            <Bucket label="90+ jours" value={aging.totals.bucket90Plus} />
+            <Bucket label="Current" value={aging.totals.current} currency={reportCurrency} />
+            <Bucket label="1-30 jours" value={aging.totals.bucket1_30} currency={reportCurrency} />
+            <Bucket label="31-60 jours" value={aging.totals.bucket31_60} currency={reportCurrency} />
+            <Bucket label="61-90 jours" value={aging.totals.bucket61_90} currency={reportCurrency} />
+            <Bucket label="90+ jours" value={aging.totals.bucket90Plus} currency={reportCurrency} />
           </div>
         </div>
       </section>
@@ -154,17 +153,11 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone: 
   );
 }
 
-function Bucket({ label, value }: { label: string; value: number }) {
+function Bucket({ label, value, currency }: { label: string; value: number; currency: string }) {
   return (
     <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2">
       <span className="text-slate-600">{label}</span>
-      <span className="font-semibold text-slate-800">
-        {new Intl.NumberFormat("fr-FR", {
-          style: "currency",
-          currency: "USD",
-          minimumFractionDigits: 2,
-        }).format(value)}
-      </span>
+      <span className="font-semibold text-slate-800">{formatMoney(value, currency)}</span>
     </div>
   );
 }

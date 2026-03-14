@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
+import { convertAmount, formatMoney as formatCurrency } from "@/lib/currency";
 import { listAllPosSales, type PosSaleHistoryItem } from "@/lib/posApi";
 
 function getErrorMessage(error: unknown): string {
@@ -11,12 +13,8 @@ function getErrorMessage(error: unknown): string {
   return "Une erreur est survenue.";
 }
 
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
+function formatMoney(amount: number, currency: string): string {
+  return formatCurrency(amount, currency);
 }
 
 export default function SalesReportsPage() {
@@ -24,6 +22,7 @@ export default function SalesReportsPage() {
   const businessSlug = params?.business ?? "";
 
   const [allItems, setAllItems] = useState<PosSaleHistoryItem[]>([]);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -42,12 +41,16 @@ export default function SalesReportsPage() {
       setLoading(true);
       setError("");
       try {
-        const records = await listAllPosSales(businessSlug, {
-          status: status || undefined,
-          from: from || undefined,
-          to: to || undefined,
-        });
+        const [settings, records] = await Promise.all([
+          getBusinessSettings(businessSlug),
+          listAllPosSales(businessSlug, {
+            status: status || undefined,
+            from: from || undefined,
+            to: to || undefined,
+          }),
+        ]);
         if (!mounted) return;
+        setBusinessSettings(settings);
         setAllItems(records);
         setTotal(records.length);
 
@@ -67,6 +70,17 @@ export default function SalesReportsPage() {
     };
   }, [businessSlug, status, from, to]);
 
+  const exchangeConfig = useMemo(
+    () => ({
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+    }),
+    [businessSettings]
+  );
+  const reportCurrency = businessSettings?.currency || "USD";
+  const convertDisplayAmount = (amount: number, sourceCurrency?: string | null) =>
+    convertAmount(amount, sourceCurrency || reportCurrency, reportCurrency, exchangeConfig);
+
   const items = useMemo(() => {
     const start = (page - 1) * perPage;
     return allItems.slice(start, start + perPage);
@@ -77,12 +91,12 @@ export default function SalesReportsPage() {
     let paid = 0;
     let refunded = 0;
     for (const item of allItems) {
-      gross += item.total;
-      paid += item.paidTotal;
-      refunded += item.refundedTotal;
+      gross += convertDisplayAmount(item.total, item.currency);
+      paid += convertDisplayAmount(item.paidTotal, item.currency);
+      refunded += convertDisplayAmount(item.refundedTotal, item.currency);
     }
     return { gross, paid, refunded };
-  }, [allItems]);
+  }, [allItems, exchangeConfig, reportCurrency]);
 
   return (
     <div className="space-y-5">
@@ -98,9 +112,9 @@ export default function SalesReportsPage() {
       ) : null}
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Total ventes (filtre)" value={formatMoney(totals.gross)} tone="text-indigo-700" />
-        <StatCard label="Encaisse (filtre)" value={formatMoney(totals.paid)} tone="text-emerald-700" />
-        <StatCard label="Rembourse (filtre)" value={formatMoney(totals.refunded)} tone="text-rose-700" />
+        <StatCard label="Total ventes (filtre)" value={formatMoney(totals.gross, reportCurrency)} tone="text-indigo-700" />
+        <StatCard label="Encaisse (filtre)" value={formatMoney(totals.paid, reportCurrency)} tone="text-emerald-700" />
+        <StatCard label="Rembourse (filtre)" value={formatMoney(totals.refunded, reportCurrency)} tone="text-rose-700" />
       </section>
 
       <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
@@ -180,9 +194,9 @@ export default function SalesReportsPage() {
                       {item.createdAt ? new Date(item.createdAt).toLocaleString("fr-FR") : "-"}
                     </td>
                     <td className="py-3 pr-3 text-slate-700">{item.customerName}</td>
-                    <td className="py-3 pr-3 font-semibold text-slate-800">{formatMoney(item.total)}</td>
-                    <td className="py-3 pr-3 text-emerald-700 font-semibold">{formatMoney(item.paidTotal)}</td>
-                    <td className="py-3 pr-3 text-rose-700 font-semibold">{formatMoney(item.refundedTotal)}</td>
+                    <td className="py-3 pr-3 font-semibold text-slate-800">{formatMoney(convertDisplayAmount(item.total, item.currency), reportCurrency)}</td>
+                    <td className="py-3 pr-3 text-emerald-700 font-semibold">{formatMoney(convertDisplayAmount(item.paidTotal, item.currency), reportCurrency)}</td>
+                    <td className="py-3 pr-3 text-rose-700 font-semibold">{formatMoney(convertDisplayAmount(item.refundedTotal, item.currency), reportCurrency)}</td>
                     <td className="py-3 px-4">
                       <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
                         {item.status}

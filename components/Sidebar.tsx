@@ -1,12 +1,13 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { logout } from "../lib/authApi";
 import { getBusinessSettings } from "../lib/businessApi";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useParams, usePathname } from "next/navigation";
+import { hasPermission, type BusinessPermission } from "../lib/businessAccess";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -26,18 +27,38 @@ import {
   ChevronDown,
   Store,
   Building2,
+  BedDouble,
+  CalendarRange,
+  Clock3,
+  Sparkles,
+  PackageOpen,
+  Layers,
 } from "lucide-react";
 
-type NavItem = { label: string; href: (b: string) => string; icon?: any; badge?: string };
+type NavItem = {
+  label: string;
+  href: (b: string) => string;
+  icon?: any;
+  badge?: string;
+  exact?: boolean;
+  permissions?: BusinessPermission | BusinessPermission[];
+};
 
 function cx(...classes: Array<string | false | undefined | null>) {
   return classes.filter(Boolean).join(" ");
 }
 
+function normalizeHrefPath(href: string): string {
+  return href.split(/[?#]/, 1)[0] || href;
+}
+
 function NavLink({ item, business }: { item: NavItem; business: string }) {
   const pathname = usePathname();
   const href = item.href(business);
-  const active = pathname === href || pathname?.startsWith(href + "/");
+  const hrefPath = normalizeHrefPath(href);
+  const active = item.exact
+    ? pathname === hrefPath
+    : pathname === hrefPath || pathname?.startsWith(hrefPath + "/");
 
   const Icon = item.icon;
 
@@ -82,37 +103,104 @@ function Section({
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  useEffect(() => {
-    setOpen(defaultOpen);
-  }, [defaultOpen]);
+  const [interactiveOpen, setInteractiveOpen] = useState(false);
+  const open = defaultOpen || interactiveOpen;
 
   return (
-    <details
+    <div
       className="group"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onMouseEnter={() => setInteractiveOpen(true)}
+      onMouseLeave={() => setInteractiveOpen(false)}
     >
-      <summary className="list-none cursor-pointer select-none flex items-center gap-2 px-2 py-2 text-xs font-semibold text-slate-500 transition-colors hover:text-[#0d63b8]">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => {
+          if (defaultOpen) return;
+          setInteractiveOpen((prev) => !prev);
+        }}
+        className="flex w-full items-center gap-2 px-2 py-2 text-xs font-semibold text-slate-500 transition-colors hover:text-[#0d63b8]"
+      >
         <Icon className="h-4 w-4 text-slate-400 transition-colors group-hover:text-[#f59e0b]" />
         <span className="uppercase tracking-wide">{title}</span>
-        <ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition group-open:rotate-180 group-hover:text-[#0d63b8]" />
-      </summary>
-      <div className="space-y-1 px-2 pb-2">{children}</div>
-    </details>
+        <ChevronDown
+          className={cx(
+            "ml-auto h-4 w-4 text-slate-400 transition-transform duration-200 group-hover:text-[#0d63b8]",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+      <div
+        className={cx(
+          "grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="space-y-1 px-2 pb-2">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubSection({
+  title,
+  icon: Icon,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  icon?: any;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [interactiveOpen, setInteractiveOpen] = useState(false);
+  const open = defaultOpen || interactiveOpen;
+
+  return (
+    <div
+      className="group pl-2"
+      onMouseEnter={() => setInteractiveOpen(true)}
+      onMouseLeave={() => setInteractiveOpen(false)}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => {
+          if (defaultOpen) return;
+          setInteractiveOpen((prev) => !prev);
+        }}
+        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:text-[#0d63b8]"
+      >
+        {Icon ? (
+          <Icon className="h-4 w-4 text-slate-400 transition-colors group-hover:text-[#f59e0b]" />
+        ) : null}
+        <span>{title}</span>
+        <ChevronDown
+          className={cx(
+            "ml-auto h-4 w-4 text-slate-400 transition-transform duration-200 group-hover:text-[#0d63b8]",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+      <div
+        className={cx(
+          "grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="mt-1 space-y-1 pl-4">{children}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
 export default function Sidebar() {
 const router = useRouter();
-const { user, activeBusiness, clear } = useAuth();
-
-// rôle (pivot.role) si dispo
-const role =
-  (activeBusiness as any)?.pivot?.role ??
-  (activeBusiness as any)?.role ??
-  null;
+const { user, activeBusiness, businesses, permissions: fallbackPermissions, clear } = useAuth();
 
 async function handleLogout() {
   try {
@@ -127,6 +215,23 @@ async function handleLogout() {
   const business = params?.business || "";
   const [businessLogoUrl, setBusinessLogoUrl] = useState("");
   const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+
+  const currentBusinessEntry = useMemo(
+    () => businesses.find((item: any) => item?.slug === business) ?? activeBusiness ?? null,
+    [activeBusiness, businesses, business],
+  );
+  const role =
+    (currentBusinessEntry as any)?.pivot?.role ??
+    (activeBusiness as any)?.pivot?.role ??
+    (activeBusiness as any)?.role ??
+    null;
+  const currentPermissions = useMemo(() => {
+    const scoped = (currentBusinessEntry as any)?.pivot?.permissions;
+    if (Array.isArray(scoped)) {
+      return scoped.filter((value: unknown): value is string => typeof value === "string");
+    }
+    return fallbackPermissions;
+  }, [currentBusinessEntry, fallbackPermissions]);
 
   useEffect(() => {
     setLogoLoadFailed(false);
@@ -176,61 +281,132 @@ async function handleLogout() {
     };
   }, [business]);
 
-  // Menu POS (complet + groupé)
+  // Menu POS (complet + groupÃ©)
   const dashboard: NavItem[] = [
-    { label: "Tableau de bord", href: (b) => `/${b}/dashboard`, icon: LayoutDashboard },
+    {
+      label: "Tableau de bord",
+      href: (b) => `/${b}/hotel/dashboard`,
+      icon: LayoutDashboard,
+      permissions: "dashboard.read",
+    },
   ];
 
-  const sales: NavItem[] = [
-    { label: "Nouvelle vente (POS)", href: (b) => `/${b}/pos`, icon: ShoppingCart, badge: "Rapide" },
-    { label: "Tickets / Ventes", href: (b) => `/${b}/sales`, icon: Receipt },
+  const billing: NavItem[] = [
+    {
+      label: "Nouvelle vente (POS)",
+      href: (b) => `/${b}/pos`,
+      icon: ShoppingCart,
+      badge: "Rapide",
+      permissions: "billing.manage",
+    },
+    { label: "Tickets / Ventes", href: (b) => `/${b}/sales`, icon: Receipt, permissions: "billing.read" },
+    { label: "Devis & proforma", href: (b) => `/${b}/documents`, icon: FileText, permissions: "billing.read" },
+    { label: "Factures", href: (b) => `/${b}/invoices`, icon: Receipt, permissions: "billing.read" },
   ];
 
-  const products: NavItem[] = [
-    { label: "Catalogue produits", href: (b) => `/${b}/products`, icon: Package },
-    { label: "Catégories", href: (b) => `/${b}/categories`, icon: Tags },
-    { label: "Stock & Inventaire", href: (b) => `/${b}/inventory`, icon: Warehouse },
+  const billingOrders: NavItem[] = [
+    {
+      label: "Commandes hotel",
+      href: (b) => `/${b}/hotel/orders`,
+      icon: Receipt,
+      permissions: "hotel.orders.read",
+    },
   ];
 
-  const people: NavItem[] = [
-    { label: "Clients", href: (b) => `/${b}/customers`, icon: Users },
-    { label: "Fournisseurs", href: (b) => `/${b}/suppliers`, icon: Truck },
+  const guests: NavItem[] = [
+    { label: "Clients", href: (b) => `/${b}/customers`, icon: Users, permissions: "customers.read" },
   ];
 
-  const docs: NavItem[] = [
-    { label: "Devis / Documents", href: (b) => `/${b}/documents`, icon: FileText },
-    { label: "Factures", href: (b) => `/${b}/invoices`, icon: Receipt },
+  const staffAdmin: NavItem[] = [
+    { label: "Utilisateurs", href: (b) => `/${b}/users`, icon: User, permissions: "users.read" },
+    { label: "Employes", href: (b) => `/${b}/employees`, icon: Users, permissions: "users.read" },
   ];
 
-  const finance: NavItem[] = [
-    { label: "Comptabilité", href: (b) => `/${b}/accounting`, icon: Landmark },
-    { label: "Périodes comptables", href: (b) => `/${b}/accounting/periods`, icon: CalendarDays },
+  const businessAdmin: NavItem[] = [
+    { label: "Mon entreprise", href: (b) => `/${b}/business`, icon: Building2, permissions: "business.read" },
+    { label: "Parametres generaux", href: (b) => `/${b}/settings`, icon: Settings, permissions: "business.read" },
+    { label: "Audit et securite", href: (b) => `/${b}/audit`, icon: ShieldCheck, permissions: "audit.read" },
   ];
 
-  const reports: NavItem[] = [
-    { label: "Rapports ventes", href: (b) => `/${b}/reports/sales`, icon: BarChart3 },
-    { label: "Rapports stock", href: (b) => `/${b}/reports/inventory`, icon: Warehouse },
-    { label: "Créances clients (AR)", href: (b) => `/${b}/reports/ar`, icon: Receipt },
-    { label: "Bilan & Résultat", href: (b) => `/${b}/reports/finance`, icon: Landmark },
+  const expenseAdmin: NavItem[] = [
+    {
+      label: "Journal des depenses",
+      href: (b) => `/${b}/expenses`,
+      icon: Receipt,
+      exact: true,
+      permissions: "expenses.read",
+    },
+    {
+      label: "Categories de depenses",
+      href: (b) => `/${b}/expenses/categories`,
+      icon: Layers,
+      exact: true,
+      permissions: "expenses.manage",
+    },
   ];
 
-  const admin: NavItem[] = [
-    { label: "MY Business", href: (b) => `/${b}/business`, icon: Building2 },
-    { label: "Utilisateurs", href: (b) => `/${b}/users`, icon: Users },
-    { label: "Employes", href: (b) => `/${b}/employees`, icon: User },
-    { label: "Parametres", href: (b) => `/${b}/settings`, icon: Settings },
-    { label: "Audit & Sécurité", href: (b) => `/${b}/audit`, icon: ShieldCheck },
+  const financeAdmin: NavItem[] = [
+    { label: "Comptabilite", href: (b) => `/${b}/accounting`, icon: Landmark, permissions: "accounting.read" },
+    { label: "Periodes comptables", href: (b) => `/${b}/accounting/periods`, icon: CalendarDays, permissions: "accounting.read" },
   ];
+
+  const reportsAdmin: NavItem[] = [
+    { label: "Rapports de vente", href: (b) => `/${b}/reports/sales`, icon: BarChart3, permissions: "reports.read" },
+    { label: "Rapports de stock", href: (b) => `/${b}/reports/inventory`, icon: BarChart3, permissions: "reports.read" },
+    { label: "Creances clients (AR)", href: (b) => `/${b}/reports/ar`, icon: Receipt, permissions: "reports.read" },
+    { label: "Bilan et resultat", href: (b) => `/${b}/reports/finance`, icon: Landmark, permissions: "reports.read" },
+  ];
+
+  const hotelRoomSetup: NavItem[] = [
+    { label: "Planning", href: (b) => `/${b}/hotel/planning`, icon: CalendarDays, permissions: "room_setup.read" },
+    { label: "Categories de chambres", href: (b) => `/${b}/hotel/categories`, icon: Layers, permissions: "room_setup.read" },
+    { label: "Chambres", href: (b) => `/${b}/hotel/rooms`, icon: BedDouble, permissions: "room_setup.read" },
+  ];
+
+  const hotelOperations: NavItem[] = [
+    { label: "Reservations", href: (b) => `/${b}/hotel/reservations`, icon: CalendarRange, permissions: "reservations.read" },
+    { label: "Moments (2h)", href: (b) => `/${b}/hotel/moments`, icon: Clock3, permissions: "moments.read" },
+    { label: "Housekeeping", href: (b) => `/${b}/hotel/housekeeping`, icon: Sparkles, permissions: "housekeeping.read" },
+    { label: "Audit de nuit", href: (b) => `/${b}/hotel/night-audit`, icon: BarChart3, permissions: "reports.read" },
+  ];
+
+  const supplies: NavItem[] = [
+    { label: "Accessoires", href: (b) => `/${b}/hotel/amenities`, icon: Sparkles, permissions: "supplies.read" },
+    { label: "Necessaires", href: (b) => `/${b}/hotel/necessities`, icon: PackageOpen, permissions: "supplies.read" },
+    { label: "Catalogue produits", href: (b) => `/${b}/products`, icon: Package, permissions: "supplies.read" },
+    { label: "Categories", href: (b) => `/${b}/categories`, icon: Tags, permissions: "supplies.read" },
+    { label: "Stock et inventaire", href: (b) => `/${b}/inventory`, icon: Warehouse, permissions: "inventory.read" },
+    { label: "Fournisseurs", href: (b) => `/${b}/suppliers`, icon: Truck, permissions: "supplies.read" },
+  ];
+
+  function visibleItems(items: NavItem[]): NavItem[] {
+    return items.filter((item) => hasPermission(currentPermissions, item.permissions));
+  }
 
   function isActiveItem(item: NavItem): boolean {
-    const href = item.href(business);
-    return pathname === href || pathname?.startsWith(`${href}/`);
+    const hrefPath = normalizeHrefPath(item.href(business));
+    if (item.exact) {
+      return pathname === hrefPath;
+    }
+    return pathname === hrefPath || pathname?.startsWith(`${hrefPath}/`);
   }
 
   function isActiveGroup(items: NavItem[]): boolean {
-    return items.some(isActiveItem);
+    return visibleItems(items).some(isActiveItem);
   }
 
+  const visibleDashboard = visibleItems(dashboard);
+  const visibleBilling = visibleItems(billing);
+  const visibleBillingOrders = visibleItems(billingOrders);
+  const visibleGuests = visibleItems(guests);
+  const visibleHotelOperations = visibleItems(hotelOperations);
+  const visibleSupplies = visibleItems(supplies);
+  const visibleStaffAdmin = visibleItems(staffAdmin);
+  const visibleHotelRoomSetup = visibleItems(hotelRoomSetup);
+  const visibleBusinessAdmin = visibleItems(businessAdmin);
+  const visibleExpenseAdmin = visibleItems(expenseAdmin);
+  const visibleFinanceAdmin = visibleItems(financeAdmin);
+  const visibleReportsAdmin = visibleItems(reportsAdmin);
   return (
     <div className="h-full flex flex-col">
       {/* Header sidebar */}
@@ -252,9 +428,9 @@ async function handleLogout() {
             <div className="font-extrabold text-slate-900 text-base">
               {business ? business.toUpperCase() : "POS"}
             </div>
-            <div className="text-xs text-slate-500">Bon retour 👋 On vend, on encaisse, on avance.</div>
+            <div className="text-xs text-slate-500">Bon retour ðŸ‘‹ On vend, on encaisse, on avance.</div>
           
-  {/* Connecté en tant que
+  {/* ConnectÃ© en tant que
   <div className="font-semibold text-slate-900">
     {user?.name ?? "Utilisateur"}
   </div>
@@ -263,7 +439,7 @@ async function handleLogout() {
   ) : null}
   {role ? (
     <div className="mt-1 inline-flex text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-semibold">
-      Rôle : {String(role)}
+      RÃ´le : {String(role)}
     </div>
   ) : null} */}
 
@@ -276,58 +452,148 @@ async function handleLogout() {
       {/* Menu */}
       <div className="flex-1 overflow-y-auto py-3">
         <div className="px-2 space-y-3">
-          {/* Accès rapide */}
-          <div className="space-y-1 px-2">
-            {dashboard.map((it) => (
-              <NavLink key={it.label} item={it} business={business} />
-            ))}
-          </div>
+          {/* AccÃ¨s rapide */}
+          {visibleDashboard.length > 0 ? (
+            <div className="space-y-1 px-2">
+              {visibleDashboard.map((it) => (
+                <NavLink key={it.label} item={it} business={business} />
+              ))}
+            </div>
+          ) : null}
 
-          <Section title="Ventes" icon={ShoppingCart} defaultOpen={isActiveGroup(sales)}>
-            {sales.map((it) => (
-              <NavLink key={it.label} item={it} business={business} />
-            ))}
-          </Section>
+          {visibleBilling.length > 0 || visibleBillingOrders.length > 0 ? (
+            <Section
+              title="Facturation (bar/piscine)"
+              icon={Receipt}
+              defaultOpen={isActiveGroup(billing) || isActiveGroup(billingOrders)}
+            >
+              {visibleBilling.map((it) => (
+                <NavLink key={it.label} item={it} business={business} />
+              ))}
+              {visibleBillingOrders.length > 0 ? (
+                <SubSection title="Commandes" icon={Receipt} defaultOpen={isActiveGroup(billingOrders)}>
+                  {visibleBillingOrders.map((it) => (
+                    <NavLink key={it.label} item={it} business={business} />
+                  ))}
+                </SubSection>
+              ) : null}
+            </Section>
+          ) : null}
 
-          <Section title="Produits" icon={Package} defaultOpen={isActiveGroup(products)}>
-            {products.map((it) => (
-              <NavLink key={it.label} item={it} business={business} />
-            ))}
-          </Section>
+          {visibleGuests.length > 0 ? (
+            <Section title="Clients" icon={Users} defaultOpen={isActiveGroup(guests)}>
+              {visibleGuests.map((it) => (
+                <NavLink key={it.label} item={it} business={business} />
+              ))}
+            </Section>
+          ) : null}
 
-          <Section
-            title="Clients & Fournisseurs"
-            icon={Users}
-            defaultOpen={isActiveGroup(people)}
-          >
-            {people.map((it) => (
-              <NavLink key={it.label} item={it} business={business} />
-            ))}
-          </Section>
+          {visibleHotelOperations.length > 0 ? (
+            <Section
+              title="Reservations et services"
+              icon={BedDouble}
+              defaultOpen={isActiveGroup(hotelOperations)}
+            >
+              {visibleHotelOperations.map((it) => (
+                <NavLink key={it.label} item={it} business={business} />
+              ))}
+            </Section>
+          ) : null}
 
-          <Section title="Documents" icon={FileText} defaultOpen={isActiveGroup(docs)}>
-            {docs.map((it) => (
-              <NavLink key={it.label} item={it} business={business} />
-            ))}
-          </Section>
+          {visibleSupplies.length > 0 ? (
+            <Section title="Stocks et achats" icon={Package} defaultOpen={isActiveGroup(supplies)}>
+              {visibleSupplies.map((it) => (
+                <NavLink key={it.label} item={it} business={business} />
+              ))}
+            </Section>
+          ) : null}
 
-          <Section title="Finance" icon={Landmark} defaultOpen={isActiveGroup(finance)}>
-            {finance.map((it) => (
-              <NavLink key={it.label} item={it} business={business} />
-            ))}
-          </Section>
-
-          <Section title="Rapports" icon={BarChart3} defaultOpen={isActiveGroup(reports)}>
-            {reports.map((it) => (
-              <NavLink key={it.label} item={it} business={business} />
-            ))}
-          </Section>
-
-          <Section title="Administration" icon={Settings} defaultOpen={isActiveGroup(admin)}>
-            {admin.map((it) => (
-              <NavLink key={it.label} item={it} business={business} />
-            ))}
-          </Section>
+          {visibleStaffAdmin.length > 0 ||
+          visibleHotelRoomSetup.length > 0 ||
+          visibleBusinessAdmin.length > 0 ||
+          visibleExpenseAdmin.length > 0 ||
+          visibleFinanceAdmin.length > 0 ||
+          visibleReportsAdmin.length > 0 ? (
+            <Section
+              title="Administration"
+              icon={Settings}
+              defaultOpen={
+                isActiveGroup(staffAdmin) ||
+                isActiveGroup(hotelRoomSetup) ||
+                isActiveGroup(businessAdmin) ||
+                isActiveGroup(expenseAdmin) ||
+                isActiveGroup(financeAdmin) ||
+                isActiveGroup(reportsAdmin)
+              }
+            >
+              {visibleStaffAdmin.length > 0 ? (
+                <SubSection
+                  title="Equipe"
+                  icon={Users}
+                  defaultOpen={isActiveGroup(staffAdmin)}
+                >
+                  {visibleStaffAdmin.map((it) => (
+                    <NavLink key={it.label} item={it} business={business} />
+                  ))}
+                </SubSection>
+              ) : null}
+              {visibleHotelRoomSetup.length > 0 ? (
+                <SubSection
+                  title="Parametrage hotel"
+                  icon={Layers}
+                  defaultOpen={isActiveGroup(hotelRoomSetup)}
+                >
+                  {visibleHotelRoomSetup.map((it) => (
+                    <NavLink key={it.label} item={it} business={business} />
+                  ))}
+                </SubSection>
+              ) : null}
+              {visibleBusinessAdmin.length > 0 ? (
+                <SubSection
+                  title="Entreprise"
+                  icon={Building2}
+                  defaultOpen={isActiveGroup(businessAdmin)}
+                >
+                  {visibleBusinessAdmin.map((it) => (
+                    <NavLink key={it.label} item={it} business={business} />
+                  ))}
+                </SubSection>
+              ) : null}
+              {visibleExpenseAdmin.length > 0 || visibleFinanceAdmin.length > 0 ? (
+                <SubSection
+                  title="Finance"
+                  icon={Landmark}
+                  defaultOpen={isActiveGroup(expenseAdmin) || isActiveGroup(financeAdmin)}
+                >
+                  {visibleExpenseAdmin.length > 0 ? (
+                    <SubSection
+                      title="Depenses"
+                      icon={Receipt}
+                      defaultOpen={isActiveGroup(expenseAdmin)}
+                    >
+                      {visibleExpenseAdmin.map((it) => (
+                        <NavLink key={it.label} item={it} business={business} />
+                      ))}
+                    </SubSection>
+                  ) : null}
+                  {visibleFinanceAdmin.map((it) => (
+                    <NavLink key={it.label} item={it} business={business} />
+                  ))}
+                </SubSection>
+              ) : null}
+              {visibleReportsAdmin.length > 0 ? (
+                <SubSection
+                  title="Rapports"
+                  icon={BarChart3}
+                  defaultOpen={isActiveGroup(reportsAdmin)}
+                >
+                  {visibleReportsAdmin.map((it) => (
+                    <NavLink key={it.label} item={it} business={business} />
+                  ))}
+                </SubSection>
+              ) : null}
+            </Section>
+          ) : null}
         </div>
       </div>
 
@@ -341,4 +607,3 @@ async function handleLogout() {
     </div>
   );
 }
-

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
@@ -18,9 +18,20 @@ import {
   Trash2,
   Wallet,
 } from "lucide-react";
+import SensitiveActionApprovalModal, {
+  type SensitiveActionApproval,
+} from "@/components/SensitiveActionApprovalModal";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
+import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
+import { hasPermission } from "@/lib/businessAccess";
+import {
+  listBusinessApprovers,
+  type BusinessApproverAbility,
+  type BusinessApproverItem,
+} from "@/lib/businessUsersApi";
 import { getProducts, type CatalogProduct } from "@/lib/catalogApi";
+import { convertAmount, formatMoney } from "@/lib/currency";
 import {
   DEFAULT_PRODUCT_AVATAR_PATH,
   resolveProductImageUrl,
@@ -31,6 +42,7 @@ import {
   deletePosParkedCart,
   getPosPaymentMethods,
   listPosParkedCarts,
+  type PosApprovalPayload,
   type PosParkedCart as PosParkedCartApi,
   type PosPaymentMethodConfig,
 } from "@/lib/posApi";
@@ -40,6 +52,7 @@ type CartItem = {
   name: string;
   sku: string;
   price: number;
+  currency?: string;
   qty: number;
   type: "product" | "service";
   stock: number;
@@ -70,12 +83,19 @@ type CompletedSale = {
   businessAddress: string;
   businessPhone: string;
   businessEmail: string;
+  businessLogoSrc: string | null;
   cashierName: string;
   items: CartItem[];
+  saleCurrency: string;
   subtotal: number;
+  discountAmount: number;
   tax: number;
   total: number;
   paymentMethod: PaymentMethodId;
+  paymentCurrency: string;
+  paymentAmount: number;
+  paymentDateLabel: string | null;
+  receiptQrCodeDataUri: string | null;
   cashReceived: number;
   change: number;
 };
@@ -85,6 +105,13 @@ type Notice = {
   tone: NoticeTone;
   message: string;
 };
+type DiscountType = "percent" | "fixed";
+type ApprovalDialogState = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  requiredAbility: BusinessApproverAbility;
+};
 const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   { id: "cash", label: "Cash", icon: Banknote },
   { id: "card", label: "Carte", icon: CreditCard },
@@ -92,13 +119,6 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   { id: "bank_transfer", label: "Virement", icon: Landmark },
   { id: "voucher", label: "Bon", icon: Wallet },
 ];
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
 function safeNumber(value: string): number {
   if (!value.trim()) return 0;
   const parsed = Number(value);
@@ -122,6 +142,27 @@ function getStringField(
       return value.trim();
   }
   return fallback;
+}
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+function formatBusinessAddress(settings: BusinessSettings | null): string {
+  if (!settings) return "";
+  const address = settings.address ?? {};
+  const parts = [
+    address.line1?.trim(),
+    address.line2?.trim(),
+    [address.city?.trim(), address.state?.trim()].filter(Boolean).join(", ") || undefined,
+    address.zip?.trim(),
+    address.country?.trim(),
+  ].filter((value): value is string => Boolean(value && value.length > 0));
+
+  return parts.join(", ");
 }
 function parsePaymentMethodIds(raw: string | null): PaymentMethodId[] {
   if (!raw) return [];
@@ -225,20 +266,31 @@ function buildReceiptHtml(sale: CompletedSale): string {
   const linesHtml = sale.items
     .map((item) => {
       const lineTotal = item.qty * item.price;
-      return ` <tr> <td>${item.name}</td> <td style="text-align:right">${item.qty} x ${formatMoney(item.price)}</td> <td style="text-align:right">${formatMoney(lineTotal)}</td> </tr> `;
+      return `<tr><td><div class="item-name">${escapeHtml(item.name)}</div>${item.sku ? `<div class="item-meta">${escapeHtml(item.sku)}</div>` : ""}</td><td style="text-align:right">${escapeHtml(String(item.qty))} x ${escapeHtml(formatMoney(item.price, sale.saleCurrency))}</td><td style="text-align:right">${escapeHtml(formatMoney(lineTotal, sale.saleCurrency))}</td></tr>`;
     })
     .join("");
   const paymentLabel =
     DEFAULT_PAYMENT_METHODS.find((m) => m.id === sale.paymentMethod)?.label ??
     sale.paymentMethod;
+  const paymentSummary = `<div class="row"><span>Montant regle</span><strong>${escapeHtml(formatMoney(sale.paymentAmount, sale.paymentCurrency))}</strong></div>`;
+  const discountBlock =
+    sale.discountAmount > 0
+      ? `<div class="row"><span>Rabais</span><span>- ${escapeHtml(formatMoney(sale.discountAmount, sale.saleCurrency))}</span></div>`
+      : "";
   const cashBlock =
     sale.paymentMethod === "cash"
-      ? ` <div class="row"><span>Recu</span><strong>${formatMoney(sale.cashReceived)}</strong></div> <div class="row"><span>Monnaie</span><strong>${formatMoney(sale.change)}</strong></div> `
+      ? `<div class="row"><span>Recu</span><strong>${escapeHtml(formatMoney(sale.cashReceived, sale.paymentCurrency))}</strong></div><div class="row"><span>Monnaie</span><strong>${escapeHtml(formatMoney(sale.change, sale.paymentCurrency))}</strong></div>`
       : "";
+  const logoBlock = sale.businessLogoSrc
+    ? `<div class="logo-wrap"><img src="${sale.businessLogoSrc}" alt="Logo hotel" class="logo" /></div>`
+    : "";
+  const qrBlock = sale.receiptQrCodeDataUri
+    ? `<div class="qr-card"><div class="qr-title">QR paiement</div><img src="${sale.receiptQrCodeDataUri}" alt="QR ticket" class="qr-image" /><div class="muted small">Scanner pour voir le business, le montant paye et la date.</div></div>`
+    : "";
+  const paymentDateLabel = sale.paymentDateLabel || new Date(sale.createdAt).toLocaleString("fr-FR");
   return `
 <!doctype html>
-<html> <head> <meta charset="utf-8" /> <title>Ticket ${sale.receiptNo}</title> <style> @page { size: 80mm auto; margin: 4mm; } body { font-family: Arial, sans-serif; font-size: 11px; width: 72mm; margin: 0 auto; color: #111827; } .center { text-align: center; } .muted { color: #6b7280; } .sep { border-top: 1px dashed #9ca3af; margin: 8px 0; } .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; } .title { font-size: 14px; font-weight: 700; margin-bottom: 2px; } table { width: 100%; border-collapse: collapse; } td { padding: 2px 0; vertical-align: top; } .grand { font-size: 14px; font-weight: 800; } </style> </head> <body> <div class="center"> <div class="title">${sale.businessName}</div> <div class="muted">${sale.businessAddress || ""}</div> <div class="muted">${sale.businessPhone || ""} ${sale.businessEmail ? " | " + sale.businessEmail : ""}</div> </div> <div class="sep"></div> <div class="row"><span>Ticket</span><strong>${sale.receiptNo}</strong></div> <div class="row"><span>Date</span><span>${new Date(sale.createdAt).toLocaleString("fr-FR")}</span></div> <div class="row"><span>Caissier</span><span>${sale.cashierName}</span></div> <div class="row"><span>Paiement</span><span>${paymentLabel}</span></div> <div class="sep"></div> <table> ${linesHtml} </table> <div class="sep"></div> <div class="row"><span>Sous-total</span><span>${formatMoney(sale.subtotal)}</span></div> <div class="row"><span>Taxes</span><span>${formatMoney(sale.tax)}</span></div> <div class="row grand"><span>Total</span><span>${formatMoney(sale.total)}</span></div> ${cashBlock} <div class="sep"></div> <div class="center muted">Merci et a bientot.</div> </body>
-</html> `;
+<html><head><meta charset="utf-8" /><title>Ticket ${escapeHtml(sale.receiptNo)}</title><style>@page { size: 80mm auto; margin: 4mm; } body { font-family: Arial, sans-serif; font-size: 11px; width: 72mm; margin: 0 auto; color: #111827; } .center { text-align: center; } .muted { color: #6b7280; } .small { font-size: 9px; line-height: 1.35; } .sep { border-top: 1px dashed #9ca3af; margin: 8px 0; } .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; } .title { font-size: 14px; font-weight: 700; margin-bottom: 2px; } table { width: 100%; border-collapse: collapse; } td { padding: 3px 0; vertical-align: top; } .grand { font-size: 14px; font-weight: 800; } .logo-wrap { text-align: center; margin-bottom: 8px; } .logo { width: 56px; height: 56px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 12px; padding: 4px; background: #fff; } .header-card, .qr-card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 8px; background: #f8fafc; margin-bottom: 8px; } .item-name { font-weight: 700; } .item-meta { color: #6b7280; font-size: 9px; } .qr-title { text-transform: uppercase; letter-spacing: .08em; font-size: 9px; color: #475569; font-weight: 700; margin-bottom: 6px; text-align: center; } .qr-image { width: 96px; height: 96px; display: block; margin: 0 auto 6px; }</style></head><body><div class="center">${logoBlock}<div class="title">${escapeHtml(sale.businessName)}</div><div class="muted">${escapeHtml(sale.businessAddress || "")}</div><div class="muted">${escapeHtml(sale.businessPhone || "")}${sale.businessEmail ? ` | ${escapeHtml(sale.businessEmail)}` : ""}</div></div><div class="sep"></div><div class="header-card"><div class="row"><span>Ticket</span><strong>${escapeHtml(sale.receiptNo)}</strong></div><div class="row"><span>Date</span><span>${escapeHtml(paymentDateLabel)}</span></div><div class="row"><span>Caissier</span><span>${escapeHtml(sale.cashierName)}</span></div><div class="row"><span>Paiement</span><span>${escapeHtml(paymentLabel)}</span></div></div><table>${linesHtml}</table><div class="sep"></div><div class="row"><span>Sous-total</span><span>${escapeHtml(formatMoney(sale.subtotal, sale.saleCurrency))}</span></div>${discountBlock}<div class="row"><span>Taxes</span><span>${escapeHtml(formatMoney(sale.tax, sale.saleCurrency))}</span></div><div class="row grand"><span>Total</span><span>${escapeHtml(formatMoney(sale.total, sale.saleCurrency))}</span></div>${paymentSummary}${cashBlock}<div class="sep"></div>${qrBlock}<div class="center muted">Merci et a bientot.</div></body></html>`;
 }
 function printReceipt(sale: CompletedSale) {
   const receiptWindow = window.open("", "_blank", "width=420,height=760");
@@ -254,8 +306,10 @@ function printReceipt(sale: CompletedSale) {
 export default function PosPage() {
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
-  const { user, activeBusiness } = useAuth();
+  const saleCurrency = "HTG";
+  const { user, activeBusiness, permissions } = useAuth();
   const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [, setError] = useState("");
@@ -276,9 +330,16 @@ export default function PosPage() {
     DEFAULT_PAYMENT_METHODS,
   );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodId>("cash");
+  const [paymentCurrency, setPaymentCurrency] = useState<"USD" | "HTG">("HTG");
   const [cashReceivedInput, setCashReceivedInput] = useState("");
+  const [discountType, setDiscountType] = useState<"none" | DiscountType>("none");
+  const [discountValueInput, setDiscountValueInput] = useState("");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [lastSale, setLastSale] = useState<CompletedSale | null>(null);
+  const [approvalDialog, setApprovalDialog] = useState<ApprovalDialogState | null>(null);
+  const [approvalApprovers, setApprovalApprovers] = useState<BusinessApproverItem[]>([]);
+  const [approvalApproversLoading, setApprovalApproversLoading] = useState(false);
+  const queryInputRef = useRef<HTMLInputElement | null>(null);
   function pushNotice(message: string, tone: NoticeTone = "info") {
     setNotice({ id: Date.now(), tone, message });
   }
@@ -293,6 +354,34 @@ export default function PosPage() {
     }, 2500);
     return () => window.clearTimeout(timer);
   }, [notice]);
+  useEffect(() => {
+    if (!approvalDialog || !businessSlug) return;
+
+    let cancelled = false;
+    setApprovalApproversLoading(true);
+    setApprovalApprovers([]);
+
+    void listBusinessApprovers(businessSlug, approvalDialog.requiredAbility)
+      .then((items) => {
+        if (!cancelled) {
+          setApprovalApprovers(items);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          pushError(getErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setApprovalApproversLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [approvalDialog, businessSlug]);
   useEffect(() => {
     let mounted = true;
     async function loadProducts() {
@@ -309,6 +398,22 @@ export default function PosPage() {
       }
     }
     void loadProducts();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug]);
+  useEffect(() => {
+    let mounted = true;
+    async function loadBusinessConfig() {
+      if (!businessSlug) return;
+      try {
+        const data = await getBusinessSettings(businessSlug);
+        if (mounted) setBusinessSettings(data);
+      } catch (e) {
+        if (mounted) pushError(getErrorMessage(e));
+      }
+    }
+    void loadBusinessConfig();
     return () => {
       mounted = false;
     };
@@ -384,6 +489,12 @@ export default function PosPage() {
       JSON.stringify(next),
     );
   }
+  function getSaleUnitPrice(product: CatalogProduct): number {
+    return convertAmount(product.price, product.priceCurrency, saleCurrency, {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+    });
+  }
   const categories = useMemo(() => {
     const values = Array.from(
       new Set(products.map((item) => item.category).filter(Boolean)),
@@ -398,12 +509,23 @@ export default function PosPage() {
         normalized.length === 0 ||
         item.name.toLowerCase().includes(normalized) ||
         item.sku.toLowerCase().includes(normalized) ||
+        item.barcode.toLowerCase().includes(normalized) ||
         item.category.toLowerCase().includes(normalized);
       const matchCategory =
         categoryFilter === "all" || item.category === categoryFilter;
       return matchQuery && matchCategory;
     });
   }, [products, query, categoryFilter]);
+  const barcodeLookup = useMemo(() => {
+    const lookup = new Map<string, CatalogProduct>();
+    for (const product of products) {
+      const barcode = product.barcode.trim().toLowerCase();
+      if (barcode) {
+        lookup.set(barcode, product);
+      }
+    }
+    return lookup;
+  }, [products]);
   useEffect(() => {
     if (cart.length === 0) {
       setHiddenProductIds((prev) =>
@@ -431,6 +553,14 @@ export default function PosPage() {
     () => cart.reduce((sum, item) => sum + item.qty * item.price, 0),
     [cart],
   );
+  const discountValue = safeNumber(discountValueInput);
+  const discountAmount = useMemo(() => {
+    if (discountType === "none" || subtotal <= 0 || discountValue <= 0) return 0;
+    if (discountType === "percent") {
+      return Number(Math.min(subtotal, (subtotal * discountValue) / 100).toFixed(2));
+    }
+    return Number(Math.min(subtotal, discountValue).toFixed(2));
+  }, [discountType, discountValue, subtotal]);
   const taxTotal = useMemo(
     () =>
       cart.reduce(
@@ -439,11 +569,12 @@ export default function PosPage() {
       ),
     [cart],
   );
-  const grandTotal = subtotal + taxTotal;
+  const grandTotal = subtotal - discountAmount + taxTotal;
   const itemCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.qty, 0),
     [cart],
   );
+  const canApplyDiscount = hasPermission(permissions, "billing.discount");
   useEffect(() => {
     if (!businessSlug || typeof window === "undefined") return;
     const storageKey = `pos_cart_count:${businessSlug}`;
@@ -454,8 +585,16 @@ export default function PosPage() {
       }),
     );
   }, [businessSlug, itemCount]);
+  const amountDueInPaymentCurrency = useMemo(
+    () =>
+      convertAmount(grandTotal, saleCurrency, paymentCurrency, {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+      }),
+    [businessSettings, grandTotal, paymentCurrency, saleCurrency],
+  );
   const cashReceived = safeNumber(cashReceivedInput);
-  const cashDelta = cashReceived - grandTotal;
+  const cashDelta = cashReceived - amountDueInPaymentCurrency;
   const cashMissing = Math.max(-cashDelta, 0);
   const cashChange = Math.max(cashDelta, 0);
   function getProductRequestedQty(product: CatalogProduct): number {
@@ -513,12 +652,13 @@ export default function PosPage() {
           productId: String(product.id),
           name: product.name,
           sku: product.sku,
-          price: product.price,
+          price: getSaleUnitPrice(product),
           qty: qtyToAdd,
           type: product.type,
           stock: product.stock,
           taxRate: product.taxRate,
           imagePath: product.imagePath,
+          currency: saleCurrency,
         },
       ];
     });
@@ -529,6 +669,37 @@ export default function PosPage() {
       );
     }
   }
+  function tryAddScannedProduct(rawCode: string): boolean {
+    const normalized = rawCode.trim().toLowerCase();
+    if (!normalized) return false;
+
+    const found = barcodeLookup.get(normalized);
+    if (!found) return false;
+
+    addToCart(found, 1);
+    setQuery("");
+    window.setTimeout(() => {
+      queryInputRef.current?.focus();
+      queryInputRef.current?.select();
+    }, 0);
+    return true;
+  }
+  useEffect(() => {
+    const normalized = query.trim();
+    if (normalized.length < 4) return;
+
+    const timer = window.setTimeout(() => {
+      void tryAddScannedProduct(normalized);
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [query, barcodeLookup]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      queryInputRef.current?.focus();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, []);
   function updateQty(productId: string, nextQty: number) {
     if (nextQty <= 0) {
       const current = cart.find((item) => item.productId === productId);
@@ -554,6 +725,8 @@ export default function PosPage() {
   function clearCurrentCart() {
     setCart([]);
     setCashReceivedInput("");
+    setDiscountType("none");
+    setDiscountValueInput("");
     setError("");
   }
   async function parkCurrentCart() {
@@ -628,14 +801,14 @@ export default function PosPage() {
       pushError(getErrorMessage(e));
     }
   }
-  async function checkoutSale() {
+  async function runCheckoutSale(approval?: PosApprovalPayload): Promise<boolean> {
     if (cart.length === 0) {
       pushError("Ajoute des produits avant de passer a la caisse.");
-      return;
+      return false;
     }
-    if (paymentMethod === "cash" && cashReceived < grandTotal) {
-      pushError(`Montant insuffisant: manque ${formatMoney(cashMissing)}.`);
-      return;
+    if (paymentMethod === "cash" && cashReceived < amountDueInPaymentCurrency) {
+      pushError(`Montant insuffisant: manque ${formatMoney(cashMissing, paymentCurrency)}.`);
+      return false;
     }
     setCheckoutLoading(true);
     setError("");
@@ -645,9 +818,14 @@ export default function PosPage() {
         subtotal,
         tax: taxTotal,
         total: grandTotal,
+        discountType: discountType === "none" ? null : discountType,
+        discountValue: discountType === "none" ? 0 : discountValue,
         paymentMethod,
-        cashReceived: paymentMethod === "cash" ? cashReceived : grandTotal,
+        paymentCurrency,
+        paymentAmount: amountDueInPaymentCurrency,
+        cashReceived: paymentMethod === "cash" ? cashReceived : amountDueInPaymentCurrency,
         changeAmount: paymentMethod === "cash" ? cashChange : 0,
+        approval,
         items: cart.map((item) => ({
           productId: item.productId,
           qty: item.qty,
@@ -658,26 +836,17 @@ export default function PosPage() {
           sku: item.sku,
         })),
       });
-      const businessName = getStringField(
-        activeBusiness,
-        ["name", "legal_name"],
-        businessSlug.toUpperCase(),
-      );
-      const businessAddress = getStringField(
-        activeBusiness,
-        ["address", "full_address", "location"],
-        "",
-      );
-      const businessPhone = getStringField(
-        activeBusiness,
-        ["phone", "phone_number", "contact_phone"],
-        "",
-      );
-      const businessEmail = getStringField(
-        activeBusiness,
-        ["email", "contact_email"],
-        "",
-      );
+      const businessName =
+        backendResult?.businessName ||
+        businessSettings?.legal_name ||
+        businessSettings?.name ||
+        getStringField(activeBusiness, ["name", "legal_name"], businessSlug.toUpperCase());
+      const businessAddress =
+        backendResult?.businessAddress || formatBusinessAddress(businessSettings);
+      const businessPhone =
+        backendResult?.businessPhone || businessSettings?.phone || "";
+      const businessEmail =
+        backendResult?.businessEmail || businessSettings?.email || "";
       const cashierName = getStringField(
         user,
         ["name", "full_name"],
@@ -690,13 +859,25 @@ export default function PosPage() {
         businessAddress,
         businessPhone,
         businessEmail,
+        businessLogoSrc:
+          backendResult?.businessLogoDataUri ||
+          businessSettings?.logo_url ||
+          null,
         cashierName,
         items: cart,
+        saleCurrency,
         subtotal,
+        discountAmount,
         tax: taxTotal,
         total: grandTotal,
         paymentMethod,
-        cashReceived: paymentMethod === "cash" ? cashReceived : grandTotal,
+        paymentCurrency,
+        paymentAmount: backendResult?.paymentAmount ?? amountDueInPaymentCurrency,
+        paymentDateLabel:
+          backendResult?.paymentDateLabel ||
+          new Date(backendResult?.createdAt ?? new Date().toISOString()).toLocaleString("fr-FR"),
+        receiptQrCodeDataUri: backendResult?.receiptQrCodeDataUri ?? null,
+        cashReceived: paymentMethod === "cash" ? cashReceived : amountDueInPaymentCurrency,
         change: paymentMethod === "cash" ? cashChange : 0,
       };
       const storageKey = `pos_sales:${businessSlug}`;
@@ -718,11 +899,28 @@ export default function PosPage() {
       clearCurrentCart();
       pushNotice(`Vente terminee. Ticket ${sale.receiptNo}.`, "success");
       printReceipt(sale);
+      return true;
     } catch (e) {
       pushError(getErrorMessage(e));
+      return false;
     } finally {
       setCheckoutLoading(false);
     }
+  }
+
+  async function checkoutSale() {
+    if (discountAmount > 0 && !canApplyDiscount) {
+      setApprovalDialog({
+        title: "Validation manager requise",
+        description:
+          "Ce rabais doit etre autorise par un manager ou un superviseur avant de finaliser la vente.",
+        confirmLabel: "Autoriser le rabais",
+        requiredAbility: "discount_billing",
+      });
+      return;
+    }
+
+    await runCheckoutSale();
   }
   return (
     <div className="space-y-6">
@@ -793,9 +991,16 @@ export default function PosPage() {
               {" "}
               <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />{" "}
               <input
+                ref={queryInputRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Rechercher un produit (nom, SKU, categorie)"
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  if (tryAddScannedProduct(query)) {
+                    event.preventDefault();
+                  }
+                }}
+                placeholder="Scanner ou rechercher un produit (nom, SKU, code-barres, categorie)"
                 className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />{" "}
             </div>{" "}
@@ -881,8 +1086,15 @@ export default function PosPage() {
                         
                       </div>{" "}
                       <div className="flex min-w-0 items-center justify-between gap-1 sm:gap-2">
-                        <div className="min-w-0 truncate pr-1 text-[11px] sm:text-sm font-bold text-slate-900">
-                          {formatMoney(product.price)}
+                        <div className="min-w-0 pr-1">
+                          <div className="truncate text-[11px] sm:text-sm font-bold text-slate-900">
+                            {formatMoney(product.price, product.priceCurrency)}
+                          </div>
+                          {product.priceCurrency !== saleCurrency ? (
+                            <div className="truncate text-[10px] text-slate-500">
+                              Facture: {formatMoney(getSaleUnitPrice(product), saleCurrency)}
+                            </div>
+                          ) : null}
                         </div>{" "}
                         <div className="inline-flex shrink-0 items-center gap-0.5 sm:gap-1">
                           <button
@@ -1028,7 +1240,7 @@ export default function PosPage() {
                         </button>{" "}
                       </div>{" "}
                       <div className="text-sm font-bold text-slate-900">
-                        {formatMoney(item.qty * item.price)}
+                        {formatMoney(item.qty * item.price, saleCurrency)}
                       </div>{" "}
                     </div>{" "}
                   </div>
@@ -1041,21 +1253,89 @@ export default function PosPage() {
               <div className="flex justify-between text-slate-600">
                 {" "}
                 <span>Sous-total</span>{" "}
-                <span>{formatMoney(subtotal)}</span>{" "}
+                <span>{formatMoney(subtotal, saleCurrency)}</span>{" "}
               </div>{" "}
               <div className="flex justify-between text-slate-600">
                 {" "}
-                <span>Taxes</span> <span>{formatMoney(taxTotal)}</span>{" "}
+                <span>Taxes</span> <span>{formatMoney(taxTotal, saleCurrency)}</span>{" "}
               </div>{" "}
+              {discountAmount > 0 ? (
+                <div className="flex justify-between text-emerald-700">
+                  {" "}
+                  <span>Rabais</span> <span>- {formatMoney(discountAmount, saleCurrency)}</span>{" "}
+                </div>
+              ) : null}{" "}
               <div className="flex justify-between text-lg font-bold text-slate-900 pt-1">
                 {" "}
-                <span>Total</span> <span>{formatMoney(grandTotal)}</span>{" "}
+                <span>Total</span> <span>{formatMoney(grandTotal, saleCurrency)}</span>{" "}
               </div>{" "}
             </div>{" "}
           </section>{" "}
           <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
             {" "}
             <div className="font-bold text-slate-900">Paiement</div>{" "}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700">Rabais</label>
+                <select
+                  value={discountType}
+                  onChange={(event) =>
+                    setDiscountType(
+                      event.target.value === "percent" || event.target.value === "fixed"
+                        ? event.target.value
+                        : "none",
+                    )
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="none">Aucun</option>
+                  <option value="percent">Pourcentage</option>
+                  <option value="fixed">Montant fixe</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700">
+                  Valeur du rabais {discountType === "percent" ? "(%)" : `(${saleCurrency})`}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={discountValueInput}
+                  onChange={(event) => setDiscountValueInput(event.target.value)}
+                  disabled={discountType === "none"}
+                  placeholder={discountType === "percent" ? "10" : "0.00"}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-50"
+                />
+              </div>
+            </div>
+            {discountAmount > 0 ? (
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+                Rabais applique: {formatMoney(discountAmount, saleCurrency)}
+                {!canApplyDiscount ? " - validation manager requise a la confirmation." : ""}
+              </div>
+            ) : null}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">
+                Devise de paiement
+              </label>
+              <select
+                value={paymentCurrency}
+                onChange={(event) =>
+                  setPaymentCurrency(event.target.value === "USD" ? "USD" : "HTG")
+                }
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option value="HTG">HTG</option>
+                <option value="USD">USD ($)</option>
+              </select>
+            </div>{" "}
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900">
+              <div>Total facture: {formatMoney(grandTotal, saleCurrency)}</div>
+              <div className="mt-1">
+                A encaisser: {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
+              </div>
+            </div>{" "}
             <div className="grid grid-cols-2 gap-2">
               {" "}
               {paymentMethods.map((method) => {
@@ -1077,7 +1357,7 @@ export default function PosPage() {
               <div className="space-y-2 pt-1">
                 {" "}
                 <label className="text-sm font-medium text-slate-700">
-                  Montant recu du client
+                  Montant recu du client ({paymentCurrency})
                 </label>{" "}
                 <input
                   type="number"
@@ -1094,12 +1374,17 @@ export default function PosPage() {
                   >
                     {" "}
                     {cashDelta >= 0
-                      ? `Monnaie a remettre: ${formatMoney(cashChange)}`
-                      : `Montant manquant: ${formatMoney(cashMissing)}`}{" "}
+                      ? `Monnaie a remettre: ${formatMoney(cashChange, paymentCurrency)}`
+                      : `Montant manquant: ${formatMoney(cashMissing, paymentCurrency)}`}{" "}
                   </div>
                 ) : null}{" "}
               </div>
-            ) : null}{" "}
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+                Le client reglera {formatMoney(amountDueInPaymentCurrency, paymentCurrency)} via{" "}
+                {paymentMethods.find((method) => method.id === paymentMethod)?.label || paymentMethod}.
+              </div>
+            )}{" "}
             <button
               onClick={() => {
                 void checkoutSale();
@@ -1188,6 +1473,28 @@ export default function PosPage() {
           </section>{" "}
         </aside>{" "}
       </div>{" "}
+      <SensitiveActionApprovalModal
+        open={Boolean(approvalDialog)}
+        title={approvalDialog?.title ?? "Autorisation requise"}
+        description={approvalDialog?.description ?? ""}
+        confirmLabel={approvalDialog?.confirmLabel ?? "Autoriser"}
+        loading={checkoutLoading}
+        approvers={approvalApprovers}
+        approversLoading={approvalApproversLoading}
+        onClose={() => {
+          if (!checkoutLoading) {
+            setApprovalDialog(null);
+            setApprovalApprovers([]);
+          }
+        }}
+        onConfirm={async (approval: SensitiveActionApproval) => {
+          const success = await runCheckoutSale(approval);
+          if (success) {
+            setApprovalDialog(null);
+            setApprovalApprovers([]);
+          }
+        }}
+      />
     </div>
   );
 }

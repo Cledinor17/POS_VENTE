@@ -2,7 +2,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Ban, Eye, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
+import SensitiveActionApprovalModal, {
+  type SensitiveActionApproval,
+} from "@/components/SensitiveActionApprovalModal";
+import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
+import { hasPermission } from "@/lib/businessAccess";
+import {
+  listBusinessApprovers,
+  type BusinessApproverAbility,
+  type BusinessApproverItem,
+} from "@/lib/businessUsersApi";
 import {
   getPosSaleDetail,
   listPosSales,
@@ -11,10 +21,22 @@ import {
   type PosSaleDetail,
   type PosSaleHistoryItem,
 } from "@/lib/posApi";
-function formatMoney(amount: number): string {
+type ApprovalRequest =
+  | {
+      kind: "refund";
+      sale: PosSaleHistoryItem;
+      requiredAbility: BusinessApproverAbility;
+    }
+  | {
+      kind: "void";
+      sale: PosSaleHistoryItem;
+      requiredAbility: BusinessApproverAbility;
+    };
+
+function formatMoney(amount: number, currency = "USD"): string {
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 2,
   }).format(amount);
 }
@@ -62,6 +84,7 @@ function getStatusMeta(status: string): { label: string; className: string } {
 export default function SalesPage() {
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
+  const { permissions } = useAuth();
   const [items, setItems] = useState<PosSaleHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -79,6 +102,11 @@ export default function SalesPage() {
   const [refundSale, setRefundSale] = useState<PosSaleHistoryItem | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
   const [refundMethod, setRefundMethod] = useState("cash");
+  const [approvalRequest, setApprovalRequest] = useState<ApprovalRequest | null>(null);
+  const [approvalApprovers, setApprovalApprovers] = useState<BusinessApproverItem[]>([]);
+  const [approvalApproversLoading, setApprovalApproversLoading] = useState(false);
+  const canRefundSales = hasPermission(permissions, "billing.refund");
+  const canVoidSales = hasPermission(permissions, "billing.void");
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -110,6 +138,34 @@ export default function SalesPage() {
       mounted = false;
     };
   }, [businessSlug, page, statusFilter, search, refreshTick]);
+  useEffect(() => {
+    if (!approvalRequest || !businessSlug) return;
+
+    let cancelled = false;
+    setApprovalApproversLoading(true);
+    setApprovalApprovers([]);
+
+    void listBusinessApprovers(businessSlug, approvalRequest.requiredAbility)
+      .then((items) => {
+        if (!cancelled) {
+          setApprovalApprovers(items);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(getErrorMessage(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setApprovalApproversLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [approvalRequest, businessSlug]);
   const pageLabel = useMemo(
     () => `Page ${page}/${Math.max(1, lastPage)}`,
     [page, lastPage],
@@ -132,24 +188,43 @@ export default function SalesPage() {
   function closeSaleDetail() {
     setDetailSale(null);
   }
-  async function handleVoidSale(sale: PosSaleHistoryItem) {
-    const confirmed = window.confirm(`Annuler le ticket ${sale.receiptNo} ?`);
-    if (!confirmed) return;
+  async function performVoidSale(
+    sale: PosSaleHistoryItem,
+    approval?: SensitiveActionApproval,
+  ): Promise<boolean> {
     setActionLoadingId(sale.id);
     setError("");
     setInfo("");
     try {
-      await voidPosSale(businessSlug, sale.id);
+      await voidPosSale(businessSlug, sale.id, {
+        approval,
+      });
       setInfo(`Ticket ${sale.receiptNo} annule.`);
       if (detailSale?.id === sale.id) {
         await openSaleDetail(sale.id);
       }
       refreshList();
+      return true;
     } catch (e) {
       setError(getErrorMessage(e));
+      return false;
     } finally {
       setActionLoadingId(null);
     }
+  }
+  async function handleVoidSale(sale: PosSaleHistoryItem) {
+    if (canVoidSales) {
+      const confirmed = window.confirm(`Annuler le ticket ${sale.receiptNo} ?`);
+      if (!confirmed) return;
+      await performVoidSale(sale);
+      return;
+    }
+
+    setApprovalRequest({
+      kind: "void",
+      sale,
+      requiredAbility: "void_invoices",
+    });
   }
   function openRefundSale(sale: PosSaleHistoryItem) {
     setRefundSale(sale);
@@ -163,16 +238,16 @@ export default function SalesPage() {
     setRefundAmount("");
     setRefundMethod("cash");
   }
-  async function submitRefund() {
-    if (!refundSale) return;
+  async function submitRefund(approval?: SensitiveActionApproval): Promise<boolean> {
+    if (!refundSale) return false;
     const amount = Number(refundAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
       setError("Montant de remboursement invalide.");
-      return;
+      return false;
     }
     if (amount > refundSale.amountPaid) {
       setError("Le remboursement depasse le montant paye.");
-      return;
+      return false;
     }
     setActionLoadingId(refundSale.id);
     setError("");
@@ -181,6 +256,7 @@ export default function SalesPage() {
       await refundPosSale(businessSlug, refundSale.id, {
         amount,
         method: refundMethod,
+        approval,
       });
       setInfo(`Remboursement applique sur ${refundSale.receiptNo}.`);
       if (detailSale?.id === refundSale.id) {
@@ -188,8 +264,10 @@ export default function SalesPage() {
       }
       closeRefundPanel();
       refreshList();
+      return true;
     } catch (e) {
       setError(getErrorMessage(e));
+      return false;
     } finally {
       setActionLoadingId(null);
     }
@@ -320,7 +398,28 @@ export default function SalesPage() {
             <div className="flex items-end gap-2">
               {" "}
               <button
-                onClick={submitRefund}
+                onClick={() => {
+                  if (canRefundSales) {
+                    void submitRefund();
+                    return;
+                  }
+
+                  const amount = Number(refundAmount);
+                  if (!Number.isFinite(amount) || amount <= 0) {
+                    setError("Montant de remboursement invalide.");
+                    return;
+                  }
+                  if (amount > refundSale.amountPaid) {
+                    setError("Le remboursement depasse le montant paye.");
+                    return;
+                  }
+
+                  setApprovalRequest({
+                    kind: "refund",
+                    sale: refundSale,
+                    requiredAbility: "refund_payments",
+                  });
+                }}
                 disabled={actionLoadingId === refundSale.id}
                 className="flex-1 rounded-xl brand-primary-btn text-white py-2.5 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
               >
@@ -423,28 +522,28 @@ export default function SalesPage() {
                   {" "}
                   <div className="text-xs text-slate-500">Total</div>{" "}
                   <div className="font-semibold text-slate-800">
-                    {formatMoney(detailSale.total)}
+                    {formatMoney(detailSale.total, detailSale.currency)}
                   </div>{" "}
                 </div>{" "}
                 <div>
                   {" "}
                   <div className="text-xs text-slate-500">Paye</div>{" "}
                   <div className="font-semibold text-slate-800">
-                    {formatMoney(detailSale.amountPaid)}
+                    {formatMoney(detailSale.amountPaid, detailSale.currency)}
                   </div>{" "}
                 </div>{" "}
                 <div>
                   {" "}
                   <div className="text-xs text-slate-500">Rembourse</div>{" "}
                   <div className="font-semibold text-slate-800">
-                    {formatMoney(detailSale.refundedTotal)}
+                    {formatMoney(detailSale.refundedTotal, detailSale.currency)}
                   </div>{" "}
                 </div>{" "}
                 <div>
                   {" "}
                   <div className="text-xs text-slate-500">Solde</div>{" "}
                   <div className="font-semibold text-slate-800">
-                    {formatMoney(detailSale.balanceDue)}
+                    {formatMoney(detailSale.balanceDue, detailSale.currency)}
                   </div>{" "}
                 </div>{" "}
               </div>{" "}
@@ -472,16 +571,16 @@ export default function SalesPage() {
                           <div className="text-xs text-slate-500">
                             {" "}
                             {item.sku || "SKU N/A"} - Qte {item.quantity} x{" "}
-                            {formatMoney(item.unitPrice)}{" "}
+                            {formatMoney(item.unitPrice, detailSale.currency)}{" "}
                           </div>{" "}
                           <div className="text-xs text-slate-600">
                             {" "}
-                            Taxe: {formatMoney(item.taxAmount)} ({item.taxRate}
+                            Taxe: {formatMoney(item.taxAmount, detailSale.currency)} ({item.taxRate}
                             %){" "}
                           </div>{" "}
                           <div className="text-sm font-semibold text-slate-900">
                             {" "}
-                            Ligne: {formatMoney(item.lineTotal)}{" "}
+                            Ligne: {formatMoney(item.lineTotal, detailSale.currency)}{" "}
                           </div>{" "}
                         </div>
                       ))}{" "}
@@ -528,7 +627,7 @@ export default function SalesPage() {
                             {payment.kind.toLowerCase() === "refund"
                               ? "-"
                               : ""}{" "}
-                            {formatMoney(payment.amount)}{" "}
+                            {formatMoney(payment.amount, detailSale.currency)}{" "}
                           </div>{" "}
                           {payment.reference ? (
                             <div className="text-xs text-slate-600">
@@ -604,21 +703,21 @@ export default function SalesPage() {
                       {" "}
                       <div className="text-xs text-slate-500">Total</div>{" "}
                       <div className="font-semibold text-slate-800">
-                        {formatMoney(sale.total)}
+                        {formatMoney(sale.total, sale.currency)}
                       </div>{" "}
                     </div>{" "}
                     <div>
                       {" "}
                       <div className="text-xs text-slate-500">Paye</div>{" "}
                       <div className="font-semibold text-slate-800">
-                        {formatMoney(sale.amountPaid)}
+                        {formatMoney(sale.amountPaid, sale.currency)}
                       </div>{" "}
                     </div>{" "}
                     <div>
                       {" "}
                       <div className="text-xs text-slate-500">Solde</div>{" "}
                       <div className="font-semibold text-slate-800">
-                        {formatMoney(sale.balanceDue)}
+                        {formatMoney(sale.balanceDue, sale.currency)}
                       </div>{" "}
                     </div>{" "}
                     <div>
@@ -691,6 +790,44 @@ export default function SalesPage() {
           </div>{" "}
         </div>{" "}
       </section>{" "}
+      <SensitiveActionApprovalModal
+        open={Boolean(approvalRequest)}
+        title={
+          approvalRequest?.kind === "refund"
+            ? "Validation manager pour remboursement"
+            : "Validation manager pour annulation"
+        }
+        description={
+          approvalRequest?.kind === "refund"
+            ? `Le remboursement du ticket ${approvalRequest.sale.receiptNo} doit etre approuve par un manager ou un superviseur.`
+            : approvalRequest
+              ? `L annulation du ticket ${approvalRequest.sale.receiptNo} doit etre approuvee par un manager ou un superviseur.`
+              : ""
+        }
+        confirmLabel={approvalRequest?.kind === "refund" ? "Autoriser le remboursement" : "Autoriser l annulation"}
+        loading={Boolean(actionLoadingId)}
+        approvers={approvalApprovers}
+        approversLoading={approvalApproversLoading}
+        onClose={() => {
+          if (!actionLoadingId) {
+            setApprovalRequest(null);
+            setApprovalApprovers([]);
+          }
+        }}
+        onConfirm={async (approval) => {
+          if (!approvalRequest) return;
+
+          const success =
+            approvalRequest.kind === "refund"
+              ? await submitRefund(approval)
+              : await performVoidSale(approvalRequest.sale, approval);
+
+          if (success) {
+            setApprovalRequest(null);
+            setApprovalApprovers([]);
+          }
+        }}
+      />
     </div>
   );
 }

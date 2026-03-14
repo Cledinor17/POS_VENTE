@@ -10,6 +10,7 @@ export type PosCartItem = {
   stock: number;
   taxRate: number;
   imagePath: string | null;
+  currency?: string;
 };
 
 export type PosParkedCart = {
@@ -35,6 +36,12 @@ export type PosCheckoutLine = {
   sku?: string;
 };
 
+export type PosApprovalPayload = {
+  userId?: string;
+  email?: string;
+  password: string;
+};
+
 export type PosCheckoutInput = {
   cashierId?: string | number;
   customerId?: string | number | null;
@@ -42,9 +49,14 @@ export type PosCheckoutInput = {
   subtotal: number;
   tax: number;
   total: number;
+  discountType?: "percent" | "fixed" | null;
+  discountValue?: number;
   paymentMethod: string;
+  paymentCurrency?: string;
+  paymentAmount?: number;
   cashReceived?: number;
   changeAmount?: number;
+  approval?: PosApprovalPayload;
   items: PosCheckoutLine[];
 };
 
@@ -52,12 +64,23 @@ export type PosCheckoutResult = {
   saleId: string;
   receiptNo: string;
   createdAt: string;
+  businessName: string;
+  businessAddress: string;
+  businessPhone: string;
+  businessEmail: string;
+  businessLogoDataUri: string | null;
+  paymentCurrency: string;
+  paymentAmount: number;
+  paymentDateLabel: string | null;
+  receiptQrPayload: string | null;
+  receiptQrCodeDataUri: string | null;
 };
 
 export type PosSaleHistoryItem = {
   id: string;
   receiptNo: string;
   status: string;
+  currency: string;
   createdAt: string;
   issueDate: string | null;
   createdBy: string | null;
@@ -271,7 +294,21 @@ function normalizeCheckoutResult(raw: unknown): PosCheckoutResult {
     `TKT-${Date.now()}`
   );
   const createdAt = toString(obj.created_at ?? obj.createdAt, new Date().toISOString());
-  return { saleId, receiptNo, createdAt };
+  return {
+    saleId,
+    receiptNo,
+    createdAt,
+    businessName: toString(obj.business_name ?? obj.businessName, ""),
+    businessAddress: toString(obj.business_address ?? obj.businessAddress, ""),
+    businessPhone: toString(obj.business_phone ?? obj.businessPhone, ""),
+    businessEmail: toString(obj.business_email ?? obj.businessEmail, ""),
+    businessLogoDataUri: toString(obj.business_logo_data_uri ?? obj.businessLogoDataUri, "") || null,
+    paymentCurrency: toString(obj.payment_currency ?? obj.paymentCurrency, "HTG"),
+    paymentAmount: toNumber(obj.payment_amount ?? obj.paymentAmount, 0),
+    paymentDateLabel: toString(obj.payment_date_label ?? obj.paymentDateLabel, "") || null,
+    receiptQrPayload: toString(obj.receipt_qr_payload ?? obj.receiptQrPayload, "") || null,
+    receiptQrCodeDataUri: toString(obj.receipt_qr_code_data_uri ?? obj.receiptQrCodeDataUri, "") || null,
+  };
 }
 
 function normalizeSaleHistoryItem(raw: unknown): PosSaleHistoryItem {
@@ -291,6 +328,7 @@ function normalizeSaleHistoryItem(raw: unknown): PosSaleHistoryItem {
       `TKT-${Date.now()}`
     ),
     status,
+    currency: toString(obj.currency, "HTG"),
     createdAt: toString(obj.created_at ?? obj.createdAt ?? obj.issue_date, new Date().toISOString()),
     issueDate: toString(obj.issue_date ?? obj.issueDate, "") || null,
     createdBy: toString(obj.created_by ?? obj.createdBy ?? obj.cashier_id ?? obj.cashierId, "") || null,
@@ -383,6 +421,15 @@ function normalizeSaleDetail(raw: unknown): PosSaleDetail {
   };
 }
 
+function serializeApprovalPayload(input?: PosApprovalPayload | null) {
+  if (!input) return null;
+  return {
+    user_id: input.userId ?? null,
+    email: input.email ?? null,
+    password: input.password,
+  };
+}
+
 function paymentMethodPaths(business: string): string[] {
   const base = basePath(business);
   return [`${base}/pos/payment-methods`, `${base}/payment-methods`, `${base}/settings/payment-methods`];
@@ -467,12 +514,17 @@ export async function checkoutPosSale(
     tax_total: input.tax,
     total: input.total,
     grand_total: input.total,
+    discount_type: input.discountType ?? null,
+    discount_value: input.discountValue ?? null,
     payment_method: input.paymentMethod,
+    payment_currency: input.paymentCurrency ?? "HTG",
     cash_received: input.cashReceived ?? null,
     change_amount: input.changeAmount ?? null,
+    approval: serializeApprovalPayload(input.approval),
     payment: {
       method: input.paymentMethod,
-      amount: input.total,
+      currency: input.paymentCurrency ?? "HTG",
+      amount: input.paymentAmount ?? input.total,
       cash_received: input.cashReceived ?? null,
       change_amount: input.changeAmount ?? null,
     },
@@ -557,7 +609,13 @@ export async function listAllPosSales(
 export async function refundPosSale(
   business: string,
   saleId: string,
-  input: { amount: number; method?: string; reference?: string; notes?: string }
+  input: {
+    amount: number;
+    method?: string;
+    reference?: string;
+    notes?: string;
+    approval?: PosApprovalPayload;
+  }
 ): Promise<PosSaleHistoryItem> {
   const raw = await apiFetch<unknown>(`${salesBasePath(business)}/${encodeURIComponent(saleId)}/refund`, {
     method: "POST",
@@ -566,14 +624,22 @@ export async function refundPosSale(
       method: input.method ?? "cash",
       reference: input.reference ?? null,
       notes: input.notes ?? null,
+      approval: serializeApprovalPayload(input.approval),
     },
   });
   return normalizeSaleHistoryItem(getResource(raw, ["sale", "invoice"]));
 }
 
-export async function voidPosSale(business: string, saleId: string): Promise<PosSaleHistoryItem> {
+export async function voidPosSale(
+  business: string,
+  saleId: string,
+  input?: { approval?: PosApprovalPayload }
+): Promise<PosSaleHistoryItem> {
   const raw = await apiFetch<unknown>(`${salesBasePath(business)}/${encodeURIComponent(saleId)}/void`, {
     method: "POST",
+    json: {
+      approval: serializeApprovalPayload(input?.approval),
+    },
   });
   return normalizeSaleHistoryItem(getResource(raw, ["sale", "invoice"]));
 }

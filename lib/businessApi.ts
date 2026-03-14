@@ -29,6 +29,10 @@ export type BusinessSettings = {
   website: string;
   tax_number: string;
   currency: string;
+  exchange_rate_direction: string;
+  exchange_rate_value: number;
+  usd_to_htg_rate: number;
+  htg_to_usd_rate: number;
   timezone: string;
   logo_path: string;
   logo_url: string;
@@ -39,6 +43,22 @@ export type BusinessSettings = {
 type BusinessSettingsPayload = Partial<BusinessSettings> & {
   address?: BusinessAddress;
   logoFile?: File | null;
+};
+
+export type CreateBusinessInput = {
+  name: string;
+  slug?: string;
+  legal_name?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  tax_number?: string;
+  currency?: string;
+  exchange_rate_direction?: string;
+  exchange_rate_value?: number;
+  timezone?: string;
+  invoice_footer?: string;
+  address?: BusinessAddress;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -81,6 +101,10 @@ function normalizeBusiness(raw: unknown): BusinessSettings {
     website: asString(obj.website),
     tax_number: asString(obj.tax_number),
     currency: asString(obj.currency),
+    exchange_rate_direction: asString(obj.exchange_rate_direction, "usd_to_htg"),
+    exchange_rate_value: Number(obj.exchange_rate_value ?? 1) || 1,
+    usd_to_htg_rate: Number(obj.usd_to_htg_rate ?? obj.exchange_rate_value ?? 1) || 1,
+    htg_to_usd_rate: Number(obj.htg_to_usd_rate ?? 1) || 1,
     timezone: asString(obj.timezone),
     logo_path: asString(obj.logo_path),
     logo_url: asString(obj.logo_url),
@@ -108,6 +132,8 @@ function buildBusinessFormData(payload: BusinessSettingsPayload): FormData {
     "website",
     "tax_number",
     "currency",
+    "exchange_rate_direction",
+    "exchange_rate_value",
     "timezone",
     "invoice_footer",
   ];
@@ -144,6 +170,15 @@ export async function getBusinessSettings(business: string): Promise<BusinessSet
   const raw = await apiFetch<unknown>(`/api/app/${encodeURIComponent(business)}/business`);
   const payload = asRecord(raw);
   return normalizeBusiness(payload.data ?? payload);
+}
+
+export async function createBusiness(payload: CreateBusinessInput): Promise<BusinessSettings> {
+  const raw = await apiFetch<unknown>("/api/app/businesses", {
+    method: "POST",
+    json: payload,
+  });
+  const body = asRecord(raw);
+  return normalizeBusiness(body.data ?? body);
 }
 
 export async function getOnlineCurrencies(): Promise<CurrencyOption[]> {

@@ -57,6 +57,7 @@ function movementActorLabel(movement: InventoryMovement): string {
   return "N/A";
 }
 const EMPTY_SUMMARY: InventorySummaryResult = {
+  currency: "USD",
   summary: {
     totalProducts: 0,
     trackedProducts: 0,

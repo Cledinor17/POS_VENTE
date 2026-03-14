@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Ban, Pencil, Power, PowerOff, Trash2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
+import { hasPermission } from "@/lib/businessAccess";
 import {
   DEFAULT_PRODUCT_AVATAR_PATH,
   resolveProductImageUrl,
@@ -17,6 +18,8 @@ import {
   type ProductStatus,
   type UpdateProductInput,
 } from "@/lib/catalogApi";
+import { formatMoney } from "@/lib/currency";
+import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
 function statusClass(status: ProductStatus) {
   if (status === "active")
     return "bg-emerald-50 text-emerald-700 border-emerald-200";
@@ -39,7 +42,9 @@ function toUpdatePayload(
     type: product.type,
     barcode: product.barcode,
     price: product.price,
+    priceCurrency: product.priceCurrency,
     cost: product.cost,
+    costCurrency: product.costCurrency,
     stock: product.stock,
     reorderLevel: product.reorderLevel,
     unit: product.unit,
@@ -54,6 +59,7 @@ function toUpdatePayload(
 export default function ProductsPage() {
   const params = useParams<{ business: string }>();
   const business = params?.business ?? "";
+  const { loading: permissionsLoading, permissions: currentPermissions } = useBusinessPermissions(business);
   const [allProducts, setAllProducts] = useState<CatalogProduct[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | ProductStatus>("all");
@@ -62,10 +68,23 @@ export default function ProductsPage() {
   const [deletingId, setDeletingId] = useState<string>("");
   const [updatingId, setUpdatingId] = useState<string>("");
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+  const canReadCatalog = hasPermission(currentPermissions, ["catalog.read", "supplies.read", "supplies.manage"]);
+  const canCreateProducts = hasPermission(currentPermissions, ["products.create", "supplies.manage"]);
+  const canEditProducts = hasPermission(currentPermissions, ["products.edit", "supplies.manage"]);
+  const canManageSupplies = hasPermission(currentPermissions, "supplies.manage");
+  const canSeeCategories = hasPermission(currentPermissions, ["supplies.read", "supplies.manage"]);
+  const hasProductAccess = canReadCatalog || canCreateProducts || canEditProducts || canManageSupplies;
+  const isProductsReadOnly = canReadCatalog && !canCreateProducts && !canEditProducts && !canManageSupplies;
   useEffect(() => {
     let mounted = true;
     async function loadProducts() {
-      if (!business) return;
+      if (!business || permissionsLoading) return;
+      if (!canReadCatalog) {
+        if (!mounted) return;
+        setAllProducts([]);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError("");
       try {
@@ -81,9 +100,9 @@ export default function ProductsPage() {
     return () => {
       mounted = false;
     };
-  }, [business]);
+  }, [business, canReadCatalog, permissionsLoading]);
   async function onDelete(item: CatalogProduct) {
-    if (!business) return;
+    if (!business || !canManageSupplies) return;
     if (item.soldCount > 0) {
       setError(
         "Suppression interdite: ce produit a deja ete vendu au moins une fois.",
@@ -107,7 +126,7 @@ export default function ProductsPage() {
     }
   }
   async function onToggleActive(item: CatalogProduct) {
-    if (!business) return;
+    if (!business || !canEditProducts) return;
     const id = String(item.id);
     setUpdatingId(id);
     setError("");
@@ -161,21 +180,40 @@ export default function ProductsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              href={business ? `/${business}/categories` : "/"}
-              className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Voir categories
-            </Link>
-            <Link
-              href={business ? `/${business}/products/new` : "/"}
-              className="inline-flex items-center rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white "
-            >
-              Nouveau produit
-            </Link>
+            {canSeeCategories ? (
+              <Link
+                href={business ? `/${business}/categories` : "/"}
+                className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Voir categories
+              </Link>
+            ) : null}
+            {canCreateProducts ? (
+              <Link
+                href={business ? `/${business}/products/new` : "/"}
+                className="inline-flex items-center rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white "
+              >
+                Nouveau produit
+              </Link>
+            ) : null}
           </div>
         </div>
       </section>
+      {!permissionsLoading && !hasProductAccess ? (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Ce profil n&apos;a pas encore d&apos;acces au catalogue produits.
+        </section>
+      ) : null}
+      {!permissionsLoading && !canReadCatalog && canCreateProducts ? (
+        <section className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          Ce profil peut ajouter des produits, mais il ne peut pas consulter toute la liste du catalogue.
+        </section>
+      ) : null}
+      {!permissionsLoading && isProductsReadOnly ? (
+        <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          Acces en lecture seule: le catalogue reste visible, mais les actions de creation et de modification sont masquees.
+        </section>
+      ) : null}
       {error ? (
         <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
@@ -199,6 +237,13 @@ export default function ProductsPage() {
         />
       </section>
       <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+        {!canReadCatalog ? (
+          <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-600">
+            Le catalogue detaille n&apos;est pas visible avec ce profil.
+          </div>
+        ) : null}
+        {canReadCatalog ? (
+          <>
         <div className="flex flex-col gap-3 md:flex-row">
           <input
             value={query}
@@ -271,7 +316,7 @@ export default function ProductsPage() {
                         {item.category}
                       </td>
                       <td className="py-3 pr-3 text-slate-700">
-                        ${item.price.toFixed(2)}
+                        {formatMoney(item.price, item.priceCurrency)}
                       </td>
                       <td className="py-3 pr-3">
                         <span
@@ -298,59 +343,68 @@ export default function ProductsPage() {
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-2">
-                          <Link
-                            href={
-                              business
-                                ? `/${business}/products/${itemId}/edit`
-                                : "/"
-                            }
-                            title="Modifier le produit"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Link>
-                          <button
-                            onClick={() => onToggleActive(item)}
-                            disabled={
-                              updatingId === itemId || deletingId === itemId
-                            }
-                            title={
-                              item.active
-                                ? "Desactiver le produit"
-                                : "Activer le produit"
-                            }
-                            className={
-                              item.active
-                                ? "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
-                                : "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
-                            }
-                          >
-                            {item.active ? (
-                              <Power className="h-4 w-4" />
-                            ) : (
-                              <PowerOff className="h-4 w-4" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => onDelete(item)}
-                            disabled={
-                              deletingId === itemId ||
-                              updatingId === itemId ||
-                              item.soldCount > 0
-                            }
-                            title={
-                              item.soldCount > 0
-                                ? "Suppression impossible: produit deja vendu."
-                                : "Supprimer le produit"
-                            }
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-60 disabled:cursor-not-allowed"
-                          >
-                            {item.soldCount > 0 ? (
-                              <Ban className="h-4 w-4" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </button>
+                          {canEditProducts ? (
+                            <>
+                              <Link
+                                href={
+                                  business
+                                    ? `/${business}/products/${itemId}/edit`
+                                    : "/"
+                                }
+                                title="Modifier le produit"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Link>
+                              <button
+                                onClick={() => onToggleActive(item)}
+                                disabled={
+                                  updatingId === itemId || deletingId === itemId
+                                }
+                                title={
+                                  item.active
+                                    ? "Desactiver le produit"
+                                    : "Activer le produit"
+                                }
+                                className={
+                                  item.active
+                                    ? "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    : "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                                }
+                              >
+                                {item.active ? (
+                                  <Power className="h-4 w-4" />
+                                ) : (
+                                  <PowerOff className="h-4 w-4" />
+                                )}
+                              </button>
+                            </>
+                          ) : null}
+                          {canManageSupplies ? (
+                            <button
+                              onClick={() => onDelete(item)}
+                              disabled={
+                                deletingId === itemId ||
+                                updatingId === itemId ||
+                                item.soldCount > 0
+                              }
+                              title={
+                                item.soldCount > 0
+                                  ? "Suppression impossible: produit deja vendu."
+                                  : "Supprimer le produit"
+                              }
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {item.soldCount > 0 ? (
+                                <Ban className="h-4 w-4" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </button>
+                          ) : null}
+                          {!canEditProducts && !canManageSupplies ? (
+                            <span className="text-xs text-slate-400">Lecture seule</span>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -367,6 +421,8 @@ export default function ProductsPage() {
             </table>
           </div>
         )}
+          </>
+        ) : null}
       </section>
     </div>
   );

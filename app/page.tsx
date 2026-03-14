@@ -14,7 +14,10 @@ export default function AppLandingPage() {
     if (loading) return;
 
     const slug = activeBusiness?.slug || businesses[0]?.slug;
-    if (!slug) return;
+    if (!slug) {
+      router.replace("/onboarding/business");
+      return;
+    }
 
     router.replace(`/${slug}/dashboard`);
   }, [activeBusiness, businesses, loading, router]);
@@ -38,9 +41,9 @@ export default function AppLandingPage() {
             <p className="text-slate-700">Redirection en cours...</p>
           ) : (
             <div className="space-y-4">
-              <h1 className="text-xl font-semibold text-slate-900">Aucun business assigne</h1>
+              <h1 className="text-xl font-semibold text-slate-900">Preparation de votre espace</h1>
               <p className="text-slate-600">
-                Votre compte est authentifie mais aucun business actif n&apos;est disponible.
+                Votre compte est authentifie. Redirection vers la creation de votre business...
               </p>
               <button
                 className="rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50"

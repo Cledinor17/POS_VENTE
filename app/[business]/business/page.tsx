@@ -11,6 +11,7 @@ import {
   type BusinessSettings,
   type CurrencyOption,
 } from "@/lib/businessApi";
+import { formatExchangeRateSummary } from "@/lib/currency";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const API_ORIGIN = (() => {
@@ -198,6 +199,8 @@ type BusinessFormState = {
   website: string;
   taxNumber: string;
   currency: string;
+  exchangeRateDirection: string;
+  exchangeRateValue: string;
   timezone: string;
   invoiceFooter: string;
   line1: string;
@@ -216,6 +219,8 @@ const initialFormState: BusinessFormState = {
   website: "",
   taxNumber: "",
   currency: "",
+  exchangeRateDirection: "usd_to_htg",
+  exchangeRateValue: "1",
   timezone: "",
   invoiceFooter: "",
   line1: "",
@@ -241,6 +246,8 @@ function toFormState(data: BusinessSettings): BusinessFormState {
     website: data.website ?? "",
     taxNumber: data.tax_number ?? "",
     currency: data.currency ?? "",
+    exchangeRateDirection: data.exchange_rate_direction ?? "usd_to_htg",
+    exchangeRateValue: String(data.exchange_rate_value ?? 1),
     timezone: data.timezone ?? "",
     invoiceFooter: data.invoice_footer ?? "",
     line1: data.address?.line1 ?? "",
@@ -312,6 +319,9 @@ function validateForm(form: BusinessFormState): string {
   }
   if (form.email.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
     return "L'email n'est pas valide.";
+  }
+  if (Number(form.exchangeRateValue) <= 0) {
+    return "Le taux de change doit etre superieur a zero.";
   }
   return "";
 }
@@ -478,6 +488,8 @@ export default function BusinessPage() {
         website: form.website.trim(),
         tax_number: form.taxNumber.trim(),
         currency: form.currency.trim(),
+        exchange_rate_direction: form.exchangeRateDirection,
+        exchange_rate_value: Number(form.exchangeRateValue || "1"),
         timezone: form.timezone.trim(),
         invoice_footer: form.invoiceFooter.trim(),
         address: {
@@ -613,7 +625,7 @@ export default function BusinessPage() {
             />
           </Field>
 
-          <Field label="Tax number / NIF">
+          <Field label="NIF / NINU / ID">
             <input
               value={form.taxNumber}
               onChange={(event) => setField("taxNumber", event.target.value)}
@@ -648,6 +660,41 @@ export default function BusinessPage() {
               ))}
             </select>
           </Field>
+
+          <Field label="Sens du taux">
+            <select
+              value={form.exchangeRateDirection}
+              onChange={(event) => setField("exchangeRateDirection", event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="usd_to_htg">USD vers HTG</option>
+              <option value="htg_to_usd">HTG vers USD</option>
+            </select>
+          </Field>
+
+          <Field label="Taux de change">
+            <input
+              type="number"
+              min="0.000001"
+              step="0.000001"
+              value={form.exchangeRateValue}
+              onChange={(event) => setField("exchangeRateValue", event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </Field>
+
+          <div className="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <div className="font-semibold">Taux actif HTG / USD</div>
+            <div className="mt-1">
+              {formatExchangeRateSummary({
+                exchangeRateDirection: form.exchangeRateDirection,
+                exchangeRateValue: Number(form.exchangeRateValue || "1"),
+              })}
+            </div>
+            <div className="mt-1 text-xs text-blue-700">
+              Le systeme gardera les chambres/nuit en USD, les moments en HTG et les produits en HTG, tout en laissant le client payer dans l'une ou l'autre devise.
+            </div>
+          </div>
 
           <Field label="Timezone">
             <input

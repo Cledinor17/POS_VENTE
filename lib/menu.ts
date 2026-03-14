@@ -1,9 +1,9 @@
-import type { Permission } from "./rbac";
+﻿import type { Permission } from "./rbac";
 
 export type MenuItem = {
   label: string;
   href: (business: string) => string;
-  icon: string; // FontAwesome class
+  icon: string;
   permission?: Permission;
 };
 
@@ -63,29 +63,19 @@ export const menuGroups: MenuGroup[] = [
     ],
   },
   {
-    title: "Finance",
-    items: [
-      { label: "Dépenses", href: (b) => `/${b}/expenses`, icon: "fa-solid fa-money-bill-wave", permission: "expenses.manage" },
-      { label: "Paiements", href: (b) => `/${b}/payments`, icon: "fa-solid fa-credit-card", permission: "expenses.manage" },
-      { label: "Exports", href: (b) => `/${b}/exports`, icon: "fa-solid fa-file-export", permission: "reports.read" },
-    ],
-  },
-  {
-    title: "Analyse",
-    items: [
-      { label: "Rapports", href: (b) => `/${b}/reports`, icon: "fa-solid fa-chart-line", permission: "reports.read" },
-    ],
-  },
-  {
     title: "Administration",
     items: [
-      { label: "My Business", href: (b) => `/${b}/business`, icon: "fa-solid fa-building", permission: "settings.manage" },
       { label: "Utilisateurs", href: (b) => `/${b}/users`, icon: "fa-solid fa-user-gear", permission: "users.manage" },
       { label: "Employes", href: (b) => `/${b}/employees`, icon: "fa-solid fa-id-badge", permission: "users.manage" },
-      { label: "Rôles & permissions", href: (b) => `/${b}/roles`, icon: "fa-solid fa-shield-halved", permission: "roles.manage" },
+      { label: "My Business", href: (b) => `/${b}/business`, icon: "fa-solid fa-building", permission: "settings.manage" },
       { label: "Business / Branches", href: (b) => `/${b}/business`, icon: "fa-solid fa-sitemap", permission: "business.manage" },
       { label: "Paramètres", href: (b) => `/${b}/settings`, icon: "fa-solid fa-gear", permission: "settings.manage" },
-      { label: "Journal d’audit", href: (b) => `/${b}/audit-logs`, icon: "fa-solid fa-clipboard-list", permission: "audit.read" },
+      { label: "Dépenses", href: (b) => `/${b}/expenses`, icon: "fa-solid fa-money-bill-wave", permission: "expenses.manage" },
+      { label: "Paiements", href: (b) => `/${b}/invoices`, icon: "fa-solid fa-credit-card", permission: "expenses.manage" },
+      { label: "Exports", href: (b) => `/${b}/reports`, icon: "fa-solid fa-file-export", permission: "reports.read" },
+      { label: "Rapports", href: (b) => `/${b}/reports`, icon: "fa-solid fa-chart-line", permission: "reports.read" },
+      { label: "Rôles & permissions", href: (b) => `/${b}/users`, icon: "fa-solid fa-shield-halved", permission: "roles.manage" },
+      { label: "Journal d'audit", href: (b) => `/${b}/audit`, icon: "fa-solid fa-clipboard-list", permission: "audit.read" },
     ],
   },
 ];

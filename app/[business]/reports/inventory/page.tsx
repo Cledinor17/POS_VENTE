@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { formatMoney as formatCurrency } from "@/lib/currency";
 import {
   getInventorySummary,
   listInventoryMovements,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/inventoryApi";
 
 const EMPTY_SUMMARY: InventorySummaryResult = {
+  currency: "USD",
   summary: {
     totalProducts: 0,
     trackedProducts: 0,
@@ -29,12 +31,8 @@ function getErrorMessage(error: unknown): string {
   return "Une erreur est survenue.";
 }
 
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
+function formatMoney(amount: number, currency: string): string {
+  return formatCurrency(amount, currency);
 }
 
 function formatQty(value: number): string {
@@ -52,6 +50,7 @@ export default function InventoryReportsPage() {
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const reportCurrency = summary.currency || "USD";
 
   useEffect(() => {
     let mounted = true;
@@ -98,7 +97,7 @@ export default function InventoryReportsPage() {
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard label="Produits suivis" value={String(summary.summary.trackedProducts)} tone="text-indigo-700" />
         <StatCard label="Stock total" value={formatQty(summary.summary.stockUnits)} tone="text-slate-800" />
-        <StatCard label="Valeur stock" value={formatMoney(summary.summary.stockValue)} tone="text-sky-700" />
+        <StatCard label="Valeur stock" value={formatMoney(summary.summary.stockValue, reportCurrency)} tone="text-sky-700" />
         <StatCard label="Ruptures" value={String(summary.summary.outOfStockCount)} tone="text-rose-700" />
       </section>
 

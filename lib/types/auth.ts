@@ -2,6 +2,7 @@ export type AuthUser = {
   id?: number | string;
   name?: string;
   email?: string;
+  email_verified_at?: string | null;
   avatar_path?: string | null;
   avatar_url?: string | null;
   [key: string]: unknown;
@@ -15,6 +16,19 @@ export type BusinessSummary = {
 };
 
 export type LoginResponse = {
+  token: string;
+  user: AuthUser;
+};
+
+export type RegistrationStartResponse = {
+  message: string;
+  email: string;
+  expires_at?: string | null;
+  debug_code?: string | null;
+};
+
+export type VerificationResponse = {
+  message: string;
   token: string;
   user: AuthUser;
 };

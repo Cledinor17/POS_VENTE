@@ -6,7 +6,9 @@ import { RequireAuth } from "./RequireAuth";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { logout } from "../lib/authApi";
+import { getCurrentUserDailyReport, type CurrentUserDailyReport } from "../lib/currentUserReportApi";
 import { useAuth } from "../context/AuthContext";
+import CurrentUserDailyReportModal from "./CurrentUserDailyReportModal";
 import { ChevronDown, Menu, ShoppingCart, X } from "lucide-react";
 
 function initials(name: string) {
@@ -27,6 +29,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [desktopSidebarReady, setDesktopSidebarReady] = useState(false);
   const [posCartCount, setPosCartCount] = useState(0);
+  const [mobileDailyReportOpen, setMobileDailyReportOpen] = useState(false);
 
   const title = useMemo(() => (business ? business.toUpperCase() : "POS"), [business]);
   const isPosRoute = useMemo(
@@ -257,6 +260,16 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
                         <button
                           onClick={() => {
                             setMobileProfileOpen(false);
+                            setMobileDailyReportOpen(true);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-orange-50 text-slate-700 text-sm font-semibold"
+                        >
+                          Mon rapport du jour
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setMobileProfileOpen(false);
                             void handleLogout();
                           }}
                           className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-red-50 text-red-600 text-sm font-semibold"
@@ -274,7 +287,196 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
           {/* Page */}
           <div className="min-h-screen p-4 md:p-6 overflow-y-auto">{children}</div>
         </main>
+
+        {mobileDailyReportOpen ? (
+          <CurrentUserDailyReportModal
+            business={business}
+            userName={user?.name ?? "Utilisateur"}
+            variant="mobile"
+            onClose={() => setMobileDailyReportOpen(false)}
+          />
+        ) : null}
       </div>
     </RequireAuth>
+  );
+}
+
+function formatMoney(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: currency || "USD",
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency || "USD"}`;
+  }
+}
+
+function formatDateTime(value: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function paymentMethodLabel(value: string | null) {
+  switch ((value || "").toLowerCase()) {
+    case "cash":
+      return "Cash";
+    case "card":
+      return "Carte";
+    case "bank":
+      return "Banque";
+    case "mobile":
+    case "moncash":
+      return "Mobile";
+    case "other":
+      return "Autre";
+    default:
+      return value || "-";
+  }
+}
+
+function MobileDailyReportModal({
+  business,
+  userName,
+  onClose,
+}: {
+  business: string;
+  userName: string;
+  onClose: () => void;
+}) {
+  const [report, setReport] = useState<CurrentUserDailyReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      if (!business) return;
+      setLoading(true);
+      setErr("");
+
+      try {
+        const next = await getCurrentUserDailyReport(business);
+        if (!cancelled) setReport(next);
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message ?? "Impossible de charger le rapport du jour.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [business]);
+
+  const currency = report?.currency || "USD";
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3">
+      <div className="max-h-[88vh] w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div>
+            <div className="font-bold text-slate-900">Mon rapport du jour</div>
+            <div className="text-xs text-slate-500">{userName}</div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Fermer
+          </button>
+        </div>
+
+        <div className="max-h-[calc(88vh-64px)] space-y-4 overflow-y-auto p-4">
+          {err ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{err}</div> : null}
+
+          {loading ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              Chargement du rapport...
+            </div>
+          ) : report ? (
+            <>
+              <div className="grid gap-3">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="text-xs font-semibold text-emerald-700">Cash a remettre</div>
+                  <div className="mt-1 text-xl font-extrabold text-emerald-900">
+                    {formatMoney(report.summary.cashToSubmit, currency)}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                    <div className="text-xs font-semibold text-slate-500">Ventes du jour</div>
+                    <div className="mt-1 text-lg font-extrabold text-slate-900">
+                      {formatMoney(report.summary.salesTotal, currency)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                    <div className="text-xs font-semibold text-slate-500">Encaissements du jour</div>
+                    <div className="mt-1 text-lg font-extrabold text-slate-900">
+                      {formatMoney(report.summary.receiptsTotal, currency)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-2 font-bold text-slate-900">Mes ventes du jour</div>
+                <div className="space-y-2">
+                  {report.sales.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+                      Aucune vente enregistree.
+                    </div>
+                  ) : (
+                    report.sales.map((item) => (
+                      <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-semibold text-slate-900">{item.label}</div>
+                            <div className="text-xs text-slate-500">
+                              {item.source}
+                              {item.reference ? ` - ${item.reference}` : ""}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-600">{item.counterparty || "-"}</div>
+                            <div className="text-[11px] text-slate-500">{formatDateTime(item.occurredAt)}</div>
+                          </div>
+                          <div className="text-right font-bold text-slate-900">
+                            {formatMoney(item.amount, currency)}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-2 font-bold text-slate-900">Ventilation des encaissements</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(report.paymentMethods).map(([method, amount]) => (
+                    <div key={method} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <div className="text-xs font-semibold text-slate-500">{paymentMethodLabel(method)}</div>
+                      <div className="mt-1 font-bold text-slate-900">{formatMoney(amount, currency)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }

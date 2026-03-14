@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import type { BusinessPermission, BusinessRole, BusinessUserStatus } from "./businessAccess";
 
 type Dict = Record<string, unknown>;
 
@@ -9,6 +10,8 @@ export type BusinessUserItem = {
   role: string;
   status: string;
   createdAt: string | null;
+  permissions: BusinessPermission[];
+  hasCustomPermissions: boolean;
 };
 
 export type BusinessUserListResult = {
@@ -17,6 +20,20 @@ export type BusinessUserListResult = {
   perPage: number;
   total: number;
   lastPage: number;
+  roles: string[];
+  permissions: BusinessPermission[];
+};
+
+export type BusinessApproverAbility =
+  | "discount_billing"
+  | "refund_payments"
+  | "void_invoices";
+
+export type BusinessApproverItem = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
 };
 
 export type ListBusinessUsersParams = {
@@ -28,12 +45,14 @@ export type CreateBusinessUserInput = {
   name: string;
   email: string;
   password?: string;
-  role: "admin" | "manager" | "accountant" | "staff";
+  role: BusinessRole;
+  permissions?: BusinessPermission[];
 };
 
 export type UpdateBusinessUserInput = {
-  role: "admin" | "manager" | "accountant" | "staff";
-  status?: "active" | "disabled";
+  role: BusinessRole;
+  status?: BusinessUserStatus;
+  permissions?: BusinessPermission[];
 };
 
 function isObject(value: unknown): value is Dict {
@@ -105,6 +124,10 @@ function normalizeBusinessUser(raw: unknown): BusinessUserItem {
     role: toString(obj.role, "staff"),
     status: toString(obj.status, "active"),
     createdAt: toString(obj.created_at ?? obj.createdAt, "") || null,
+    permissions: Array.isArray(obj.permissions)
+      ? obj.permissions.filter((value): value is BusinessPermission => typeof value === "string")
+      : [],
+    hasCustomPermissions: Boolean(obj.has_custom_permissions ?? obj.hasCustomPermissions),
   };
 }
 
@@ -128,6 +151,12 @@ export async function listBusinessUsers(
     perPage: meta.perPage,
     total: meta.total,
     lastPage: meta.lastPage,
+    roles: isObject(raw) && Array.isArray(raw.roles)
+      ? raw.roles.filter((value): value is string => typeof value === "string")
+      : [],
+    permissions: isObject(raw) && Array.isArray(raw.permissions)
+      ? raw.permissions.filter((value): value is BusinessPermission => typeof value === "string")
+      : [],
   };
 }
 
@@ -142,6 +171,7 @@ export async function createBusinessUser(
       email: input.email,
       password: input.password ?? null,
       role: input.role,
+      permissions: input.permissions ?? null,
     },
   });
 }
@@ -156,6 +186,7 @@ export async function updateBusinessUser(
     json: {
       role: input.role,
       status: input.status ?? null,
+      permissions: input.permissions ?? null,
     },
   });
 }
@@ -166,5 +197,28 @@ export async function removeBusinessUser(
 ): Promise<void> {
   await apiFetch<unknown>(`${basePath(business)}/${encodeURIComponent(userId)}`, {
     method: "DELETE",
+  });
+}
+
+export async function listBusinessApprovers(
+  business: string,
+  ability: BusinessApproverAbility,
+): Promise<BusinessApproverItem[]> {
+  const qp = new URLSearchParams();
+  qp.set("ability", ability);
+
+  const raw = await apiFetch<unknown>(
+    `/api/app/${encodeURIComponent(business)}/sales/approvers?${qp.toString()}`,
+  );
+
+  const items = getCollection(raw);
+  return items.map((rawItem) => {
+    const obj = isObject(rawItem) ? rawItem : {};
+    return {
+      id: toString(obj.id, ""),
+      name: toString(obj.name, ""),
+      email: toString(obj.email, ""),
+      role: toString(obj.role, "staff"),
+    };
   });
 }

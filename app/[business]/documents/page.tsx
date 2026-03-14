@@ -1,8 +1,19 @@
 "use client";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import SensitiveActionApprovalModal, {
+  type SensitiveActionApproval,
+} from "@/components/SensitiveActionApprovalModal";
+import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
+import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
+import { hasPermission } from "@/lib/businessAccess";
+import {
+  listBusinessApprovers,
+  type BusinessApproverItem,
+} from "@/lib/businessUsersApi";
 import { getProducts, type CatalogProduct } from "@/lib/catalogApi";
+import { convertAmount, formatMoney } from "@/lib/currency";
 import {
   createSalesDocument,
   convertSalesDocumentToInvoice,
@@ -23,6 +34,7 @@ type ConvertFormState = {
   discountType: "" | "percent" | "fixed";
   discountValue: string;
   paymentAmount: string;
+  paymentCurrency: "USD" | "HTG";
   paymentMethod: "cash" | "card" | "bank" | "moncash" | "cheque" | "other";
   paymentDate: string;
   paymentReference: string;
@@ -38,11 +50,12 @@ function createDraftLine(): DraftLine {
     taxRate: "0",
   };
 }
-function createConvertFormState(): ConvertFormState {
+function createConvertFormState(defaultCurrency: "USD" | "HTG" = "USD"): ConvertFormState {
   return {
     discountType: "",
     discountValue: "",
     paymentAmount: "",
+    paymentCurrency: defaultCurrency,
     paymentMethod: "cash",
     paymentDate: new Date().toISOString().slice(0, 10),
     paymentReference: "",
@@ -53,13 +66,6 @@ function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Une erreur est survenue.";
-}
-function formatMoney(amount: number, currency = "USD"): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
 }
 function parseNumber(input: string, fallback = 0): number {
   const value = Number(input);
@@ -113,6 +119,8 @@ function paymentStateBadge(
 export default function DocumentsPage() {
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
+  const { permissions } = useAuth();
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [items, setItems] = useState<SalesDocumentItem[]>([]);
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +151,55 @@ export default function DocumentsPage() {
   const [convertForm, setConvertForm] = useState<ConvertFormState>(
     createConvertFormState(),
   );
+  const [convertApprovalOpen, setConvertApprovalOpen] = useState(false);
+  const [convertApprovers, setConvertApprovers] = useState<BusinessApproverItem[]>([]);
+  const [convertApproversLoading, setConvertApproversLoading] = useState(false);
+  const canDiscountBilling = hasPermission(permissions, "billing.discount");
+  useEffect(() => {
+    let mounted = true;
+    async function loadBusinessConfig() {
+      if (!businessSlug) return;
+      try {
+        const data = await getBusinessSettings(businessSlug);
+        if (mounted) setBusinessSettings(data);
+      } catch (e) {
+        if (mounted) setError(getErrorMessage(e));
+      }
+    }
+    void loadBusinessConfig();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug]);
+
+  useEffect(() => {
+    if (!convertApprovalOpen || !businessSlug) return;
+
+    let cancelled = false;
+    setConvertApproversLoading(true);
+    setConvertApprovers([]);
+
+    void listBusinessApprovers(businessSlug, "discount_billing")
+      .then((items) => {
+        if (!cancelled) {
+          setConvertApprovers(items);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setError(getErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setConvertApproversLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [businessSlug, convertApprovalOpen]);
   useEffect(() => {
     let mounted = true;
     async function loadProducts() {
@@ -213,6 +270,41 @@ export default function DocumentsPage() {
       { subtotal: 0, tax: 0, total: 0 },
     );
   }, [lines]);
+  const estimatedConvertedTotal = useMemo(() => {
+    if (!convertTarget) return 0;
+    const baseTotal = Number(convertTarget.total || 0);
+    const discountValue = Math.max(0, parseNumber(convertForm.discountValue, 0));
+    if (!convertForm.discountType || discountValue <= 0) return baseTotal;
+    const discountAmount =
+      convertForm.discountType === "percent"
+        ? (baseTotal * discountValue) / 100
+        : discountValue;
+    return Math.max(0, Number((baseTotal - Math.min(baseTotal, discountAmount)).toFixed(2)));
+  }, [convertForm.discountType, convertForm.discountValue, convertTarget]);
+  const convertedTotalInPaymentCurrency = useMemo(() => {
+    if (!convertTarget) return 0;
+    return convertAmount(
+      estimatedConvertedTotal,
+      convertTarget.currency,
+      convertForm.paymentCurrency,
+      {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+      },
+    );
+  }, [businessSettings, convertForm.paymentCurrency, convertTarget, estimatedConvertedTotal]);
+  const convertPaymentEquivalent = useMemo(() => {
+    if (!convertTarget) return 0;
+    return convertAmount(
+      Number(convertForm.paymentAmount || "0"),
+      convertForm.paymentCurrency,
+      convertTarget.currency,
+      {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+      },
+    );
+  }, [businessSettings, convertForm.paymentAmount, convertForm.paymentCurrency, convertTarget]);
   function updateLine(lineKey: string, patch: Partial<DraftLine>) {
     setLines((prev) =>
       prev.map((line) => (line.key === lineKey ? { ...line, ...patch } : line)),
@@ -300,26 +392,37 @@ export default function DocumentsPage() {
     setError("");
     setInfo("");
     setConvertTarget(item);
-    setConvertForm(createConvertFormState());
+    setConvertForm(createConvertFormState(item.currency.toUpperCase() === "HTG" ? "HTG" : "USD"));
   }
   function closeConvertModal() {
     setConvertTarget(null);
     setConvertForm(createConvertFormState());
+    setConvertApprovalOpen(false);
+    setConvertApprovers([]);
   }
   async function handleConvert(
     item: SalesDocumentItem,
     options: ConvertFormState,
-  ) {
-    if (!businessSlug) return;
+    approval?: SensitiveActionApproval,
+  ): Promise<boolean> {
+    if (!businessSlug) return false;
     const discountValue = parseNumber(options.discountValue, 0);
     const paymentAmount = parseNumber(options.paymentAmount, 0);
     if (options.discountType && discountValue <= 0) {
       setError("Le rabais doit etre superieur a zero.");
-      return;
+      return false;
+    }
+    if (options.discountType && discountValue > 0 && !canDiscountBilling && !approval) {
+      setConvertApprovalOpen(true);
+      return false;
     }
     if (paymentAmount < 0) {
       setError("Le paiement ne peut pas etre negatif.");
-      return;
+      return false;
+    }
+    if (convertPaymentEquivalent - estimatedConvertedTotal > 0.000001) {
+      setError("Le paiement depasse le total de la facture convertie.");
+      return false;
     }
     setRowBusyKey(`convert-${item.id}`);
     setError("");
@@ -331,10 +434,12 @@ export default function DocumentsPage() {
         {
           discountType: options.discountType || undefined,
           discountValue: options.discountType ? discountValue : undefined,
+          approval,
           payment:
             paymentAmount > 0
               ? {
                   amount: paymentAmount,
+                  currency: options.paymentCurrency,
                   method: options.paymentMethod,
                   paidAt: options.paymentDate || undefined,
                   reference: options.paymentReference || undefined,
@@ -345,15 +450,21 @@ export default function DocumentsPage() {
       );
       const paymentInfo =
         invoice.amountPaid > 0
-          ? ` Paiement enregistre: ${formatMoney(invoice.amountPaid, invoice.currency)}.`
+          ? ` Paiement enregistre: ${
+              options.paymentCurrency === invoice.currency
+                ? formatMoney(paymentAmount, options.paymentCurrency)
+                : `${formatMoney(paymentAmount, options.paymentCurrency)} applique a ${formatMoney(invoice.amountPaid, invoice.currency)}`
+            }.`
           : "";
       setInfo(
         `Document ${item.number} converti en facture ${invoice.number} (${invoice.status}).${paymentInfo}`,
       );
       closeConvertModal();
       setReloadSeq((prev) => prev + 1);
+      return true;
     } catch (e) {
       setError(getErrorMessage(e));
+      return false;
     } finally {
       setRowBusyKey("");
     }
@@ -393,7 +504,7 @@ export default function DocumentsPage() {
       <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
         {" "}
         <h1 className="text-xl font-bold text-slate-900">
-          Devis / Documents
+          Devis & proforma
         </h1>{" "}
         <p className="text-sm text-slate-500 mt-1">
           Creation, conversion facture et impression proforma.
@@ -555,7 +666,7 @@ export default function DocumentsPage() {
                         />
                       </td>
                       <td className="py-2 px-3 font-semibold text-slate-800">
-                        {formatMoney(lineTotal)}
+                        {formatMoney(lineTotal, businessSettings?.currency || "USD")}
                       </td>
                       <td className="py-2 px-3">
                         <button
@@ -588,10 +699,10 @@ export default function DocumentsPage() {
             </button>{" "}
             <div className="text-sm text-slate-700 space-y-1 text-right">
               {" "}
-              <div>Sous-total: {formatMoney(draftTotals.subtotal)}</div>{" "}
-              <div>TVA: {formatMoney(draftTotals.tax)}</div>{" "}
+              <div>Sous-total: {formatMoney(draftTotals.subtotal, businessSettings?.currency || "USD")}</div>{" "}
+              <div>TVA: {formatMoney(draftTotals.tax, businessSettings?.currency || "USD")}</div>{" "}
               <div className="font-bold text-slate-900">
-                Total: {formatMoney(draftTotals.total)}
+                Total: {formatMoney(draftTotals.total, businessSettings?.currency || "USD")}
               </div>{" "}
             </div>{" "}
           </div>{" "}
@@ -1019,9 +1130,22 @@ export default function DocumentsPage() {
                     paymentAmount: event.target.value,
                   }))
                 }
-                placeholder="Paiement initial (0 = pas de paiement)"
+                placeholder={`Paiement initial (${convertForm.paymentCurrency})`}
                 className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />{" "}
+              <select
+                value={convertForm.paymentCurrency}
+                onChange={(event) =>
+                  setConvertForm((prev) => ({
+                    ...prev,
+                    paymentCurrency: event.target.value === "HTG" ? "HTG" : "USD",
+                  }))
+                }
+                className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option value="USD">USD ($)</option>
+                <option value="HTG">HTG</option>
+              </select>{" "}
               <select
                 value={convertForm.paymentMethod}
                 onChange={(event) =>
@@ -1064,6 +1188,20 @@ export default function DocumentsPage() {
                 className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />{" "}
             </div>{" "}
+            <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm text-blue-900">
+              <div className="font-semibold text-blue-800">Aide conversion</div>
+              <div className="mt-1">
+                Total estime facture: {formatMoney(estimatedConvertedTotal, convertTarget.currency)}
+              </div>
+              <div className="mt-1">
+                Equivaut a payer: {formatMoney(convertedTotalInPaymentCurrency, convertForm.paymentCurrency)}
+              </div>
+              {convertForm.paymentAmount.trim() !== "" ? (
+                <div className="mt-1">
+                  Paiement applique: {formatMoney(convertPaymentEquivalent, convertTarget.currency)}
+                </div>
+              ) : null}
+            </div>{" "}
             <textarea
               value={convertForm.paymentNotes}
               onChange={(event) =>
@@ -1105,6 +1243,33 @@ export default function DocumentsPage() {
           </div>{" "}
         </div>
       ) : null}{" "}
+      <SensitiveActionApprovalModal
+        open={convertApprovalOpen}
+        title="Validation manager pour rabais"
+        description={
+          convertTarget
+            ? `Le rabais sur la conversion du document ${convertTarget.number} doit etre approuve par un manager ou un superviseur.`
+            : ""
+        }
+        confirmLabel="Autoriser le rabais"
+        loading={Boolean(convertTarget && rowBusyKey === `convert-${convertTarget.id}`)}
+        approvers={convertApprovers}
+        approversLoading={convertApproversLoading}
+        onClose={() => {
+          if (!(convertTarget && rowBusyKey === `convert-${convertTarget.id}`)) {
+            setConvertApprovalOpen(false);
+            setConvertApprovers([]);
+          }
+        }}
+        onConfirm={async (approval) => {
+          if (!convertTarget) return;
+          const success = await handleConvert(convertTarget, convertForm, approval);
+          if (success !== false) {
+            setConvertApprovalOpen(false);
+            setConvertApprovers([]);
+          }
+        }}
+      />
     </div>
   );
 }

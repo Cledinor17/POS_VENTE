@@ -2,16 +2,32 @@ import { apiFetch } from "./api";
 
 type Dict = Record<string, unknown>;
 
+export type CustomerAddress = {
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
+};
+
 export type CustomerItem = {
   id: string;
   code: string | null;
   name: string;
+  companyName: string | null;
   email: string | null;
   phone: string | null;
+  billingAddress: CustomerAddress | null;
+  shippingAddress: CustomerAddress | null;
+  taxNumber: string | null;
+  currency: string | null;
   notes: string | null;
   isActive: boolean;
   paymentTermsDays: number | null;
   creditLimit: number | null;
+  identityDocumentPath: string | null;
+  identityDocumentUrl: string | null;
   createdAt: string | null;
 };
 
@@ -33,12 +49,18 @@ export type CustomerListResult = {
 export type CreateCustomerInput = {
   code?: string;
   name: string;
+  companyName?: string;
   email?: string;
   phone?: string;
+  billingAddress?: Partial<CustomerAddress>;
+  shippingAddress?: Partial<CustomerAddress>;
+  taxNumber?: string;
+  currency?: string;
   notes?: string;
   isActive?: boolean;
   paymentTermsDays?: number;
   creditLimit?: number;
+  identityDocumentFile?: File | null;
 };
 
 export type UpdateCustomerInput = Partial<CreateCustomerInput>;
@@ -72,6 +94,26 @@ function toBool(value: unknown, fallback = true): boolean {
     if (normalized === "0" || normalized === "false") return false;
   }
   return fallback;
+}
+
+function normalizeAddress(value: unknown): CustomerAddress | null {
+  if (!isObject(value)) return null;
+  return {
+    line1: toString(value.line1, "") || null,
+    line2: toString(value.line2, "") || null,
+    city: toString(value.city, "") || null,
+    state: toString(value.state, "") || null,
+    zip: toString(value.zip, "") || null,
+    country: toString(value.country, "") || null,
+  };
+}
+
+function hasAddressValue(value: Partial<CustomerAddress> | undefined): boolean {
+  if (!value) return false;
+  return ["line1", "line2", "city", "state", "zip", "country"].some((key) => {
+    const field = value[key as keyof CustomerAddress];
+    return typeof field === "string" && field.trim().length > 0;
+  });
 }
 
 function basePath(business: string): string {
@@ -111,8 +153,13 @@ function normalizeCustomer(raw: unknown): CustomerItem {
     id: toString(obj.id, ""),
     code: toString(obj.code, "") || null,
     name: toString(obj.name, "Client"),
+    companyName: toString(obj.company_name ?? obj.companyName, "") || null,
     email: toString(obj.email, "") || null,
     phone: toString(obj.phone, "") || null,
+    billingAddress: normalizeAddress(obj.billing_address ?? obj.billingAddress),
+    shippingAddress: normalizeAddress(obj.shipping_address ?? obj.shippingAddress),
+    taxNumber: toString(obj.tax_number ?? obj.taxNumber, "") || null,
+    currency: toString(obj.currency, "") || null,
     notes: toString(obj.notes, "") || null,
     isActive: toBool(obj.is_active ?? obj.isActive, true),
     paymentTermsDays: Number.isFinite(toNumber(obj.payment_terms_days ?? obj.paymentTermsDays, NaN))
@@ -121,6 +168,8 @@ function normalizeCustomer(raw: unknown): CustomerItem {
     creditLimit: Number.isFinite(toNumber(obj.credit_limit ?? obj.creditLimit, NaN))
       ? toNumber(obj.credit_limit ?? obj.creditLimit, 0)
       : null,
+    identityDocumentPath: toString(obj.identity_document_path ?? obj.identityDocumentPath, "") || null,
+    identityDocumentUrl: toString(obj.identity_document_url ?? obj.identityDocumentUrl, "") || null,
     createdAt: toString(obj.created_at ?? obj.createdAt, "") || null,
   };
 }
@@ -129,8 +178,13 @@ function toCreatePayload(input: CreateCustomerInput): Record<string, unknown> {
   return {
     code: input.code ?? null,
     name: input.name,
+    company_name: input.companyName ?? null,
     email: input.email ?? null,
     phone: input.phone ?? null,
+    billing_address: hasAddressValue(input.billingAddress) ? input.billingAddress : null,
+    shipping_address: hasAddressValue(input.shippingAddress) ? input.shippingAddress : null,
+    tax_number: input.taxNumber ?? null,
+    currency: input.currency ?? null,
     notes: input.notes ?? null,
     is_active: typeof input.isActive === "boolean" ? input.isActive : true,
     payment_terms_days: input.paymentTermsDays ?? null,
@@ -143,14 +197,54 @@ function toUpdatePayload(input: UpdateCustomerInput): Record<string, unknown> {
 
   if ("code" in input) payload.code = input.code ?? null;
   if ("name" in input) payload.name = input.name;
+  if ("companyName" in input) payload.company_name = input.companyName ?? null;
   if ("email" in input) payload.email = input.email ?? null;
   if ("phone" in input) payload.phone = input.phone ?? null;
+  if ("billingAddress" in input) payload.billing_address = hasAddressValue(input.billingAddress) ? input.billingAddress : null;
+  if ("shippingAddress" in input) payload.shipping_address = hasAddressValue(input.shippingAddress) ? input.shippingAddress : null;
+  if ("taxNumber" in input) payload.tax_number = input.taxNumber ?? null;
+  if ("currency" in input) payload.currency = input.currency ?? null;
   if ("notes" in input) payload.notes = input.notes ?? null;
   if ("paymentTermsDays" in input) payload.payment_terms_days = input.paymentTermsDays ?? null;
   if ("creditLimit" in input) payload.credit_limit = input.creditLimit ?? null;
   if ("isActive" in input && typeof input.isActive === "boolean") payload.is_active = input.isActive;
 
   return payload;
+}
+
+function hasIdentityDocumentFile(input: CreateCustomerInput | UpdateCustomerInput): boolean {
+  return typeof File !== "undefined" && input.identityDocumentFile instanceof File;
+}
+
+function buildCustomerFormData(input: CreateCustomerInput | UpdateCustomerInput): FormData {
+  const formData = new FormData();
+  const payload = "name" in input && input.name !== undefined ? toCreatePayload(input as CreateCustomerInput) : toUpdatePayload(input);
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    if (key === "billing_address" || key === "shipping_address") {
+      const address = value as Partial<CustomerAddress> | null;
+      if (!address) continue;
+      for (const [addressKey, addressValue] of Object.entries(address)) {
+        if (addressValue === undefined || addressValue === null || String(addressValue).trim() === "") continue;
+        formData.append(`${key}[${addressKey}]`, String(addressValue));
+      }
+      continue;
+    }
+
+    if (value === null) {
+      formData.append(key, "");
+      continue;
+    }
+
+    formData.append(key, String(value));
+  }
+
+  if (hasIdentityDocumentFile(input)) {
+    formData.append("identity_document", input.identityDocumentFile as File);
+  }
+
+  return formData;
 }
 
 export async function listCustomers(
@@ -182,10 +276,15 @@ export async function createCustomer(
   business: string,
   input: CreateCustomerInput
 ): Promise<CustomerItem> {
-  const raw = await apiFetch<unknown>(basePath(business), {
-    method: "POST",
-    json: toCreatePayload(input),
-  });
+  const raw = hasIdentityDocumentFile(input)
+    ? await apiFetch<unknown>(basePath(business), {
+        method: "POST",
+        body: buildCustomerFormData(input),
+      })
+    : await apiFetch<unknown>(basePath(business), {
+        method: "POST",
+        json: toCreatePayload(input),
+      });
   return normalizeCustomer(raw);
 }
 
@@ -194,10 +293,20 @@ export async function updateCustomer(
   customerId: string,
   input: UpdateCustomerInput
 ): Promise<CustomerItem> {
-  const raw = await apiFetch<unknown>(`${basePath(business)}/${encodeURIComponent(customerId)}`, {
-    method: "PUT",
-    json: toUpdatePayload(input),
-  });
+  const path = `${basePath(business)}/${encodeURIComponent(customerId)}`;
+  const raw = hasIdentityDocumentFile(input)
+    ? await apiFetch<unknown>(path, {
+        method: "POST",
+        body: (() => {
+          const formData = buildCustomerFormData(input);
+          formData.append("_method", "PUT");
+          return formData;
+        })(),
+      })
+    : await apiFetch<unknown>(path, {
+        method: "PUT",
+        json: toUpdatePayload(input),
+      });
   return normalizeCustomer(raw);
 }
 

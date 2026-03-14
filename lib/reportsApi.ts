@@ -13,6 +13,7 @@ export type TrialBalanceRow = {
 };
 
 export type TrialBalanceResult = {
+  currency: string;
   rows: TrialBalanceRow[];
   totals: {
     debit: number;
@@ -30,6 +31,7 @@ export type ProfitAndLossRow = {
 };
 
 export type ProfitAndLossResult = {
+  currency: string;
   income: ProfitAndLossRow[];
   expenses: ProfitAndLossRow[];
   totals: {
@@ -48,6 +50,7 @@ export type BalanceSheetRow = {
 };
 
 export type BalanceSheetResult = {
+  currency: string;
   asOf: string;
   assets: BalanceSheetRow[];
   liabilities: BalanceSheetRow[];
@@ -67,6 +70,7 @@ export type ArSummaryRow = {
 };
 
 export type ArSummaryResult = {
+  currency: string;
   asOf: string;
   rows: ArSummaryRow[];
   totalAr: number;
@@ -83,6 +87,7 @@ export type ArAgingInvoice = {
 };
 
 export type ArAgingResult = {
+  currency: string;
   asOf: string;
   totals: {
     current: number;
@@ -161,6 +166,7 @@ export async function getTrialBalance(
   const rowsRaw = Array.isArray(obj.rows) ? obj.rows : [];
 
   return {
+    currency: toString(obj.currency, "USD"),
     rows: rowsRaw.map((row) => {
       const r = isObject(row) ? row : {};
       return {
@@ -205,6 +211,7 @@ export async function getProfitAndLoss(
   };
 
   return {
+    currency: toString(obj.currency, "USD"),
     income: incomeRaw.map(normalize),
     expenses: expenseRaw.map(normalize),
     totals: {
@@ -243,6 +250,7 @@ export async function getBalanceSheet(
   const equityRaw = Array.isArray(obj.equity) ? obj.equity : [];
 
   return {
+    currency: toString(obj.currency, "USD"),
     asOf: toString(obj.as_of, ""),
     assets: assetsRaw.map((row) => normalize(row, "asset")),
     liabilities: liabilitiesRaw.map((row) => normalize(row, "liability")),
@@ -267,6 +275,7 @@ export async function getArSummary(
   const rowsRaw = Array.isArray(obj.rows) ? obj.rows : [];
 
   return {
+    currency: toString(obj.currency, "USD"),
     asOf: toString(obj.as_of, ""),
     rows: rowsRaw.map((row) => {
       const r = isObject(row) ? row : {};
@@ -307,6 +316,7 @@ export async function getArAging(
   const detailsRaw = isObject(obj.details) ? obj.details : {};
 
   return {
+    currency: toString(obj.currency, "USD"),
     asOf: toString(obj.as_of, ""),
     totals: {
       current: toNumber(totalsRaw.current, 0),

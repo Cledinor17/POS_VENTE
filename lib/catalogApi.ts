@@ -21,7 +21,9 @@ export type CatalogProduct = {
   imagePath: string | null;
   type: ProductType;
   price: number;
+  priceCurrency: string;
   cost: number;
+  costCurrency: string;
   stock: number;
   reorderLevel: number;
   unit: string;
@@ -50,7 +52,9 @@ export type CreateProductInput = {
   type: ProductType;
   barcode?: string;
   price: number;
+  priceCurrency?: string;
   cost: number;
+  costCurrency?: string;
   stock: number;
   reorderLevel?: number;
   unit?: string;
@@ -248,10 +252,12 @@ function normalizeProduct(raw: unknown): CatalogProduct {
       obj.price ?? obj.sale_price ?? obj.selling_price ?? obj.unit_price,
       0
     ),
+    priceCurrency: toString(obj.selling_currency ?? obj.price_currency ?? obj.currency, "HTG"),
     cost: toNumber(
       obj.cost ?? obj.cost_price ?? obj.purchase_price ?? obj.buying_price,
       0
     ),
+    costCurrency: toString(obj.cost_currency ?? obj.currency, "HTG"),
     stock: toNumber(
       obj.stock ?? obj.stock_quantity ?? obj.quantity ?? obj.current_stock,
       0
@@ -326,10 +332,12 @@ function productPayload(input: CreateProductInput | UpdateProductInput): Dict {
     payload.price = input.price;
     payload.selling_price = input.price;
   }
+  if (typeof input.priceCurrency === "string") payload.selling_currency = input.priceCurrency;
   if (input.cost !== undefined) {
     payload.cost = input.cost;
     payload.cost_price = input.cost;
   }
+  if (typeof input.costCurrency === "string") payload.cost_currency = input.costCurrency;
   if (input.stock !== undefined) {
     payload.stock = input.stock;
     payload.stock_quantity = input.stock;

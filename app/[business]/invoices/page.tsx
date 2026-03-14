@@ -1,8 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
+import { convertAmount, formatMoney } from "@/lib/currency";
 import {
   addInvoicePayment,
   fetchInvoicePdf,
@@ -17,14 +19,6 @@ function getErrorMessage(error: unknown): string {
   return "Une erreur est survenue.";
 }
 
-function formatMoney(amount: number, currency = "USD"): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
 function formatActor(name: string | null, id: string | null): string {
   if (name && name.trim().length > 0) return name;
   if (id && id.trim().length > 0) return `#${id}`;
@@ -35,6 +29,7 @@ export default function InvoicesPage() {
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
 
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -49,6 +44,7 @@ export default function InvoicesPage() {
   const [info, setInfo] = useState("");
   const [paymentTarget, setPaymentTarget] = useState<InvoiceItem | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentCurrency, setPaymentCurrency] = useState<"USD" | "HTG">("USD");
   const [paymentMethod, setPaymentMethod] =
     useState<InvoicePaymentMethod>("cash");
   const [paymentDate, setPaymentDate] = useState(
@@ -88,8 +84,42 @@ export default function InvoicesPage() {
     };
   }, [businessSlug, page, status, from, to, reloadSeq]);
 
+  useEffect(() => {
+    let mounted = true;
+    async function loadBusinessConfig() {
+      if (!businessSlug) return;
+      try {
+        const data = await getBusinessSettings(businessSlug);
+        if (mounted) setBusinessSettings(data);
+      } catch (e) {
+        if (mounted) setError(getErrorMessage(e));
+      }
+    }
+    void loadBusinessConfig();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug]);
+
+  const paymentEquivalent = useMemo(() => {
+    if (!paymentTarget) return 0;
+    return convertAmount(Number(paymentAmount || "0"), paymentCurrency, paymentTarget.currency, {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+    });
+  }, [businessSettings, paymentAmount, paymentCurrency, paymentTarget]);
+
+  const balanceInPaymentCurrency = useMemo(() => {
+    if (!paymentTarget) return 0;
+    return convertAmount(paymentTarget.balanceDue, paymentTarget.currency, paymentCurrency, {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+    });
+  }, [businessSettings, paymentCurrency, paymentTarget]);
+
   function resetPaymentForm() {
     setPaymentAmount("");
+    setPaymentCurrency("USD");
     setPaymentMethod("cash");
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setPaymentReference("");
@@ -106,6 +136,7 @@ export default function InvoicesPage() {
     setInfo("");
     setPaymentTarget(item);
     setPaymentAmount(item.balanceDue > 0 ? item.balanceDue.toFixed(2) : "");
+    setPaymentCurrency(item.currency.toUpperCase() === "HTG" ? "HTG" : "USD");
     setPaymentMethod("cash");
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setPaymentReference("");
@@ -150,7 +181,7 @@ export default function InvoicesPage() {
       return;
     }
 
-    if (amount - paymentTarget.balanceDue > 0.000001) {
+    if (paymentEquivalent - paymentTarget.balanceDue > 0.000001) {
       setError("Le paiement depasse le solde restant.");
       return;
     }
@@ -161,13 +192,18 @@ export default function InvoicesPage() {
     try {
       const updated = await addInvoicePayment(businessSlug, paymentTarget.id, {
         amount,
+        currency: paymentCurrency,
         method: paymentMethod,
         paidAt: paymentDate || undefined,
         reference: paymentReference.trim() || undefined,
         notes: paymentNotes.trim() || undefined,
       });
+      const paymentInfo =
+        paymentCurrency === paymentTarget.currency
+          ? formatMoney(amount, paymentCurrency)
+          : `${formatMoney(amount, paymentCurrency)} applique a ${formatMoney(paymentEquivalent, paymentTarget.currency)}`;
       setInfo(
-        `Paiement enregistre sur ${updated.number}: ${formatMoney(amount, updated.currency)} (${updated.status}).`,
+        `Paiement enregistre sur ${updated.number}: ${paymentInfo} (${updated.status}).`,
       );
       closePaymentModal();
       setReloadSeq((prev) => prev + 1);
@@ -415,9 +451,19 @@ export default function InvoicesPage() {
                   step="0.01"
                   value={paymentAmount}
                   onChange={(event) => setPaymentAmount(event.target.value)}
-                  placeholder="Montant"
+                  placeholder={`Montant (${paymentCurrency})`}
                   className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                 />
+                <select
+                  value={paymentCurrency}
+                  onChange={(event) =>
+                    setPaymentCurrency(event.target.value === "HTG" ? "HTG" : "USD")
+                  }
+                  className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="USD">USD ($)</option>
+                  <option value="HTG">HTG</option>
+                </select>
                 <select
                   value={paymentMethod}
                   onChange={(event) =>
@@ -444,6 +490,21 @@ export default function InvoicesPage() {
                   placeholder="Reference (optionnel)"
                   className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                 />
+              </div>
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm text-blue-900">
+                <div className="font-semibold text-blue-800">Aide conversion</div>
+                <div className="mt-1">
+                  Solde facture: {formatMoney(paymentTarget.balanceDue, paymentTarget.currency)}
+                </div>
+                <div className="mt-1">
+                  Equivaut a payer: {formatMoney(balanceInPaymentCurrency, paymentCurrency)}
+                </div>
+                {paymentAmount.trim() !== "" ? (
+                  <div className="mt-1">
+                    Montant applique a la facture: {formatMoney(paymentEquivalent, paymentTarget.currency)}
+                  </div>
+                ) : null}
               </div>
 
               <textarea

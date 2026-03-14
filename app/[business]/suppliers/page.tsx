@@ -26,8 +26,10 @@ export default function SuppliersPage() {
   const [items, setItems] = useState<SupplierItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState("");
-  const [error, setError] = useState("");
+  const [pageError, setPageError] = useState("");
+  const [formError, setFormError] = useState("");
   const [info, setInfo] = useState("");
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
@@ -46,7 +48,7 @@ export default function SuppliersPage() {
     async function load() {
       if (!businessSlug) return;
       setLoading(true);
-      setError("");
+      setPageError("");
       try {
         const res = await listSuppliers(businessSlug, {
           page,
@@ -58,7 +60,7 @@ export default function SuppliersPage() {
         setLastPage(res.lastPage);
         setTotal(res.total);
       } catch (e) {
-        if (mounted) setError(getErrorMessage(e));
+        if (mounted) setPageError(getErrorMessage(e));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -81,20 +83,44 @@ export default function SuppliersPage() {
     setDepartment("General");
     setBalance("");
   }
+  function openCreateModal() {
+    resetForm();
+    setFormError("");
+    setInfo("");
+    setIsFormOpen(true);
+  }
+  function closeFormModal() {
+    if (saving) return;
+    setIsFormOpen(false);
+    setFormError("");
+    resetForm();
+  }
+  useEffect(() => {
+    if (!isFormOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !saving) {
+        closeFormModal();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFormOpen, saving]);
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!businessSlug) return;
     if (!name.trim()) {
-      setError("Le nom du fournisseur est obligatoire.");
+      setFormError("Le nom du fournisseur est obligatoire.");
       return;
     }
     const parsedBalance = balance.trim().length > 0 ? Number(balance) : 0;
     if (!Number.isFinite(parsedBalance) || parsedBalance < 0) {
-      setError("Solde invalide.");
+      setFormError("Solde invalide.");
       return;
     }
     setSaving(true);
-    setError("");
+    setFormError("");
     setInfo("");
     try {
       if (editingId) {
@@ -125,9 +151,10 @@ export default function SuppliersPage() {
         setQueryInput("");
       }
       resetForm();
+      setIsFormOpen(false);
       setReloadSeq((prev) => prev + 1);
     } catch (e) {
-      setError(getErrorMessage(e));
+      setFormError(getErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -140,8 +167,9 @@ export default function SuppliersPage() {
     setAddress(item.address ?? "");
     setDepartment(item.department || "General");
     setBalance(String(item.balance));
-    setError("");
+    setFormError("");
     setInfo("");
+    setIsFormOpen(true);
   }
   return (
     <div className="space-y-6">
@@ -166,10 +194,10 @@ export default function SuppliersPage() {
           </div>{" "}
         </div>{" "}
       </section>{" "}
-      {error ? (
+      {pageError ? (
         <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {" "}
-          {error}{" "}
+          {pageError}{" "}
         </section>
       ) : null}{" "}
       {info ? (
@@ -178,86 +206,20 @@ export default function SuppliersPage() {
           {info}{" "}
         </section>
       ) : null}{" "}
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {" "}
-        <form
-          onSubmit={handleSubmit}
-          className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3"
-        >
-          {" "}
-          <h2 className="font-bold text-slate-900">
-            {" "}
-            {editingId ? "Modifier fournisseur" : "Nouveau fournisseur"}{" "}
-          </h2>{" "}
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Nom *"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />{" "}
-          <input
-            value={contactPerson}
-            onChange={(event) => setContactPerson(event.target.value)}
-            placeholder="Representant"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />{" "}
-          <input
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            placeholder="Telephone"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />{" "}
-          <input
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            placeholder="Adresse"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />{" "}
-          <input
-            value={department}
-            onChange={(event) => setDepartment(event.target.value)}
-            placeholder="Departement"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />{" "}
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={balance}
-            onChange={(event) => setBalance(event.target.value)}
-            placeholder="Solde"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />{" "}
-          <div className="grid grid-cols-1 gap-2">
-            {" "}
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl brand-primary-btn text-white py-2.5 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {" "}
-              {saving
-                ? editingId
-                  ? "Mise a jour..."
-                  : "Ajout..."
-                : editingId
-                  ? "Mettre a jour"
-                  : "Ajouter"}{" "}
-            </button>{" "}
-            {editingId ? (
-              <button
-                type="button"
-                onClick={resetForm}
-                disabled={saving}
-                className="cancel-default w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              >
-                {" "}
-                Annuler modification{" "}
-              </button>
-            ) : null}{" "}
-          </div>{" "}
-        </form>{" "}
-        <div className="xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm text-slate-600">
+            Ajoutez et modifiez les fournisseurs depuis une modale.
+          </div>
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white"
+          >
+            Nouveau fournisseur
+          </button>
+        </div>
+        <div className="space-y-4">
           {" "}
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
             {" "}
@@ -379,8 +341,102 @@ export default function SuppliersPage() {
               </button>{" "}
             </div>{" "}
           </div>{" "}
-        </div>{" "}
+        </div>
       </section>{" "}
+      {isFormOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          onClick={closeFormModal}
+        >
+          <div
+            className="w-full max-w-xl rounded-2xl border border-slate-100 bg-white p-5 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-bold text-slate-900">
+                  {editingId ? "Modifier fournisseur" : "Nouveau fournisseur"}
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeFormModal}
+                  disabled={saving}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Fermer
+                </button>
+              </div>
+              {formError ? (
+                <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {formError}
+                </section>
+              ) : null}
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Nom *"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+              <input
+                value={contactPerson}
+                onChange={(event) => setContactPerson(event.target.value)}
+                placeholder="Representant"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+              <input
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="Telephone"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+              <input
+                value={address}
+                onChange={(event) => setAddress(event.target.value)}
+                placeholder="Adresse"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+              <input
+                value={department}
+                onChange={(event) => setDepartment(event.target.value)}
+                placeholder="Departement"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={balance}
+                onChange={(event) => setBalance(event.target.value)}
+                placeholder="Solde"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full rounded-xl brand-primary-btn py-2.5 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving
+                    ? editingId
+                      ? "Mise a jour..."
+                      : "Ajout..."
+                    : editingId
+                      ? "Mettre a jour"
+                      : "Ajouter"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeFormModal}
+                  disabled={saving}
+                  className="cancel-default w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {editingId ? "Annuler modification" : "Annuler"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

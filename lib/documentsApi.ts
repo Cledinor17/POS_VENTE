@@ -122,8 +122,14 @@ export type InvoicePaymentMethod =
 export type ConvertDocumentToInvoiceInput = {
   discountType?: "" | "percent" | "fixed";
   discountValue?: number;
+  approval?: {
+    userId?: string;
+    email?: string;
+    password: string;
+  };
   payment?: {
     amount: number;
+    currency?: string;
     method?: InvoicePaymentMethod;
     paidAt?: string;
     reference?: string;
@@ -133,6 +139,7 @@ export type ConvertDocumentToInvoiceInput = {
 
 export type AddInvoicePaymentInput = {
   amount: number;
+  currency?: string;
   method?: InvoicePaymentMethod;
   paidAt?: string;
   reference?: string;
@@ -476,9 +483,18 @@ export async function convertSalesDocumentToInvoice(
     payload.discount_value = input.discountValue ?? 0;
   }
 
+  if (input?.approval) {
+    payload.approval = {
+      user_id: input.approval.userId ?? null,
+      email: input.approval.email ?? null,
+      password: input.approval.password,
+    };
+  }
+
   if (input?.payment && input.payment.amount > 0) {
     payload.payment = {
       amount: input.payment.amount,
+      currency: input.payment.currency ?? null,
       method: input.payment.method ?? "cash",
       paid_at: input.payment.paidAt ?? null,
       reference: input.payment.reference ?? null,
@@ -539,6 +555,7 @@ export async function addInvoicePayment(
       method: "POST",
       json: {
         amount: input.amount,
+        currency: input.currency ?? null,
         method: input.method ?? "cash",
         paid_at: input.paidAt ?? null,
         reference: input.reference ?? null,

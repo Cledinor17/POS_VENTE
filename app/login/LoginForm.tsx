@@ -1,7 +1,9 @@
-// app/login/LoginForm.tsx
 "use client";
+
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowRight, Lock, Mail } from "lucide-react";
 import { login } from "../../lib/authApi";
 import { ApiError } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
@@ -35,6 +37,7 @@ export default function LoginForm() {
     e.preventDefault();
     setErr("");
     setLoading(true);
+
     try {
       await login(email, password);
       const data = await refresh();
@@ -42,14 +45,28 @@ export default function LoginForm() {
         setErr("Connexion etablie, mais impossible de charger le profil (/api/me).");
         return;
       }
+
       const isSafeNext = typeof next === "string" && next.startsWith("/") && !next.startsWith("//");
       if (isSafeNext) {
         router.replace(next);
         return;
       }
+
       const slug = data?.activeBusiness?.slug || data?.businesses?.[0]?.slug;
-      router.replace(slug ? `/${slug}/dashboard` : "/");
+      router.replace(slug ? `/${slug}/dashboard` : "/onboarding/business");
     } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 403 && error.body && typeof error.body === "object") {
+        const body = error.body as Record<string, unknown>;
+        if (body.requires_verification === true && typeof body.email === "string") {
+          const params = new URLSearchParams({ email: body.email });
+          if (typeof body.debug_code === "string" && body.debug_code.trim().length > 0) {
+            params.set("debug", body.debug_code);
+          }
+          router.replace(`/verify-account?${params.toString()}`);
+          return;
+        }
+      }
+
       setErr(getLoginErrorMessage(error));
     } finally {
       setLoading(false);
@@ -57,30 +74,68 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-8 space-y-6 shadow-sm">
-      {/* ... gardez exactement le même contenu du form que vous aviez ... */}
-       <div className="space-y-2">
-          <h1 className="text-2xl font-bold text-slate-900">Connexion</h1>
-          <p className="text-slate-500 text-sm">Entrez vos identifiants pour acceder a votre POS.</p>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-[1.9rem] font-semibold tracking-tight text-[#0f172a]">Bon retour !</h2>
+        <p className="text-sm leading-6 text-slate-400">
+          Entrez vos identifiants pour acceder a votre espace hotelier.
+        </p>
+      </div>
+
+      {err ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
+          {err}
         </div>
-        {err && (
-          <div className="border border-red-200 bg-red-50 text-red-600 text-sm rounded-lg p-3 animate-pulse">
-            {err}
-          </div>
-        )}
+      ) : null}
+
+      <form onSubmit={onSubmit} className="space-y-5">
         <div className="space-y-4">
-          <div>
-            <label className="text-sm font-medium text-slate-700">Email</label>
-            <input type="email" required className="mt-1 w-full border border-slate-300 rounded-xl px-4 py-2.5 outline-none" placeholder="nom@exemple.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <div className="relative">
+            <Mail className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <input
+              type="email"
+              required
+              className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
+              placeholder="Adresse e-mail"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
-          <div>
-            <label className="text-sm font-medium text-slate-700">Mot de passe</label>
-            <input type="password" required className="mt-1 w-full border border-slate-300 rounded-xl px-4 py-2.5 outline-none" placeholder="********" value={password} onChange={(e) => setPassword(e.target.value)} />
+
+          <div className="relative">
+            <Lock className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <input
+              type="password"
+              required
+              className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
+              placeholder="Mot de passe"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
           </div>
+
+          <div className="flex items-center justify-end text-sm">
+            <Link href="/verify-account" className="font-medium text-[#0f172a] hover:text-[#d4af37]">
+              J ai deja un code de validation
+            </Link>
+          </div>
+
+          <button
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#0f172a] px-4 py-3.5 text-base font-medium text-white transition hover:bg-[#1e293b] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={loading}
+          >
+            <span>{loading ? "Connexion en cours..." : "Se connecter"}</span>
+            <ArrowRight className="h-4 w-4" />
+          </button>
         </div>
-        <button className="w-full brand-primary-btn text-white font-semibold rounded-xl px-4 py-3 disabled:opacity-50" disabled={loading}>
-          {loading ? "Connexion en cours..." : "Se connecter"}
-        </button>
-    </form>
+      </form>
+
+      <p className="text-sm text-slate-500">
+        Nouveau sur la plateforme ?{" "}
+        <Link href="/register" className="font-semibold text-[#0f172a] hover:text-[#d4af37]">
+          Creer un etablissement
+        </Link>
+      </p>
+    </div>
   );
 }

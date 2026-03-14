@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { hasPermission } from "@/lib/businessAccess";
 import { DEFAULT_PRODUCT_AVATAR_PATH } from "@/lib/productImage";
 import { toastError, toastSuccess } from "@/lib/toast";
 import {
@@ -12,6 +13,7 @@ import {
   type ProductStatus,
   type ProductType,
 } from "@/lib/catalogApi";
+import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
 type ProductFormState = {
   name: string;
   sku: string;
@@ -76,6 +78,7 @@ export default function NewProductPage() {
   const router = useRouter();
   const params = useParams<{ business: string }>();
   const business = params?.business ?? "";
+  const { loading: permissionsLoading, permissions: currentPermissions } = useBusinessPermissions(business);
   const [form, setForm] = useState<ProductFormState>(initialFormState);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
@@ -84,6 +87,7 @@ export default function NewProductPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
+  const canCreateProducts = hasPermission(currentPermissions, ["products.create", "supplies.manage"]);
 
   useEffect(() => {
     if (!imageFile) {
@@ -99,7 +103,7 @@ export default function NewProductPage() {
   useEffect(() => {
     let mounted = true;
     async function loadCategories() {
-      if (!business) return;
+      if (!business || permissionsLoading || !canCreateProducts) return;
       setCategoriesLoading(true);
       setError("");
       try {
@@ -123,7 +127,7 @@ export default function NewProductPage() {
     return () => {
       mounted = false;
     };
-  }, [business]);
+  }, [business, canCreateProducts, permissionsLoading]);
   function setField<K extends keyof ProductFormState>(
     key: K,
     value: ProductFormState[K],
@@ -132,6 +136,10 @@ export default function NewProductPage() {
   }
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canCreateProducts) {
+      setError("Tu n'as pas l'autorisation d'ajouter un produit.");
+      return;
+    }
     setError("");
     setSuccess("");
     const validationMessage = validateForm(form);
@@ -149,7 +157,9 @@ export default function NewProductPage() {
         type: form.type,
         barcode: form.barcode.trim(),
         price: Number(form.price),
+        priceCurrency: "HTG",
         cost: Number(form.cost),
+        costCurrency: "HTG",
         stock: Number(form.stock),
         reorderLevel: Number(form.reorderLevel),
         unit: form.unit,
@@ -198,6 +208,12 @@ export default function NewProductPage() {
           </Link>{" "}
         </div>{" "}
       </section>{" "}
+      {!permissionsLoading && !canCreateProducts ? (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Ce profil ne peut pas ajouter de produit.
+        </section>
+      ) : null}
+      {canCreateProducts ? (
       <form
         onSubmit={onSubmit}
         className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5"
@@ -284,7 +300,7 @@ export default function NewProductPage() {
               <option value="archived">Archive</option>{" "}
             </select>{" "}
           </Field>{" "}
-          <Field label="Prix vente *">
+          <Field label="Prix vente * (HTG)">
             {" "}
             <input
               type="number"
@@ -296,7 +312,7 @@ export default function NewProductPage() {
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />{" "}
           </Field>{" "}
-          <Field label="Cout achat *">
+          <Field label="Cout achat * (HTG)">
             {" "}
             <input
               type="number"
@@ -433,7 +449,8 @@ export default function NewProductPage() {
             {saving ? "Enregistrement..." : "Enregistrer produit"}{" "}
           </button>{" "}
         </div>{" "}
-      </form>{" "}
+      </form>
+      ) : null}{" "}
     </div>
   );
 }

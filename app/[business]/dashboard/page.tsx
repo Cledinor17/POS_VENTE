@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import { ApiError } from "@/lib/api";
+import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
+import { convertAmount, formatMoney as formatCurrency } from "@/lib/currency";
 import { listAllPosSales, type PosSaleHistoryItem } from "@/lib/posApi";
 import { getInventorySummary, type InventorySummaryResult } from "@/lib/inventoryApi";
 import { listCustomers } from "@/lib/customersApi";
@@ -32,18 +33,11 @@ import { Bar, Doughnut, Line } from "react-chartjs-2";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
-  BarChart3,
   Boxes,
   CircleDollarSign,
   CreditCard,
-  FileText,
-  Landmark,
-  Package,
-  Receipt,
   RefreshCcw,
-  ShieldCheck,
   ShoppingCart,
-  Truck,
   Users,
 } from "lucide-react";
 
@@ -61,12 +55,6 @@ ChartJS.register(
 
 type RangeKey = "7d" | "30d" | "90d";
 type Tone = "emerald" | "indigo" | "amber" | "sky" | "rose" | "slate";
-type QuickAction = {
-  label: string;
-  href: (business: string) => string;
-  icon: LucideIcon;
-  hint: string;
-};
 
 const RANGE_OPTIONS: Array<{ id: RangeKey; label: string; days: number }> = [
   { id: "7d", label: "7 jours", days: 7 },
@@ -74,21 +62,8 @@ const RANGE_OPTIONS: Array<{ id: RangeKey; label: string; days: number }> = [
   { id: "90d", label: "90 jours", days: 90 },
 ];
 
-const QUICK_ACTIONS: QuickAction[] = [
-  { label: "Nouvelle vente", href: (b) => `/${b}/pos`, icon: ShoppingCart, hint: "Encaisser vite" },
-  { label: "Tickets / ventes", href: (b) => `/${b}/sales`, icon: Receipt, hint: "Historique caisse" },
-  { label: "Stock & inventaire", href: (b) => `/${b}/inventory`, icon: Boxes, hint: "Mouvements et niveaux" },
-  { label: "Produits", href: (b) => `/${b}/products`, icon: Package, hint: "Catalogue" },
-  { label: "Clients", href: (b) => `/${b}/customers`, icon: Users, hint: "Creances et suivi" },
-  { label: "Fournisseurs", href: (b) => `/${b}/suppliers`, icon: Truck, hint: "Achats" },
-  { label: "Documents / devis", href: (b) => `/${b}/documents`, icon: FileText, hint: "Proforma et conversion" },
-  { label: "Factures", href: (b) => `/${b}/invoices`, icon: FileText, hint: "Comptes clients" },
-  { label: "Comptabilite", href: (b) => `/${b}/accounting`, icon: Landmark, hint: "Journaux et periodes" },
-  { label: "Rapports", href: (b) => `/${b}/reports`, icon: BarChart3, hint: "Analyse globale" },
-  { label: "Audit & securite", href: (b) => `/${b}/audit`, icon: ShieldCheck, hint: "Tracabilite user" },
-];
-
 const EMPTY_SUMMARY: InventorySummaryResult = {
+  currency: "USD",
   summary: {
     totalProducts: 0,
     trackedProducts: 0,
@@ -118,18 +93,14 @@ function parseDate(value: string | null): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
+function formatMoney(amount: number, currency: string): string {
+  return formatCurrency(amount, currency);
 }
 
-function formatCompactMoney(amount: number): string {
+function formatCompactMoney(amount: number, currency: string): string {
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
-    currency: "USD",
+    currency,
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(amount);
@@ -195,6 +166,7 @@ export default function DashboardPage() {
   const [range, setRange] = useState<RangeKey>("30d");
   const [sales, setSales] = useState<PosSaleHistoryItem[]>([]);
   const [inventory, setInventory] = useState<InventorySummaryResult>(EMPTY_SUMMARY);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [customersTotal, setCustomersTotal] = useState(0);
   const [pnl, setPnl] = useState<ProfitAndLossResult | null>(null);
   const [arAging, setArAging] = useState<ArAgingResult | null>(null);
@@ -217,6 +189,7 @@ export default function DashboardPage() {
         const monthStart = toInputDate(new Date(now.getFullYear(), now.getMonth(), 1));
 
         const results = await Promise.allSettled([
+          getBusinessSettings(businessSlug),
           listAllPosSales(businessSlug, {}, { perPage: 100 }),
           getInventorySummary(businessSlug),
           listCustomers(businessSlug, { page: 1, perPage: 1 }),
@@ -228,42 +201,49 @@ export default function DashboardPage() {
         const nextWarnings: string[] = [];
         const addWarning = (label: string, reason: unknown) => nextWarnings.push(`${label}: ${getErrorMessage(reason)}`);
 
-        const salesRes = results[0];
+        const businessRes = results[0];
+        if (businessRes.status === "fulfilled") setBusinessSettings(businessRes.value);
+        else {
+          setBusinessSettings(null);
+          addWarning("Business", businessRes.reason);
+        }
+
+        const salesRes = results[1];
         if (salesRes.status === "fulfilled") setSales(salesRes.value);
         else {
           setSales([]);
           addWarning("Ventes", salesRes.reason);
         }
 
-        const stockRes = results[1];
+        const stockRes = results[2];
         if (stockRes.status === "fulfilled") setInventory(stockRes.value);
         else {
           setInventory(EMPTY_SUMMARY);
           addWarning("Stock", stockRes.reason);
         }
 
-        const customersRes = results[2];
+        const customersRes = results[3];
         if (customersRes.status === "fulfilled") setCustomersTotal(customersRes.value.total);
         else {
           setCustomersTotal(0);
           addWarning("Clients", customersRes.reason);
         }
 
-        const pnlRes = results[3];
+        const pnlRes = results[4];
         if (pnlRes.status === "fulfilled") setPnl(pnlRes.value);
         else {
           setPnl(null);
           addWarning("Profit/Loss", pnlRes.reason);
         }
 
-        const agingRes = results[4];
+        const agingRes = results[5];
         if (agingRes.status === "fulfilled") setArAging(agingRes.value);
         else {
           setArAging(null);
           addWarning("AR Aging", agingRes.reason);
         }
 
-        const arSummaryRes = results[5];
+        const arSummaryRes = results[6];
         if (arSummaryRes.status === "fulfilled") setArSummary(arSummaryRes.value);
         else {
           setArSummary(null);
@@ -295,6 +275,20 @@ export default function DashboardPage() {
   }, [loadDashboard]);
 
   const selectedDays = RANGE_OPTIONS.find((item) => item.id === range)?.days ?? 30;
+  const exchangeConfig = useMemo(
+    () => ({
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+    }),
+    [businessSettings]
+  );
+  const reportCurrency =
+    businessSettings?.currency || pnl?.currency || arSummary?.currency || arAging?.currency || inventory.currency || "USD";
+  const convertDisplayAmount = useCallback(
+    (amount: number, sourceCurrency?: string | null) =>
+      convertAmount(amount, sourceCurrency || reportCurrency, reportCurrency, exchangeConfig),
+    [exchangeConfig, reportCurrency]
+  );
 
   const insights = useMemo(() => {
     const validSales = sales.filter((sale) => normalizeStatus(sale.status) !== "void");
@@ -321,24 +315,28 @@ export default function DashboardPage() {
     for (const sale of validSales) {
       const created = parseDate(sale.createdAt);
       if (!created) continue;
+      const saleTotal = convertDisplayAmount(sale.total, sale.currency);
+      const salePaid = convertDisplayAmount(sale.amountPaid, sale.currency);
+      const saleBalance = convertDisplayAmount(sale.balanceDue, sale.currency);
+      const salePaidTotal = convertDisplayAmount(sale.paidTotal, sale.currency);
 
       const key = toDateKey(created);
       const index = indexMap.get(key);
       if (index !== undefined) {
-        totals[index] += sale.total;
+        totals[index] += saleTotal;
         tickets[index] += 1;
       }
 
       if (key === todayKey) {
-        todayTotal += sale.total;
+        todayTotal += saleTotal;
         todayTickets += 1;
-        todayPaid += sale.amountPaid;
+        todayPaid += salePaid;
       }
 
-      balanceDue += Math.max(0, sale.balanceDue);
+      balanceDue += Math.max(0, saleBalance);
 
       const method = paymentLabel(sale.paymentMethod);
-      const amount = sale.paidTotal > 0 ? sale.paidTotal : sale.amountPaid;
+      const amount = sale.paidTotal > 0 ? salePaidTotal : salePaid;
       paymentMap.set(method, (paymentMap.get(method) ?? 0) + Math.max(0, amount));
     }
 
@@ -362,7 +360,7 @@ export default function DashboardPage() {
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 6),
     };
-  }, [sales, selectedDays]);
+  }, [convertDisplayAmount, sales, selectedDays]);
 
   const recentSales = useMemo(() => {
     return [...sales]
@@ -407,7 +405,7 @@ export default function DashboardPage() {
     plugins: { legend: { position: "bottom", labels: { boxWidth: 12, usePointStyle: true } } },
     scales: {
       x: { grid: { display: false } },
-      y: { beginAtZero: true, ticks: { callback: (v) => formatCompactMoney(Number(v)) } },
+      y: { beginAtZero: true, ticks: { callback: (v) => formatCompactMoney(Number(v), reportCurrency) } },
       yTickets: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { precision: 0 } },
     },
   };
@@ -460,7 +458,7 @@ export default function DashboardPage() {
     plugins: { legend: { display: false } },
     scales: {
       x: { grid: { display: false } },
-      y: { beginAtZero: true, ticks: { callback: (v) => formatCompactMoney(Number(v)) } },
+      y: { beginAtZero: true, ticks: { callback: (v) => formatCompactMoney(Number(v), reportCurrency) } },
     },
   };
 
@@ -523,38 +521,12 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Acces rapides</h2>
-          <span className="text-xs text-slate-500">Ouvrir un ecran en 1 clic</span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-          {QUICK_ACTIONS.map((action) => {
-            const Icon = action.icon;
-            return (
-                <Link
-                  key={action.label}
-                  href={action.href(businessSlug)}
-                  className="group rounded-xl border border-slate-200 bg-white p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 hover:shadow-md"
-                >
-                  <div className="mb-2 inline-flex rounded-lg bg-blue-50 p-2 text-[#0b4f88] shadow-sm transition-colors group-hover:bg-orange-100 group-hover:text-orange-600">
-                    <Icon className="h-4 w-4" />
-                  </div>
-                <p className="text-sm font-semibold text-slate-800">{action.label}</p>
-                <p className="mt-1 text-xs text-slate-500">{action.hint}</p>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <MetricCard title="Ventes du jour" value={formatMoney(insights.todayTotal)} note={`${insights.todayTickets} tickets`} icon={CircleDollarSign} tone="emerald" />
-        <MetricCard title="Encaissements du jour" value={formatMoney(insights.todayPaid)} note={`Moy. ticket: ${formatMoney(insights.avgTicket)}`} icon={CreditCard} tone="indigo" />
-        <MetricCard title="Soldes en attente" value={formatMoney(insights.balanceDue)} note={`AR total: ${formatMoney(arSummary?.totalAr ?? 0)}`} icon={ShoppingCart} tone="amber" />
-        <MetricCard title="Resultat net mois" value={formatMoney(netProfit)} note={`CA: ${formatMoney(monthIncome)} | Charges: ${formatMoney(monthExpense)}`} icon={CircleDollarSign} tone={netProfit >= 0 ? "sky" : "rose"} />
-        <MetricCard title="Valeur stock" value={formatMoney(inventory.summary.stockValue)} note={`Potentiel: ${formatMoney(inventory.summary.potentialRevenue)}`} icon={Boxes} tone="slate" />
+        <MetricCard title="Ventes du jour" value={formatMoney(insights.todayTotal, reportCurrency)} note={`${insights.todayTickets} tickets`} icon={CircleDollarSign} tone="emerald" />
+        <MetricCard title="Encaissements du jour" value={formatMoney(insights.todayPaid, reportCurrency)} note={`Moy. ticket: ${formatMoney(insights.avgTicket, reportCurrency)}`} icon={CreditCard} tone="indigo" />
+        <MetricCard title="Soldes en attente" value={formatMoney(insights.balanceDue, reportCurrency)} note={`AR total: ${formatMoney(arSummary?.totalAr ?? 0, reportCurrency)}`} icon={ShoppingCart} tone="amber" />
+        <MetricCard title="Resultat net mois" value={formatMoney(netProfit, reportCurrency)} note={`CA: ${formatMoney(monthIncome, reportCurrency)} | Charges: ${formatMoney(monthExpense, reportCurrency)}`} icon={CircleDollarSign} tone={netProfit >= 0 ? "sky" : "rose"} />
+        <MetricCard title="Valeur stock" value={formatMoney(inventory.summary.stockValue, reportCurrency)} note={`Potentiel: ${formatMoney(inventory.summary.potentialRevenue, reportCurrency)}`} icon={Boxes} tone="slate" />
         <MetricCard title="Clients" value={formatNumber(customersTotal)} note={`${inventory.summary.lowStockCount} stock faible`} icon={Users} tone="sky" />
       </section>
 
@@ -581,7 +553,7 @@ export default function DashboardPage() {
                 {insights.paymentRows.map((row) => (
                   <div key={row.method} className="flex items-center justify-between text-sm">
                     <span className="text-slate-600">{row.method}</span>
-                    <span className="font-semibold text-slate-900">{formatMoney(row.amount)}</span>
+                    <span className="font-semibold text-slate-900">{formatMoney(row.amount, reportCurrency)}</span>
                   </div>
                 ))}
               </div>
@@ -597,7 +569,7 @@ export default function DashboardPage() {
               <div className="h-56">
                 <Bar data={agingChartData} options={agingChartOptions} />
               </div>
-              <p className="mt-3 text-sm text-slate-600">Total creances: {formatMoney(arSummary?.totalAr ?? 0)}</p>
+              <p className="mt-3 text-sm text-slate-600">Total creances: {formatMoney(arSummary?.totalAr ?? 0, reportCurrency)}</p>
             </>
           ) : (
             <EmptyPanel text="Donnees de creances indisponibles." />
@@ -615,7 +587,7 @@ export default function DashboardPage() {
                   <div key={`${row.customerId || row.name}-${index}`}>
                     <div className="mb-1 flex items-center justify-between text-sm">
                       <span className="truncate text-slate-700">{row.name}</span>
-                      <span className="font-semibold text-slate-900">{formatMoney(row.balance)}</span>
+                      <span className="font-semibold text-slate-900">{formatMoney(row.balance, reportCurrency)}</span>
                     </div>
                     <div className="h-2 rounded-full bg-slate-100">
                       <div className="h-2 rounded-full bg-[#0b4f88]" style={{ width: `${Math.max(2, Math.min(100, ratio))}%` }} />
@@ -677,9 +649,9 @@ export default function DashboardPage() {
                     <td className="px-3 py-2 font-semibold text-slate-800">{sale.receiptNo || "-"}</td>
                     <td className="px-3 py-2 text-slate-700">{sale.customerName || "Client comptoir"}</td>
                     <td className="px-3 py-2 text-slate-600">{parseDate(sale.createdAt)?.toLocaleString("fr-FR") || "-"}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatMoney(sale.total)}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{formatMoney(sale.amountPaid)}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{formatMoney(sale.balanceDue)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatMoney(convertDisplayAmount(sale.total, sale.currency), reportCurrency)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatMoney(convertDisplayAmount(sale.amountPaid, sale.currency), reportCurrency)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatMoney(convertDisplayAmount(sale.balanceDue, sale.currency), reportCurrency)}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusTone(sale.status)}`}>
                         {statusLabel(sale.status)}

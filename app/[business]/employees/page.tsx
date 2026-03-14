@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import {
@@ -66,6 +66,7 @@ export default function EmployeesPage() {
   const [reloadSeq, setReloadSeq] = useState(0);
 
   const [editingId, setEditingId] = useState("");
+  const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -82,12 +83,15 @@ export default function EmployeesPage() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [paymentReloadSeq, setPaymentReloadSeq] = useState(0);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentCurrency, setPaymentCurrency] = useState("");
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
+  const paymentAmountInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -174,6 +178,40 @@ export default function EmployeesPage() {
     [items, selectedEmployeeId],
   );
 
+  useEffect(() => {
+    if (!selectedEmployee) return;
+    setPaymentCurrency((current) => current || selectedEmployee.salaryCurrency || "");
+  }, [selectedEmployee]);
+
+  useEffect(() => {
+    if (!employeeModalOpen && !paymentModalOpen && !paymentConfirmOpen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (paymentConfirmOpen) {
+          closePaymentConfirmModal();
+          return;
+        }
+        if (paymentModalOpen) {
+          closePaymentModal();
+          return;
+        }
+        closeEmployeeModal();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [employeeModalOpen, paymentModalOpen, paymentConfirmOpen]);
+
+  useEffect(() => {
+    if (!paymentModalOpen) return;
+    const timeout = window.setTimeout(() => {
+      paymentAmountInputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [paymentModalOpen]);
+
   function resetEmployeeForm() {
     setEditingId("");
     setName("");
@@ -186,6 +224,59 @@ export default function EmployeesPage() {
     setHiredAt("");
     setIsActive(true);
     setNotes("");
+  }
+
+  function closeEmployeeModal() {
+    setEmployeeModalOpen(false);
+    resetEmployeeForm();
+  }
+
+  function resetPaymentForm() {
+    setPaymentAmount("");
+    setPaymentMethod("");
+    setPaymentReference("");
+    setPaymentNotes("");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentCurrency(selectedEmployee?.salaryCurrency ?? "");
+  }
+
+  function openNewEmployeeModal() {
+    resetEmployeeForm();
+    setError("");
+    setInfo("");
+    setEmployeeModalOpen(true);
+  }
+
+  function closePaymentModal() {
+    setPaymentModalOpen(false);
+    setPaymentConfirmOpen(false);
+    resetPaymentForm();
+  }
+
+  function closePaymentConfirmModal() {
+    setPaymentConfirmOpen(false);
+  }
+
+  function openPaymentModal(employee?: EmployeeItem) {
+    if (employee) {
+      setSelectedEmployeeId(employee.id);
+      setPaymentCurrency(employee.salaryCurrency ?? "");
+    } else if (selectedEmployee) {
+      setPaymentCurrency(selectedEmployee.salaryCurrency ?? "");
+    }
+
+    setPaymentAmount("");
+    setPaymentMethod("");
+    setPaymentReference("");
+    setPaymentNotes("");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setError("");
+    setInfo(
+      employee
+        ? `Paiement pret pour ${employee.name}.`
+        : "Paiement employe pret.",
+    );
+    setPaymentModalOpen(true);
   }
 
   async function handleEmployeeSubmit(event: FormEvent<HTMLFormElement>) {
@@ -239,6 +330,7 @@ export default function EmployeesPage() {
       }
 
       resetEmployeeForm();
+      setEmployeeModalOpen(false);
       setPage(1);
       setReloadSeq((prev) => prev + 1);
     } catch (e) {
@@ -269,6 +361,7 @@ export default function EmployeesPage() {
     setNotes(item.notes ?? "");
     setError("");
     setInfo("");
+    setEmployeeModalOpen(true);
   }
 
   async function handleDelete(item: EmployeeItem) {
@@ -303,6 +396,19 @@ export default function EmployeesPage() {
       return;
     }
 
+    setPaymentConfirmOpen(true);
+  }
+
+  async function confirmPaymentSubmit() {
+    if (!businessSlug || !selectedEmployeeId) return;
+
+    const amountValue = Number(paymentAmount);
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      setError("Montant de paiement invalide.");
+      setPaymentConfirmOpen(false);
+      return;
+    }
+
     setPaymentSaving(true);
     setError("");
     setInfo("");
@@ -317,9 +423,9 @@ export default function EmployeesPage() {
         notes: paymentNotes.trim() || undefined,
       });
 
-      setPaymentAmount("");
-      setPaymentReference("");
-      setPaymentNotes("");
+      resetPaymentForm();
+      setPaymentConfirmOpen(false);
+      setPaymentModalOpen(false);
       setInfo("Paiement employe enregistre.");
       setPaymentReloadSeq((prev) => prev + 1);
       setReloadSeq((prev) => prev + 1);
@@ -328,6 +434,10 @@ export default function EmployeesPage() {
     } finally {
       setPaymentSaving(false);
     }
+  }
+
+  function preparePaymentForEmployee(item: EmployeeItem) {
+    openPaymentModal(item);
   }
 
   return (
@@ -340,8 +450,17 @@ export default function EmployeesPage() {
               Gere les employes et enregistre les paiements de salaire.
             </p>
           </div>
-          <div className="text-sm text-slate-500">
-            {total} employe(s) | actifs sur page: {activeCount}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm text-slate-500">
+              {total} employe(s) | actifs sur page: {activeCount}
+            </div>
+            <button
+              type="button"
+              onClick={openNewEmployeeModal}
+              className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Nouvel employe
+            </button>
           </div>
         </div>
       </section>
@@ -358,130 +477,7 @@ export default function EmployeesPage() {
         </section>
       ) : null}
 
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <form
-          onSubmit={handleEmployeeSubmit}
-          className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3"
-        >
-          <h2 className="font-bold text-slate-900">
-            {editingId ? "Modifier employe" : "Nouvel employe"}
-          </h2>
-
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Nom *"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <input
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="Email"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <input
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            placeholder="Telephone"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <input
-            value={jobTitle}
-            onChange={(event) => setJobTitle(event.target.value)}
-            placeholder="Poste"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={salaryAmount}
-              onChange={(event) => setSalaryAmount(event.target.value)}
-              placeholder="Salaire"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-            <input
-              value={salaryCurrency}
-              onChange={(event) => setSalaryCurrency(event.target.value.toUpperCase())}
-              placeholder="Devise"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <select
-              value={payFrequency}
-              onChange={(event) =>
-                setPayFrequency(
-                  event.target.value as "monthly" | "biweekly" | "weekly" | "hourly",
-                )
-              }
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            >
-              {PAY_FREQUENCIES.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              value={hiredAt}
-              onChange={(event) => setHiredAt(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(event) => setIsActive(event.target.checked)}
-            />
-            Employe actif
-          </label>
-
-          <textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            rows={3}
-            placeholder="Notes"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <div className="grid grid-cols-1 gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl brand-primary-btn text-white py-2.5 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {saving
-                ? editingId
-                  ? "Mise a jour..."
-                  : "Ajout..."
-                : editingId
-                  ? "Mettre a jour"
-                  : "Ajouter"}
-            </button>
-            {editingId ? (
-              <button
-                type="button"
-                onClick={resetEmployeeForm}
-                disabled={saving}
-                className="cancel-default w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              >
-                Annuler modification
-              </button>
-            ) : null}
-          </div>
-        </form>
-
-        <div className="xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_170px_auto] gap-3">
             <input
               value={queryInput}
@@ -575,10 +571,10 @@ export default function EmployeesPage() {
                               <i className="fa-solid fa-pen-to-square" aria-hidden="true" />
                             </button>
                             <button
-                              onClick={() => setSelectedEmployeeId(item.id)}
+                              onClick={() => preparePaymentForEmployee(item)}
                               disabled={busy}
-                              title="Payer"
-                              aria-label="Payer"
+                              title="Ajouter paiement"
+                              aria-label="Ajouter paiement"
                               className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                             >
                               <i className="fa-solid fa-money-check-dollar" aria-hidden="true" />
@@ -625,96 +621,29 @@ export default function EmployeesPage() {
               </button>
             </div>
           </div>
-        </div>
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <form
-          onSubmit={handlePaymentSubmit}
-          className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3"
-        >
-          <h2 className="font-bold text-slate-900">Paiement employe</h2>
-
-          <select
-            value={selectedEmployeeId}
-            onChange={(event) => setSelectedEmployeeId(event.target.value)}
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          >
-            <option value="">Selectionner un employe</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={paymentAmount}
-            onChange={(event) => setPaymentAmount(event.target.value)}
-            placeholder="Montant *"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={paymentCurrency}
-              onChange={(event) => setPaymentCurrency(event.target.value.toUpperCase())}
-              placeholder="Devise"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-            <input
-              type="date"
-              value={paymentDate}
-              onChange={(event) => setPaymentDate(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          <input
-            value={paymentMethod}
-            onChange={(event) => setPaymentMethod(event.target.value)}
-            placeholder="Methode (cash, bank, mobile...)"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <input
-            value={paymentReference}
-            onChange={(event) => setPaymentReference(event.target.value)}
-            placeholder="Reference"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <textarea
-            value={paymentNotes}
-            onChange={(event) => setPaymentNotes(event.target.value)}
-            rows={3}
-            placeholder="Notes"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          />
-
-          <button
-            type="submit"
-            disabled={paymentSaving || !selectedEmployeeId}
-            className="w-full rounded-xl brand-primary-btn text-white py-2.5 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {paymentSaving ? "Enregistrement..." : "Enregistrer paiement"}
-          </button>
-        </form>
-
-        <div className="xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
+      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-bold text-slate-900">
               Historique paiements
               {selectedEmployee ? ` - ${selectedEmployee.name}` : ""}
             </h2>
-            {selectedEmployee ? (
-              <div className="text-xs text-slate-500">
-                Embauche: {formatDate(selectedEmployee.hiredAt)}
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-3">
+              {selectedEmployee ? (
+                <div className="text-xs text-slate-500">
+                  Embauche: {formatDate(selectedEmployee.hiredAt)}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => openPaymentModal()}
+                disabled={!selectedEmployeeId}
+                className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Ajouter paiement
+              </button>
+            </div>
           </div>
 
           {paymentLoading ? (
@@ -753,8 +682,324 @@ export default function EmployeesPage() {
               </table>
             </div>
           )}
-        </div>
       </section>
+
+      {employeeModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={closeEmployeeModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={editingId ? "Modifier employe" : "Nouvel employe"}
+            className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h2 className="font-bold text-slate-900">
+                {editingId ? "Modifier employe" : "Nouvel employe"}
+              </h2>
+              <button
+                type="button"
+                onClick={closeEmployeeModal}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleEmployeeSubmit}
+              className="max-h-[85vh] overflow-y-auto p-5 space-y-3"
+            >
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Nom *"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <input
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="Email"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <input
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="Telephone"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <input
+                value={jobTitle}
+                onChange={(event) => setJobTitle(event.target.value)}
+                placeholder="Poste"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={salaryAmount}
+                  onChange={(event) => setSalaryAmount(event.target.value)}
+                  placeholder="Salaire"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                <input
+                  value={salaryCurrency}
+                  onChange={(event) => setSalaryCurrency(event.target.value.toUpperCase())}
+                  placeholder="Devise"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={payFrequency}
+                  onChange={(event) =>
+                    setPayFrequency(
+                      event.target.value as "monthly" | "biweekly" | "weekly" | "hourly",
+                    )
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                >
+                  {PAY_FREQUENCIES.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={hiredAt}
+                  onChange={(event) => setHiredAt(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isActive}
+                  onChange={(event) => setIsActive(event.target.checked)}
+                />
+                Employe actif
+              </label>
+
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                rows={3}
+                placeholder="Notes"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full rounded-xl brand-primary-btn text-white py-2.5 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving
+                    ? editingId
+                      ? "Mise a jour..."
+                      : "Ajout..."
+                    : editingId
+                      ? "Mettre a jour"
+                      : "Ajouter"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeEmployeeModal}
+                  disabled={saving}
+                  className="cancel-default w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {editingId ? "Annuler modification" : "Annuler"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {paymentModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={closePaymentModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Paiement employe"
+            className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 className="font-bold text-slate-900">Paiement employe</h2>
+                {selectedEmployee ? (
+                  <div className="mt-1 text-xs text-slate-500">{selectedEmployee.name}</div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={closePaymentModal}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <form
+              onSubmit={handlePaymentSubmit}
+              className="max-h-[85vh] overflow-y-auto p-5 space-y-3"
+            >
+              <select
+                value={selectedEmployeeId}
+                onChange={(event) => setSelectedEmployeeId(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option value="">Selectionner un employe</option>
+                {items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                ref={paymentAmountInputRef}
+                type="number"
+                min="0"
+                step="0.01"
+                value={paymentAmount}
+                onChange={(event) => setPaymentAmount(event.target.value)}
+                placeholder="Montant *"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={paymentCurrency}
+                  onChange={(event) => setPaymentCurrency(event.target.value.toUpperCase())}
+                  placeholder="Devise"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={(event) => setPaymentDate(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <input
+                value={paymentMethod}
+                onChange={(event) => setPaymentMethod(event.target.value)}
+                placeholder="Methode (cash, bank, mobile...)"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <input
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.target.value)}
+                placeholder="Reference"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <textarea
+                value={paymentNotes}
+                onChange={(event) => setPaymentNotes(event.target.value)}
+                rows={3}
+                placeholder="Notes"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="submit"
+                  disabled={paymentSaving || !selectedEmployeeId}
+                  className="w-full rounded-xl brand-primary-btn text-white py-2.5 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {paymentSaving ? "Enregistrement..." : "Enregistrer paiement"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  disabled={paymentSaving}
+                  className="cancel-default w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {paymentConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 p-4"
+          onClick={closePaymentConfirmModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirmer le paiement employe"
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="font-bold text-slate-900">Confirmation</h2>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <p className="text-sm text-slate-700">
+                Voulez-vous enregistrer ce paiement pour{" "}
+                <span className="font-semibold text-slate-900">
+                  {selectedEmployee?.name || "cet employe"}
+                </span>{" "}
+                ?
+              </p>
+              <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                Montant:{" "}
+                <span className="font-semibold text-slate-900">
+                  {formatMoney(Number(paymentAmount || 0), paymentCurrency || selectedEmployee?.salaryCurrency || "USD")}
+                </span>
+                {paymentMethod.trim() ? ` | Methode: ${paymentMethod.trim()}` : ""}
+                {paymentDate ? ` | Date: ${formatDate(paymentDate)}` : ""}
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void confirmPaymentSubmit();
+                  }}
+                  disabled={paymentSaving}
+                  className="w-full rounded-xl brand-primary-btn py-2.5 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {paymentSaving ? "Enregistrement..." : "Oui"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePaymentConfirmModal}
+                  disabled={paymentSaving}
+                  className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Non
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

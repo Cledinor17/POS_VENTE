@@ -1,5 +1,11 @@
 import { apiFetch, getToken, setToken } from "./api";
-import type { AuthUser, LoginResponse, MeResponse } from "./types/auth";
+import type {
+  AuthUser,
+  LoginResponse,
+  MeResponse,
+  RegistrationStartResponse,
+  VerificationResponse,
+} from "./types/auth";
 
 type LoginApiResponse = Partial<LoginResponse> & {
   access_token?: string;
@@ -25,19 +31,65 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   return user;
 }
 
+export async function registerAccount(input: {
+  name: string;
+  email: string;
+  password: string;
+  passwordConfirmation: string;
+}): Promise<RegistrationStartResponse> {
+  return apiFetch<RegistrationStartResponse>("/api/auth/register", {
+    method: "POST",
+    json: {
+      name: input.name,
+      email: input.email,
+      password: input.password,
+      password_confirmation: input.passwordConfirmation,
+    },
+  });
+}
+
+export async function verifyRegistration(input: { email: string; code: string }): Promise<AuthUser> {
+  const res = await apiFetch<VerificationResponse>("/api/auth/verify-registration", {
+    method: "POST",
+    json: {
+      email: input.email,
+      code: input.code,
+    },
+  });
+
+  if (!res.token || !res.user) {
+    throw new Error("Reponse de validation invalide.");
+  }
+
+  setToken(res.token);
+  return res.user;
+}
+
+export async function resendVerificationCode(email: string): Promise<RegistrationStartResponse> {
+  return apiFetch<RegistrationStartResponse>("/api/auth/resend-verification-code", {
+    method: "POST",
+    json: { email },
+  });
+}
+
 export async function me(): Promise<MeResponse> {
   const raw = await apiFetch<any>("/api/me");
-
-  // Certains backends renvoient {data: ...}
-  const user = (raw?.data ?? raw);
-
-  const businesses = Array.isArray(user?.businesses) ? user.businesses : [];
+  const payload = raw?.data ?? raw;
+  const user = payload?.user ?? payload ?? null;
+  const businesses = Array.isArray(payload?.businesses) ? payload.businesses : [];
   const activeBusiness =
+    payload?.activeBusiness ??
     businesses.find((b: any) => b?.pivot?.status === "active") ??
     businesses[0] ??
     null;
 
-  return { user, businesses, activeBusiness };
+  const permissions = Array.isArray(payload?.permissions)
+    ? payload.permissions.filter((value: unknown): value is string => typeof value === "string")
+    : Array.isArray(activeBusiness?.pivot?.permissions)
+      ? activeBusiness.pivot.permissions.filter((value: unknown): value is string => typeof value === "string")
+      : [];
+
+  return { user, businesses, activeBusiness, permissions };
 }
 
 export async function logout(): Promise<void> {

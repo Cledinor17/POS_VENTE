@@ -21,6 +21,7 @@ export type LowStockProduct = {
 };
 
 export type InventorySummaryResult = {
+  currency: string;
   summary: InventorySummary;
   lowStockProducts: LowStockProduct[];
 };
@@ -131,6 +132,7 @@ function normalizeSummary(raw: unknown): InventorySummaryResult {
   const lowRaw = Array.isArray(obj.low_stock_products) ? obj.low_stock_products : [];
 
   return {
+    currency: toString(obj.currency, "USD"),
     summary: {
       totalProducts: toNumber(summaryRaw.total_products, 0),
       trackedProducts: toNumber(summaryRaw.tracked_products, 0),

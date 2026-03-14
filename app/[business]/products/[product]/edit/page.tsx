@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
+import { hasPermission } from "@/lib/businessAccess";
 import { toastError, toastSuccess } from "@/lib/toast";
 import {
   DEFAULT_PRODUCT_AVATAR_PATH,
@@ -16,6 +17,7 @@ import {
   type ProductStatus,
   type ProductType,
 } from "@/lib/catalogApi";
+import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
 
 type ProductFormState = {
   name: string;
@@ -84,6 +86,7 @@ export default function EditProductPage() {
   const params = useParams<{ business: string; product: string }>();
   const business = params?.business ?? "";
   const productId = params?.product ?? "";
+  const { loading: permissionsLoading, permissions: currentPermissions } = useBusinessPermissions(business);
   const [form, setForm] = useState<ProductFormState>(initialFormState);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
@@ -93,6 +96,7 @@ export default function EditProductPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const canEditProducts = hasPermission(currentPermissions, ["products.edit", "supplies.manage"]);
   const currentImageUrl = useMemo(
     () => resolveProductImageUrl(currentImagePath),
     [currentImagePath],
@@ -119,7 +123,7 @@ export default function EditProductPage() {
   useEffect(() => {
     let mounted = true;
     async function loadData() {
-      if (!business || !productId) return;
+      if (!business || !productId || permissionsLoading || !canEditProducts) return;
       setLoading(true);
       setError("");
       try {
@@ -166,7 +170,7 @@ export default function EditProductPage() {
     return () => {
       mounted = false;
     };
-  }, [business, productId]);
+  }, [business, canEditProducts, permissionsLoading, productId]);
   function setField<K extends keyof ProductFormState>(
     key: K,
     value: ProductFormState[K],
@@ -175,6 +179,10 @@ export default function EditProductPage() {
   }
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canEditProducts) {
+      setError("Tu n'as pas l'autorisation de modifier un produit.");
+      return;
+    }
     setError("");
     const validationMessage = validateForm(form);
     if (validationMessage) {
@@ -191,7 +199,9 @@ export default function EditProductPage() {
         type: form.type,
         barcode: form.barcode.trim(),
         price: Number(form.price),
+        priceCurrency: "HTG",
         cost: Number(form.cost),
+        costCurrency: "HTG",
         stock: Number(form.stock),
         reorderLevel: Number(form.reorderLevel),
         unit: form.unit,
@@ -241,16 +251,23 @@ export default function EditProductPage() {
           </Link>{" "}
         </div>{" "}
       </section>{" "}
-      {error ? (
-        <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {" "}
-          {error}{" "}
+      {!permissionsLoading && !canEditProducts ? (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Ce profil ne peut pas modifier un produit.
         </section>
-      ) : null}{" "}
-      <form
-        onSubmit={onSubmit}
-        className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5"
-      >
+      ) : null}
+      {canEditProducts ? (
+        <>
+          {error ? (
+            <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {" "}
+              {error}{" "}
+            </section>
+          ) : null}{" "}
+          <form
+            onSubmit={onSubmit}
+            className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5"
+          >
         {" "}
         {loading ? (
           <div className="py-6 text-center text-slate-500">
@@ -305,7 +322,7 @@ export default function EditProductPage() {
               <option value="service">Service</option>{" "}
             </select>{" "}
           </Field>{" "}
-          <Field label="Prix vente *">
+          <Field label="Prix vente * (HTG)">
             {" "}
             <input
               type="number"
@@ -316,7 +333,7 @@ export default function EditProductPage() {
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />{" "}
           </Field>{" "}
-          <Field label="Cout achat *">
+          <Field label="Cout achat * (HTG)">
             {" "}
             <input
               type="number"
@@ -481,7 +498,9 @@ export default function EditProductPage() {
             {saving ? "Mise a jour..." : "Enregistrer modifications"}{" "}
           </button>{" "}
         </div>{" "}
-      </form>{" "}
+          </form>
+        </>
+      ) : null}{" "}
     </div>
   );
 }
