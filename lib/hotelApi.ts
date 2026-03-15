@@ -8,6 +8,12 @@ function toString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
+function toDateOnlyString(value: unknown, fallback = ""): string {
+  const raw = toString(value, fallback).trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : raw;
+}
+
 function toNumber(value: unknown, fallback = 0): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -143,6 +149,7 @@ export type HotelReservation = {
   id: number;
   room_id: number;
   customer_id: number | null;
+  reservation_code: string;
   guest_name: string;
   guest_phone: string;
   guest_email: string;
@@ -159,6 +166,7 @@ export type HotelReservation = {
   notes: string;
   customer: {
     id: number;
+    code: string | null;
     name: string;
     email: string;
     phone: string;
@@ -170,7 +178,11 @@ export type HotelMoment = {
   id: number;
   room_id: number;
   guest_name: string;
+  guest_first_name: string;
+  guest_last_name: string;
   guest_phone: string;
+  guest_address: string;
+  guest_document_number: string;
   start_at: string;
   end_at: string;
   duration_minutes: number;
@@ -181,6 +193,13 @@ export type HotelMoment = {
   identity_document_path: string | null;
   identity_document_url: string | null;
   room: HotelRoom | null;
+};
+
+export type HotelMomentIdentityDocumentFields = {
+  lastName: string;
+  firstName: string;
+  address: string;
+  documentNumber: string;
 };
 
 export type HotelReservationCharge = {
@@ -354,11 +373,12 @@ function normalizeReservation(raw: unknown): HotelReservation {
     id: toNumber(obj.id, 0),
     room_id: toNumber(obj.room_id, 0),
     customer_id: toId(obj.customer_id),
+    reservation_code: toString(obj.reservation_code),
     guest_name: toString(obj.guest_name),
     guest_phone: toString(obj.guest_phone),
     guest_email: toString(obj.guest_email),
-    check_in: toString(obj.check_in),
-    check_out: toString(obj.check_out),
+    check_in: toDateOnlyString(obj.check_in),
+    check_out: toDateOnlyString(obj.check_out),
     guests: toNumber(obj.guests, 1),
     total_amount: toNumber(obj.total_amount, 0),
     total_currency: toString(obj.total_currency, "USD"),
@@ -371,6 +391,7 @@ function normalizeReservation(raw: unknown): HotelReservation {
     customer: obj.customer
       ? {
           id: toNumber(customerRaw.id, 0),
+          code: toString(customerRaw.code, "") || null,
           name: toString(customerRaw.name),
           email: toString(customerRaw.email),
           phone: toString(customerRaw.phone),
@@ -386,7 +407,11 @@ function normalizeMoment(raw: unknown): HotelMoment {
     id: toNumber(obj.id, 0),
     room_id: toNumber(obj.room_id, 0),
     guest_name: toString(obj.guest_name),
+    guest_first_name: toString(obj.guest_first_name),
+    guest_last_name: toString(obj.guest_last_name),
     guest_phone: toString(obj.guest_phone),
+    guest_address: toString(obj.guest_address),
+    guest_document_number: toString(obj.guest_document_number),
     start_at: toString(obj.start_at),
     end_at: toString(obj.end_at),
     duration_minutes: toNumber(obj.duration_minutes, 120),
@@ -785,8 +810,12 @@ export async function createHotelMoment(
   business: string,
   input: {
     roomId: number;
-    guestName: string;
+    guestName?: string;
+    guestFirstName?: string;
+    guestLastName?: string;
     guestPhone?: string;
+    guestAddress?: string;
+    guestDocumentNumber?: string;
     startAt: string;
     totalAmount?: number;
     status?: string;
@@ -797,7 +826,11 @@ export async function createHotelMoment(
   const formData = new FormData();
   appendIfDefined(formData, "room_id", input.roomId);
   appendIfDefined(formData, "guest_name", input.guestName);
+  appendIfDefined(formData, "guest_first_name", input.guestFirstName);
+  appendIfDefined(formData, "guest_last_name", input.guestLastName);
   appendIfDefined(formData, "guest_phone", input.guestPhone ?? "");
+  appendIfDefined(formData, "guest_address", input.guestAddress ?? "");
+  appendIfDefined(formData, "guest_document_number", input.guestDocumentNumber ?? "");
   appendIfDefined(formData, "start_at", input.startAt);
   appendIfDefined(formData, "total_amount", input.totalAmount);
   appendIfDefined(formData, "status", input.status ?? "pending");
@@ -823,7 +856,11 @@ export async function updateHotelMoment(
   input: {
     roomId?: number;
     guestName?: string;
+    guestFirstName?: string;
+    guestLastName?: string;
     guestPhone?: string;
+    guestAddress?: string;
+    guestDocumentNumber?: string;
     startAt?: string;
     totalAmount?: number;
     status?: string;
@@ -833,7 +870,11 @@ export async function updateHotelMoment(
   const payload: Dict = {};
   if (input.roomId !== undefined) payload.room_id = input.roomId;
   if (input.guestName !== undefined) payload.guest_name = input.guestName;
+  if (input.guestFirstName !== undefined) payload.guest_first_name = input.guestFirstName;
+  if (input.guestLastName !== undefined) payload.guest_last_name = input.guestLastName;
   if (input.guestPhone !== undefined) payload.guest_phone = input.guestPhone;
+  if (input.guestAddress !== undefined) payload.guest_address = input.guestAddress;
+  if (input.guestDocumentNumber !== undefined) payload.guest_document_number = input.guestDocumentNumber;
   if (input.startAt !== undefined) payload.start_at = input.startAt;
   if (input.totalAmount !== undefined) payload.total_amount = input.totalAmount;
   if (input.status !== undefined) payload.status = input.status;
@@ -845,6 +886,27 @@ export async function updateHotelMoment(
   });
 
   return normalizeMoment(extractResource(raw, ["moment"]));
+}
+
+export async function extractHotelMomentIdentityDocument(
+  business: string,
+  file: File
+): Promise<HotelMomentIdentityDocumentFields> {
+  const formData = new FormData();
+  formData.append("identity_document", file);
+
+  const raw = await apiFetch<unknown>(`${businessBasePath(business)}/moments/extract-identity-document`, {
+    method: "POST",
+    body: formData,
+  });
+  const fields = asRecord(extractResource(raw, ["fields"]));
+
+  return {
+    lastName: toString(fields.last_name ?? fields.lastName),
+    firstName: toString(fields.first_name ?? fields.firstName),
+    address: toString(fields.address),
+    documentNumber: toString(fields.document_number ?? fields.documentNumber),
+  };
 }
 
 export async function getHotelReservationFolio(
@@ -968,7 +1030,7 @@ export async function createHotelHousekeepingTask(
   input: {
     roomId: number;
     taskDate: string;
-    taskType?: "cleaning" | "inspection" | "maintenance" | "linen" | "refill";
+    taskType?: "cleaning" | "inspection" | "maintenance";
     priority?: "low" | "normal" | "high" | "urgent";
     status?: "pending" | "in_progress" | "done" | "cancelled";
     assignedEmployeeId?: number | null;
@@ -998,7 +1060,7 @@ export async function updateHotelHousekeepingTask(
   input: {
     roomId?: number;
     taskDate?: string;
-    taskType?: "cleaning" | "inspection" | "maintenance" | "linen" | "refill";
+    taskType?: "cleaning" | "inspection" | "maintenance";
     priority?: "low" | "normal" | "high" | "urgent";
     status?: "pending" | "in_progress" | "done" | "cancelled";
     assignedEmployeeId?: number | null;

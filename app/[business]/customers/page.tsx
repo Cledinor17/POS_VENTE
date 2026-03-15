@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import {
   createCustomer,
+  extractCustomerIdentityDocument,
   listCustomers,
   updateCustomer,
   type CustomerAddress,
@@ -30,11 +31,21 @@ type CreateCustomerFormState = {
   currency: string;
   paymentTermsDays: string;
   creditLimit: string;
+  identityDocumentType: string;
+  identityDocumentNumber: string;
   notes: string;
   billingAddress: CustomerAddressDraft;
   shippingAddress: CustomerAddressDraft;
   identityDocumentFile: File | null;
 };
+
+const IDENTITY_DOCUMENT_TYPE_OPTIONS = [
+  { value: "", label: "Type de piece" },
+  { value: "carte_id", label: "Carte ID" },
+  { value: "passport", label: "Passport" },
+  { value: "permis", label: "Permis" },
+  { value: "autre", label: "Autre" },
+] as const;
 
 function createEmptyAddressDraft(): CustomerAddressDraft {
   return {
@@ -58,6 +69,8 @@ function createEmptyCustomerForm(): CreateCustomerFormState {
     currency: "",
     paymentTermsDays: "",
     creditLimit: "",
+    identityDocumentType: "",
+    identityDocumentNumber: "",
     notes: "",
     billingAddress: createEmptyAddressDraft(),
     shippingAddress: createEmptyAddressDraft(),
@@ -93,6 +106,8 @@ function createCustomerFormFromItem(item: CustomerItem): CreateCustomerFormState
       item.creditLimit !== null && item.creditLimit !== undefined
         ? String(item.creditLimit)
         : "",
+    identityDocumentType: item.identityDocumentType ?? "",
+    identityDocumentNumber: item.identityDocumentNumber ?? "",
     notes: item.notes ?? "",
     billingAddress: createAddressDraftFromCustomer(item.billingAddress),
     shippingAddress: createAddressDraftFromCustomer(item.shippingAddress),
@@ -134,7 +149,7 @@ const CUSTOMER_FORM_STEPS = [
   {
     id: "identity",
     title: "Identite",
-    description: "Coordonnees et informations principales du client.",
+    description: "Piece d identite et informations principales du client.",
   },
   {
     id: "addresses",
@@ -144,9 +159,13 @@ const CUSTOMER_FORM_STEPS = [
   {
     id: "documents",
     title: "Gestion",
-    description: "Conditions, notes et piece d'identite.",
+    description: "Conditions, notes et parametres du client.",
   },
 ] as const;
+
+function composeImportedCustomerName(firstName: string, lastName: string): string {
+  return [firstName.trim(), lastName.trim()].filter((value) => value.length > 0).join(" ");
+}
 
 export default function CustomersPage() {
   const params = useParams<{ business: string }>();
@@ -166,6 +185,9 @@ export default function CustomersPage() {
   const [activeFilter, setActiveFilter] = useState<"" | "1" | "0">("");
   const [form, setForm] = useState<CreateCustomerFormState>(() => createEmptyCustomerForm());
   const [formError, setFormError] = useState("");
+  const [importingIdentity, setImportingIdentity] = useState(false);
+  const [identityImportError, setIdentityImportError] = useState("");
+  const [identityImportSuccess, setIdentityImportSuccess] = useState("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [formStep, setFormStep] = useState(0);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
@@ -266,11 +288,73 @@ export default function CustomersPage() {
     }));
   }
 
+  function resetIdentityImportFeedback() {
+    setImportingIdentity(false);
+    setIdentityImportError("");
+    setIdentityImportSuccess("");
+  }
+
+  function handleIdentityDocumentChange(file: File | null) {
+    updateFormField("identityDocumentFile", file);
+    setIdentityImportError("");
+    setIdentityImportSuccess("");
+  }
+
+  async function handleIdentityImport() {
+    if (!businessSlug) return;
+    if (!form.identityDocumentFile) {
+      setIdentityImportError("Ajoute d'abord une piece d'identite.");
+      setIdentityImportSuccess("");
+      return;
+    }
+
+    setImportingIdentity(true);
+    setIdentityImportError("");
+    setIdentityImportSuccess("");
+    try {
+      const extracted = await extractCustomerIdentityDocument(businessSlug, form.identityDocumentFile);
+      const importedName = composeImportedCustomerName(extracted.firstName, extracted.lastName);
+      const hasImportedData =
+        importedName.trim() !== "" ||
+        extracted.address.trim() !== "" ||
+        extracted.documentType.trim() !== "" ||
+        extracted.documentNumber.trim() !== "";
+
+      if (!hasImportedData) {
+        setIdentityImportError("Aucune information exploitable n'a ete detectee sur cette piece.");
+        return;
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        name: importedName.trim() !== "" ? importedName : prev.name,
+        identityDocumentType: extracted.documentType.trim() !== "" ? extracted.documentType : prev.identityDocumentType,
+        identityDocumentNumber:
+          extracted.documentNumber.trim() !== "" ? extracted.documentNumber : prev.identityDocumentNumber,
+        billingAddress: {
+          ...prev.billingAddress,
+          line1: extracted.address.trim() !== "" ? extracted.address : prev.billingAddress.line1,
+        },
+        shippingAddress: {
+          ...prev.shippingAddress,
+          line1: extracted.address.trim() !== "" ? extracted.address : prev.shippingAddress.line1,
+        },
+      }));
+
+      setIdentityImportSuccess("Informations importees. Verifie les champs avant d'enregistrer.");
+    } catch (error) {
+      setIdentityImportError(getErrorMessage(error));
+    } finally {
+      setImportingIdentity(false);
+    }
+  }
+
   function openCreateModal() {
     if (!canCreateCustomers) return;
     setEditingCustomerId(null);
     setForm(createEmptyCustomerForm());
     setFormError("");
+    resetIdentityImportFeedback();
     setFormStep(0);
     setIsCreateModalOpen(true);
   }
@@ -281,6 +365,7 @@ export default function CustomersPage() {
     setForm(createEmptyCustomerForm());
     setFormStep(0);
     setFormError("");
+    resetIdentityImportFeedback();
   }
 
   function openEditModal(item: CustomerItem) {
@@ -288,6 +373,7 @@ export default function CustomersPage() {
     setEditingCustomerId(String(item.id));
     setForm(createCustomerFormFromItem(item));
     setFormError("");
+    resetIdentityImportFeedback();
     setFormStep(0);
     setIsCreateModalOpen(true);
   }
@@ -338,7 +424,6 @@ export default function CustomersPage() {
     setInfo("");
     try {
       const payload = {
-        code: form.code.trim() || undefined,
         name: form.name.trim(),
         companyName: form.companyName.trim() || undefined,
         email: form.email.trim() || undefined,
@@ -347,6 +432,8 @@ export default function CustomersPage() {
         currency: form.currency.trim() || undefined,
         paymentTermsDays: form.paymentTermsDays.trim() ? Number(form.paymentTermsDays) : undefined,
         creditLimit: form.creditLimit.trim() ? Number(form.creditLimit) : undefined,
+        identityDocumentType: form.identityDocumentType.trim() || undefined,
+        identityDocumentNumber: form.identityDocumentNumber.trim() || undefined,
         notes: form.notes.trim() || undefined,
         billingAddress: form.billingAddress,
         shippingAddress: form.shippingAddress,
@@ -527,46 +614,120 @@ export default function CustomersPage() {
                     transform: `translateX(-${formStep * (100 / CUSTOMER_FORM_STEPS.length)}%)`,
                   }}
                 >
-                  <div className="min-h-0 overflow-y-auto pr-1" style={{ width: `${100 / CUSTOMER_FORM_STEPS.length}%` }}>
-                    <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
-                      <input
-                        value={form.code}
-                        onChange={(event) => updateFormField("code", event.target.value)}
-                        placeholder="Code client"
-                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                      />
-                      <input
-                        value={form.companyName}
-                        onChange={(event) => updateFormField("companyName", event.target.value)}
-                        placeholder="Entreprise"
-                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                      />
-                      <input
-                        value={form.name}
-                        onChange={(event) => updateFormField("name", event.target.value)}
-                        placeholder="Nom (optionnel)"
-                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
-                      />
-                      <input
-                        value={form.email}
-                        onChange={(event) => updateFormField("email", event.target.value)}
-                        placeholder="Email"
-                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
-                      />
-                      <input
-                        value={form.phone}
-                        onChange={(event) => updateFormField("phone", event.target.value)}
-                        placeholder="Telephone"
-                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                      />
-                      <input
-                        value={form.taxNumber}
-                        onChange={(event) => updateFormField("taxNumber", event.target.value)}
-                        placeholder="NIF / NINU / ID"
-                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                      />
+                    <div className="min-h-0 overflow-y-auto pr-1" style={{ width: `${100 / CUSTOMER_FORM_STEPS.length}%` }}>
+                      <div className="space-y-3 sm:space-y-4">
+                        <div className="rounded-xl border border-slate-200 p-3 space-y-3 sm:p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="space-y-1">
+                              <h3 className="text-sm font-semibold text-slate-900">Piece d'identite</h3>
+                              <p className="text-xs text-slate-500">
+                                Televerse ou prends une photo de la piece, puis importe automatiquement les champs compatibles.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void handleIdentityImport()}
+                              disabled={importingIdentity || !form.identityDocumentFile}
+                              className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {importingIdentity ? "Import en cours..." : "Importer les informations"}
+                            </button>
+                          </div>
+
+                          {identityImportError ? (
+                            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                              {identityImportError}
+                            </div>
+                          ) : null}
+                          {identityImportSuccess ? (
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                              {identityImportSuccess}
+                            </div>
+                          ) : null}
+
+                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start xl:grid-cols-[minmax(0,1fr)_300px]">
+                            <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
+                              <select
+                                value={form.identityDocumentType}
+                                onChange={(event) => updateFormField("identityDocumentType", event.target.value)}
+                                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                              >
+                                {IDENTITY_DOCUMENT_TYPE_OPTIONS.map((option) => (
+                                  <option key={option.value || "empty"} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                value={form.identityDocumentNumber}
+                                onChange={(event) => updateFormField("identityDocumentNumber", event.target.value)}
+                                placeholder="Numero de piece"
+                                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                              />
+                              {isEditingCustomer && editingCustomer?.identityDocumentUrl && !form.identityDocumentFile ? (
+                                <a
+                                  href={editingCustomer.identityDocumentUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex w-fit rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 sm:col-span-2"
+                                >
+                                  Voir la piece actuelle
+                                </a>
+                              ) : null}
+                            </div>
+
+                            <IdentityDocumentField
+                              file={form.identityDocumentFile}
+                              onFileChange={handleIdentityDocumentChange}
+                              title="Document"
+                              description="Ajoute une image ou un PDF, puis utilise le bouton d'import pour pre-remplir le formulaire."
+                              className="h-fit"
+                              compact
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
+                          <input
+                            value={form.code}
+                            readOnly
+                            disabled
+                            placeholder={isEditingCustomer ? "Code client" : "Code genere automatiquement"}
+                            className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-slate-500 outline-none"
+                          />
+                          <input
+                            value={form.companyName}
+                            onChange={(event) => updateFormField("companyName", event.target.value)}
+                            placeholder="Entreprise"
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                          />
+                          <input
+                            value={form.name}
+                            onChange={(event) => updateFormField("name", event.target.value)}
+                            placeholder="Nom (optionnel)"
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
+                          />
+                          <input
+                            value={form.email}
+                            onChange={(event) => updateFormField("email", event.target.value)}
+                            placeholder="Email"
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
+                          />
+                          <input
+                            value={form.phone}
+                            onChange={(event) => updateFormField("phone", event.target.value)}
+                            placeholder="Telephone"
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                          />
+                          <input
+                            value={form.taxNumber}
+                            onChange={(event) => updateFormField("taxNumber", event.target.value)}
+                            placeholder="NIF / NINU"
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
                   <div className="min-h-0 overflow-y-auto px-1" style={{ width: `${100 / CUSTOMER_FORM_STEPS.length}%` }}>
                     <div className="grid gap-3 md:grid-cols-2 sm:gap-4">
@@ -657,56 +818,38 @@ export default function CustomersPage() {
                   </div>
 
                   <div className="min-h-0 overflow-y-auto pl-1" style={{ width: `${100 / CUSTOMER_FORM_STEPS.length}%` }}>
-                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start xl:grid-cols-[minmax(0,1fr)_300px] sm:gap-4">
-                      <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
-                        <input
-                          value={form.currency}
-                          onChange={(event) => updateFormField("currency", event.target.value)}
-                          placeholder="Devise"
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          value={form.paymentTermsDays}
-                          onChange={(event) => updateFormField("paymentTermsDays", event.target.value)}
-                          placeholder="Delai paiement (jours)"
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={form.creditLimit}
-                          onChange={(event) => updateFormField("creditLimit", event.target.value)}
-                          placeholder="Limite credit"
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        />
-                        <div />
-                        <textarea
-                          value={form.notes}
-                          onChange={(event) => updateFormField("notes", event.target.value)}
-                          placeholder="Notes"
-                          rows={4}
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
-                        />
-                      </div>
-
-                      <IdentityDocumentField
-                        file={form.identityDocumentFile}
-                        onFileChange={(file) => updateFormField("identityDocumentFile", file)}
-                        className="h-fit"
+                    <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
+                      <input
+                        value={form.currency}
+                        onChange={(event) => updateFormField("currency", event.target.value)}
+                        placeholder="Devise"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                       />
-                      {isEditingCustomer && editingCustomer?.identityDocumentUrl && !form.identityDocumentFile ? (
-                        <a
-                          href={editingCustomer.identityDocumentUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex w-fit rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
-                        >
-                          Voir la piece actuelle
-                        </a>
-                      ) : null}
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.paymentTermsDays}
+                        onChange={(event) => updateFormField("paymentTermsDays", event.target.value)}
+                        placeholder="Delai paiement (jours)"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.creditLimit}
+                        onChange={(event) => updateFormField("creditLimit", event.target.value)}
+                        placeholder="Limite credit"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                      />
+                      <div />
+                      <textarea
+                        value={form.notes}
+                        onChange={(event) => updateFormField("notes", event.target.value)}
+                        placeholder="Notes"
+                        rows={4}
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
+                      />
                     </div>
                   </div>
                 </div>

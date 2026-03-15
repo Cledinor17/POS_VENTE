@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import IdentityDocumentField from "@/components/IdentityDocumentField";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
+import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
 import { createCustomer, listCustomers, type CustomerAddress, type CustomerItem } from "@/lib/customersApi";
 import { formatMoney } from "@/lib/currency";
 import {
@@ -13,11 +14,13 @@ import {
   checkInHotelReservation,
   checkOutHotelReservation,
   createHotelReservation,
+  getHotelReservationFolio,
   getHotelReservations,
   getHotelRooms,
   noShowHotelReservation,
   updateHotelReservation,
   type HotelReservation,
+  type HotelReservationFolio,
   type HotelRoom,
 } from "@/lib/hotelApi";
 import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
@@ -30,13 +33,26 @@ function getErrorMessage(error: unknown): string {
 
 function parseDateOnly(value: string): Date | null {
   if (!value) return null;
-  const [yearRaw, monthRaw, dayRaw] = value.split("-");
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const [, yearRaw, monthRaw, dayRaw] = match;
   const year = Number(yearRaw);
   const month = Number(monthRaw);
   const day = Number(dayRaw);
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
   if (year <= 0 || month < 1 || month > 12 || day < 1 || day > 31) return null;
   return new Date(Date.UTC(year, month - 1, day));
+}
+
+function toDateOnlyValue(value: string): string {
+  const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : value.trim();
+}
+
+function getTodayDateOnly(): string {
+  const now = new Date();
+  const timezoneOffsetMs = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - timezoneOffsetMs).toISOString().slice(0, 10);
 }
 
 function formatReservationDate(value: string): string {
@@ -89,12 +105,980 @@ function formatReservationMoment(dateValue: string, dateTimeValue: string): stri
   return `${formatReservationDate(dateValue)} a ${formatReservationTime(dateTimeValue || dateValue)}`;
 }
 
+function getReservationCodeLabel(reservation: Pick<HotelReservation, "id" | "reservation_code">): string {
+  const code = reservation.reservation_code.trim();
+  return code !== "" ? code : `#${String(reservation.id).padStart(10, "0")}`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatBusinessAddress(settings: BusinessSettings | null): string {
+  if (!settings) return "";
+  return [
+    settings.address.line1,
+    settings.address.line2,
+    settings.address.city,
+    settings.address.state,
+    settings.address.zip,
+    settings.address.country,
+  ]
+    .filter((part) => (part ?? "").trim() !== "")
+    .join(", ");
+}
+
+function splitReservationCustomerName(reservation: HotelReservation): { firstName: string; lastName: string } {
+  const fullName = (reservation.customer?.name || reservation.guest_name || "").trim();
+  if (fullName === "") {
+    return { firstName: "-", lastName: "-" };
+  }
+
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: "-" };
+  }
+
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" "),
+  };
+}
+
+function formatReservationPrintQuantity(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  if (Math.abs(value - Math.round(value)) < 0.000001) {
+    return String(Math.round(value));
+  }
+  return value.toFixed(2);
+}
+
+function formatReservationPaymentMethodLabel(method: string): string {
+  if (method === "cash") return "Especes";
+  if (method === "card") return "Carte";
+  if (method === "bank") return "Banque";
+  if (method === "mobile") return "Mobile money";
+  if (method === "other") return "Autre";
+  return method.trim() || "-";
+}
+
+function getReservationSettlementStatus(
+  grossTotal: number,
+  paymentsTotal: number,
+  balanceDue: number
+): { label: string; tone: "success" | "warning" | "danger" | "neutral" } {
+  if (grossTotal <= 0) {
+    return { label: "Sans montant", tone: "neutral" };
+  }
+
+  if (paymentsTotal <= 0) {
+    return { label: "Non payee", tone: "danger" };
+  }
+
+  if (balanceDue <= 0.009) {
+    return { label: "Soldee", tone: "success" };
+  }
+
+  return { label: "Partiellement payee", tone: "warning" };
+}
+
+function buildReservationPrintLoadingHtml(reservationCode: string): string {
+  return `<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Preparation impression ${escapeHtml(reservationCode)}</title>
+    <style>
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        font-family: Arial, sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .card {
+        width: min(100%, 420px);
+        border: 1px solid #dbe4f0;
+        border-radius: 18px;
+        background: #ffffff;
+        padding: 24px;
+        text-align: center;
+        box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+      }
+      .spinner {
+        width: 42px;
+        height: 42px;
+        margin: 0 auto 14px;
+        border-radius: 999px;
+        border: 4px solid #dbeafe;
+        border-top-color: #2563eb;
+        animation: spin 0.9s linear infinite;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      p {
+        margin: 10px 0 0;
+        color: #475569;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="card">
+      <div class="spinner"></div>
+      <h1>Preparation de la fiche de reservation</h1>
+      <p>Chargement du detail de facturation et des paiements pour ${escapeHtml(reservationCode)}...</p>
+    </section>
+  </body>
+</html>`;
+}
+
+function buildReservationPrintHtml(
+  reservation: HotelReservation,
+  businessSettings: BusinessSettings | null,
+  folio: HotelReservationFolio | null
+): string {
+  const printedAt = new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date());
+
+  const reservationCode = getReservationCodeLabel(reservation);
+  const roomLabel = `${reservation.room?.name || "-"} #${reservation.room?.room_number || "-"}`.trim();
+  const notesLabel = reservation.notes?.trim() || "Aucune note.";
+  const hotelName = businessSettings?.legal_name || businessSettings?.name || "Hotel";
+  const hotelAddress = formatBusinessAddress(businessSettings) || "-";
+  const hotelPhone = businessSettings?.phone?.trim() || "-";
+  const hotelEmail = businessSettings?.email?.trim() || "-";
+  const hotelWebsite = businessSettings?.website?.trim() || "";
+  const hotelTaxNumber = businessSettings?.tax_number?.trim() || "-";
+  const hotelCurrency = businessSettings?.currency?.trim() || reservation.total_currency || "USD";
+  const hotelLogo = businessSettings?.logo_url?.trim() || "";
+  const customerIdentity = splitReservationCustomerName(reservation);
+  const customerCode = reservation.customer?.code?.trim() || "-";
+  const customerEmail = reservation.customer?.email?.trim() || reservation.guest_email?.trim() || "-";
+  const customerPhone = reservation.customer?.phone?.trim() || reservation.guest_phone?.trim() || "-";
+  const footerNote = businessSettings?.invoice_footer?.trim() || "";
+  const folioCurrency = folio?.currency || reservation.total_currency || hotelCurrency;
+  const roomAmount = Number(folio?.room_amount ?? reservation.total_amount ?? 0);
+  const extrasAmount = Number(folio?.extras_amount ?? 0);
+  const grossTotal = Number(folio?.gross_total ?? roomAmount + extrasAmount);
+  const paymentsTotal = Number(folio?.payments_total ?? 0);
+  const balanceDue = Number(folio?.balance_due ?? Math.max(grossTotal - paymentsTotal, 0));
+  const charges = folio?.charges ?? [];
+  const payments = folio?.payments ?? [];
+  const nights = getNights(reservation.check_in, reservation.check_out);
+  const billableNights = nights > 0 ? nights : 1;
+  const roomUnitPrice = billableNights > 0 ? roomAmount / billableNights : roomAmount;
+  const identifiedTaxAmount = Number(
+    charges
+      .reduce((sum, charge) => {
+        const haystack = `${charge.label} ${charge.description}`.toLowerCase();
+        return /\b(tax|tva|vat|fee|frais|service)\b/i.test(haystack)
+          ? sum + Number(charge.total_amount || 0)
+          : sum;
+      }, 0)
+      .toFixed(2)
+  );
+  const extrasNetAmount = Math.max(0, Number((extrasAmount - identifiedTaxAmount).toFixed(2)));
+  const subtotalBeforeTax = Number((roomAmount + extrasNetAmount).toFixed(2));
+  const paymentStatus = getReservationSettlementStatus(grossTotal, paymentsTotal, balanceDue);
+  const paymentStatusClass =
+    paymentStatus.tone === "success"
+      ? "settlement-success"
+      : paymentStatus.tone === "warning"
+        ? "settlement-warning"
+        : paymentStatus.tone === "danger"
+          ? "settlement-danger"
+          : "settlement-neutral";
+  const dueDate = formatReservationDate(reservation.check_out);
+  const documentMetaCards = [
+    ["Document", "Fiche / Facture reservation"],
+    ["Numero", reservationCode],
+    ["Emission", printedAt],
+    ["Echeance", dueDate],
+    ["Devise", folioCurrency],
+    ["Statut reglement", paymentStatus.label],
+  ]
+    .map(
+      ([label, value]) => `
+        <div class="meta-card">
+          <div class="meta-label">${escapeHtml(label)}</div>
+          <div class="meta-value">${escapeHtml(value)}</div>
+        </div>
+      `
+    )
+    .join("");
+
+  const reservationRows = [
+    ["Statut reservation", getStatusLabel(reservation.status)],
+    ["Chambre", roomLabel],
+    ["Arrivee prevue", formatReservationDate(reservation.check_in)],
+    ["Depart prevu", formatReservationDate(reservation.check_out)],
+    ["Nombre de nuits", String(nights || 1)],
+    ["Nombre de clients", String(reservation.guests || 1)],
+    ["Check-in reel", formatReservationDateTime(reservation.actual_check_in_at)],
+    ["Check-out reel", formatReservationDateTime(reservation.actual_check_out_at)],
+  ]
+    .map(
+      ([label, value]) => `
+        <div class="detail-row">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `
+    )
+    .join("");
+
+  const lineItemRows = [
+    {
+      description: `Hebergement - ${roomLabel}`,
+      details:
+        `${formatReservationDate(reservation.check_in)} au ${formatReservationDate(reservation.check_out)}` +
+        ` | ${reservation.guests || 1} client(s)`,
+      quantity: billableNights,
+      unitPrice: roomUnitPrice,
+      amount: roomAmount,
+      currency: folioCurrency,
+    },
+    ...charges.map((charge) => ({
+      description: charge.label || "Charge",
+      details:
+        (charge.description?.trim() || "") ||
+        `Ajoute le ${formatReservationDateTime(charge.posted_at || reservation.check_in)}`,
+      quantity: Number(charge.quantity || 1),
+      unitPrice: Number(charge.unit_price || charge.total_amount || 0),
+      amount: Number(charge.total_amount || 0),
+      currency: charge.currency || folioCurrency,
+    })),
+  ]
+    .map(
+      (item) => `
+        <tr>
+          <td data-label="Designation">
+            <div class="table-primary">${escapeHtml(item.description)}</div>
+            <div class="table-secondary">${escapeHtml(item.details)}</div>
+          </td>
+          <td data-label="Quantite" class="text-right">${escapeHtml(formatReservationPrintQuantity(item.quantity))}</td>
+          <td data-label="Prix unitaire" class="text-right">${escapeHtml(formatMoney(item.unitPrice, item.currency))}</td>
+          <td data-label="Montant" class="text-right amount-cell">${escapeHtml(formatMoney(item.amount, item.currency))}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  const paymentRows = payments.length
+    ? payments
+      .map((payment) => {
+        const originalAmount =
+          payment.payment_currency !== folioCurrency
+            ? `${formatMoney(payment.payment_amount, payment.payment_currency)} | applique ${formatMoney(payment.amount, folioCurrency)}`
+            : formatMoney(payment.amount, folioCurrency);
+
+        return `
+          <tr>
+            <td data-label="Date">${escapeHtml(formatReservationDateTime(payment.paid_at || reservation.check_in))}</td>
+            <td data-label="Methode / ref">
+              <div class="table-primary">${escapeHtml(formatReservationPaymentMethodLabel(payment.payment_method))}</div>
+              <div class="table-secondary">${escapeHtml(payment.reference?.trim() || payment.notes?.trim() || "-")}</div>
+            </td>
+            <td data-label="Montant" class="text-right amount-cell">${escapeHtml(originalAmount)}</td>
+          </tr>
+        `;
+      })
+      .join("")
+    : `
+      <tr>
+        <td colspan="3" class="empty-table">Aucun paiement enregistre pour cette reservation.</td>
+      </tr>
+    `;
+
+  const summaryRows = [
+    ["Sous-total hebergement", formatMoney(roomAmount, folioCurrency), ""],
+    ["Extras et services", formatMoney(extrasNetAmount, folioCurrency), ""],
+    ["Taxes / frais identifies", formatMoney(identifiedTaxAmount, folioCurrency), ""],
+    ["Total facture", formatMoney(grossTotal, folioCurrency), "summary-strong"],
+    ["Paiements recus", formatMoney(paymentsTotal, folioCurrency), ""],
+    ["Balance due", formatMoney(balanceDue, folioCurrency), "summary-balance"],
+  ]
+    .map(
+      ([label, value, rowClass]) => `
+        <tr class="${rowClass}">
+          <td>${escapeHtml(label)}</td>
+          <td>${escapeHtml(value)}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fiche reservation ${escapeHtml(reservationCode)}</title>
+    <style>
+      @page { size: auto; margin: 10mm; }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+        color: #0f172a;
+        font-family: Arial, sans-serif;
+      }
+      body {
+        padding: 6mm 0;
+      }
+      .sheet {
+        width: min(100%, 200mm);
+        margin: 0 auto;
+        padding: 0 2mm;
+      }
+      .invoice-shell {
+        border: 1px solid #dbe4f0;
+        border-radius: 18px;
+        overflow: hidden;
+        background: #ffffff;
+      }
+      .header {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px 18px;
+        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+        border-bottom: 1px solid #dbe4f0;
+      }
+      .brand {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+      }
+      .logo {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        object-fit: contain;
+        background: #ffffff;
+        border: 1px solid #dbe4f0;
+        padding: 6px;
+      }
+      .title {
+        font-size: 24px;
+        font-weight: 800;
+        margin: 0;
+      }
+      .hotel-name {
+        font-size: 18px;
+        font-weight: 800;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: #475569;
+        font-size: 12px;
+        margin-top: 2px;
+        line-height: 1.5;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: 700;
+        word-break: break-all;
+      }
+      .kpi-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        padding: 0 18px 18px;
+        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+        border-bottom: 1px solid #dbe4f0;
+      }
+      .kpi-card {
+        border: 1px solid #dbe4f0;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.92);
+        padding: 12px;
+      }
+      .kpi-label {
+        margin: 0;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+      }
+      .kpi-value {
+        margin-top: 8px;
+        font-size: 18px;
+        font-weight: 800;
+        color: #0f172a;
+        word-break: break-word;
+      }
+      .content {
+        padding: 18px;
+      }
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .meta-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 12px;
+        background: #ffffff;
+      }
+      .meta-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+      }
+      .meta-value {
+        margin-top: 8px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #0f172a;
+        word-break: break-word;
+      }
+      .invoice-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .panel {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 14px;
+        background: #ffffff;
+        break-inside: avoid;
+      }
+      .panel-title {
+        margin: 0 0 10px;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+      }
+      .identity-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #64748b;
+        margin-bottom: 6px;
+      }
+      .value {
+        font-size: 14px;
+        font-weight: 600;
+        color: #0f172a;
+        word-break: break-word;
+      }
+      .details-panel {
+        margin-bottom: 16px;
+      }
+      .detail-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 0;
+        border-bottom: 1px dashed #e2e8f0;
+        font-size: 13px;
+        color: #334155;
+      }
+      .detail-row:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+      }
+      .detail-row strong {
+        text-align: right;
+        color: #0f172a;
+      }
+      .table-panel {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 14px;
+        background: #ffffff;
+        break-inside: avoid;
+      }
+      .table-shell {
+        overflow: hidden;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+      }
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .data-table th,
+      .data-table td {
+        padding: 11px 12px;
+        font-size: 13px;
+        border-bottom: 1px solid #e2e8f0;
+        vertical-align: top;
+      }
+      .data-table th {
+        background: #f8fafc;
+        color: #475569;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 11px;
+      }
+      .data-table tbody tr:last-child td {
+        border-bottom: 0;
+      }
+      .table-primary {
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .table-secondary {
+        margin-top: 4px;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .text-right {
+        text-align: right;
+      }
+      .amount-cell {
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .empty-table {
+        text-align: center;
+        color: #64748b;
+        font-style: italic;
+      }
+      .settlement-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+        gap: 16px;
+        margin-top: 16px;
+      }
+      .totals-panel {
+        border: 1px solid #dbe4f0;
+        border-radius: 14px;
+        padding: 14px;
+        background: #f8fafc;
+      }
+      .totals-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .totals-table td {
+        padding: 10px 0;
+        font-size: 13px;
+        color: #334155;
+        border-bottom: 1px dashed #cbd5e1;
+      }
+      .totals-table tr:last-child td {
+        border-bottom: 0;
+      }
+      .totals-table td:last-child {
+        text-align: right;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .summary-strong td {
+        font-weight: 800;
+      }
+      .summary-balance td {
+        padding-top: 12px;
+        border-top: 1px solid #94a3b8;
+        border-bottom: 0;
+        font-size: 16px;
+        font-weight: 800;
+        color: #0f172a;
+      }
+      .summary-note {
+        margin-top: 12px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #475569;
+      }
+      .settlement-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .settlement-success {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .settlement-warning {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .settlement-danger {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+      .settlement-neutral {
+        background: #e2e8f0;
+        color: #334155;
+      }
+      .notes {
+        margin-top: 16px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 12px;
+        background: #ffffff;
+      }
+      .notes p {
+        margin: 8px 0 0;
+        color: #334155;
+        font-size: 13px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+      }
+      .signature-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 16px;
+      }
+      .signature-box {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #ffffff;
+        padding: 12px;
+        min-height: 100px;
+      }
+      .signature-line {
+        margin-top: 44px;
+        border-top: 1px solid #94a3b8;
+        padding-top: 8px;
+        font-size: 12px;
+        color: #475569;
+      }
+      .footer {
+        margin-top: 14px;
+        color: #64748b;
+        font-size: 11px;
+        text-align: center;
+      }
+      @media print {
+        body {
+          padding: 0;
+        }
+        .sheet {
+          width: 100%;
+          max-width: none;
+          padding: 0;
+        }
+      }
+      @media (max-width: 820px) {
+        .kpi-strip,
+        .meta-grid,
+        .invoice-top {
+          grid-template-columns: 1fr;
+        }
+        .settlement-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 480px) {
+        @page { margin: 4mm; }
+        body {
+          padding: 4mm 0;
+        }
+        .sheet {
+          width: 100%;
+          padding: 0 1mm;
+        }
+        .header,
+        .content {
+          padding: 10px;
+        }
+        .kpi-strip {
+          padding: 0 10px 10px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .brand {
+          gap: 10px;
+        }
+        .logo {
+          width: 48px;
+          height: 48px;
+          border-radius: 10px;
+        }
+        .title {
+          font-size: 16px;
+        }
+        .hotel-name {
+          font-size: 15px;
+        }
+        .meta-grid,
+        .identity-grid {
+          grid-template-columns: 1fr;
+        }
+        .value {
+          font-size: 12px;
+        }
+        .detail-row {
+          flex-direction: column;
+          gap: 4px;
+        }
+        .detail-row strong {
+          text-align: left;
+        }
+        .data-table,
+        .data-table thead,
+        .data-table tbody,
+        .data-table tr,
+        .data-table th,
+        .data-table td {
+          display: block;
+          width: 100%;
+        }
+        .data-table thead {
+          display: none;
+        }
+        .data-table tr {
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .data-table tbody tr:last-child {
+          border-bottom: 0;
+        }
+        .data-table td {
+          border-bottom: 0;
+          padding: 8px 10px;
+        }
+        .data-table td::before {
+          content: attr(data-label);
+          display: block;
+          margin-bottom: 4px;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          color: #64748b;
+          text-align: left;
+        }
+        .data-table td.text-right,
+        .data-table td.amount-cell {
+          text-align: left;
+        }
+        .signature-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <section class="invoice-shell">
+        <section class="header">
+          <div class="brand">
+            ${hotelLogo ? `<img class="logo" src="${escapeHtml(hotelLogo)}" alt="Logo hotel" />` : ""}
+            <div>
+              <div class="hotel-name">${escapeHtml(hotelName)}</div>
+              <div class="subtitle">${escapeHtml(hotelAddress)}</div>
+              <div class="subtitle">Tel: ${escapeHtml(hotelPhone)} | Email: ${escapeHtml(hotelEmail)}</div>
+              ${hotelWebsite ? `<div class="subtitle">${escapeHtml(hotelWebsite)}</div>` : ""}
+              <div class="subtitle">No fiscal: ${escapeHtml(hotelTaxNumber)}</div>
+            </div>
+          </div>
+          <div>
+            <h1 class="title">Fiche de reservation</h1>
+            <div class="subtitle">Imprime le ${escapeHtml(printedAt)}</div>
+            <div style="margin-top:10px" class="badge">${escapeHtml(reservationCode)}</div>
+          </div>
+        </section>
+
+        <section class="kpi-strip">
+          <article class="kpi-card">
+            <p class="kpi-label">Total facture</p>
+            <div class="kpi-value">${escapeHtml(formatMoney(grossTotal, folioCurrency))}</div>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Paiements recus</p>
+            <div class="kpi-value">${escapeHtml(formatMoney(paymentsTotal, folioCurrency))}</div>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Balance due</p>
+            <div class="kpi-value">${escapeHtml(formatMoney(balanceDue, folioCurrency))}</div>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Reglement</p>
+            <div class="kpi-value">
+              <span class="settlement-badge ${paymentStatusClass}">${escapeHtml(paymentStatus.label)}</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="content">
+          <section class="meta-grid">
+            ${documentMetaCards}
+          </section>
+
+          <section class="invoice-top">
+            <div class="panel">
+              <h2 class="panel-title">Informations client</h2>
+              <div class="identity-grid">
+                <div>
+                  <div class="label">Code client</div>
+                  <div class="value">${escapeHtml(customerCode)}</div>
+                </div>
+                <div>
+                  <div class="label">Nom</div>
+                  <div class="value">${escapeHtml(customerIdentity.lastName)}</div>
+                </div>
+                <div>
+                  <div class="label">Prenom</div>
+                  <div class="value">${escapeHtml(customerIdentity.firstName)}</div>
+                </div>
+                <div>
+                  <div class="label">Email</div>
+                  <div class="value">${escapeHtml(customerEmail)}</div>
+                </div>
+                <div>
+                  <div class="label">Tel</div>
+                  <div class="value">${escapeHtml(customerPhone)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h2 class="panel-title">Informations reservation</h2>
+              ${reservationRows}
+            </div>
+          </section>
+
+          <section class="table-panel">
+            <h2 class="panel-title">Detail de facturation</h2>
+            <div class="table-shell">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Designation</th>
+                    <th class="text-right">Quantite</th>
+                    <th class="text-right">Prix unitaire</th>
+                    <th class="text-right">Montant</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${lineItemRows}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="settlement-grid">
+            <section class="table-panel">
+              <h2 class="panel-title">Historique des paiements</h2>
+              <div class="table-shell">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Methode / reference</th>
+                      <th class="text-right">Montant</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${paymentRows}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="totals-panel">
+              <h2 class="panel-title">Recapitulatif financier</h2>
+              <table class="totals-table">
+                <tbody>
+                  ${summaryRows}
+                </tbody>
+              </table>
+              <div class="summary-note">
+                Conditions de paiement: paiement attendu au plus tard a la date de depart (${escapeHtml(dueDate)}).
+                ${identifiedTaxAmount > 0
+                  ? ` Les taxes et frais identifies sont inclus dans le total facture.`
+                  : ` Aucune taxe distincte n est detaillee dans le systeme pour cette reservation.`}
+              </div>
+            </section>
+          </section>
+
+          <section class="notes">
+            <div class="label">Notes</div>
+            <p>${escapeHtml(notesLabel)}</p>
+          </section>
+
+          <section class="signature-grid">
+            <article class="signature-box">
+              <div class="label">Validation hotel</div>
+              <div class="signature-line">Nom, signature et cachet</div>
+            </article>
+            <article class="signature-box">
+              <div class="label">Validation client</div>
+              <div class="signature-line">Nom et signature du client</div>
+            </article>
+          </section>
+
+          ${footerNote ? `<div class="footer">${escapeHtml(footerNote)}</div>` : `<div class="footer">Merci pour votre confiance.</div>`}
+        </section>
+      </section>
+    </main>
+  </body>
+</html>`;
+}
+
 function getNights(checkIn: string, checkOut: string): number {
   const start = parseDateOnly(checkIn);
   const end = parseDateOnly(checkOut);
   if (!start || !end) return 0;
   const diff = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
   return diff > 0 ? diff : 0;
+}
+
+function addDaysToDateOnly(value: string, days: number): string {
+  const date = parseDateOnly(value);
+  if (!date) return "";
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function isDateOnlyAfter(candidate: string, reference: string): boolean {
+  const candidateDate = parseDateOnly(candidate);
+  const referenceDate = parseDateOnly(reference);
+  if (!candidateDate || !referenceDate) return false;
+  return candidateDate.getTime() > referenceDate.getTime();
 }
 
 function rangesOverlap(startA: Date, endA: Date, startB: Date, endB: Date): boolean {
@@ -139,7 +1123,7 @@ const CUSTOMER_MODAL_STEPS = [
 
 const MANUAL_RESERVATION_STATUSES = [
   { value: "pending", label: "En attente" },
-  { value: "confirmed", label: "Confirmed" },
+  { value: "confirmed", label: "Confirmee" },
   { value: "checked_in", label: "Check-in" },
   { value: "checked_out", label: "Check-out" },
   { value: "cancelled", label: "Annuler" },
@@ -215,7 +1199,7 @@ function createEmptyNewCustomerForm(): NewCustomerFormState {
 
 function getStatusLabel(status: string): string {
   if (status === "pending") return "En attente";
-  if (status === "confirmed") return "Confirmed";
+  if (status === "confirmed") return "Confirmee";
   if (status === "checked_in") return "Check-in";
   if (status === "checked_out") return "Check-out";
   if (status === "cancelled") return "Annulee";
@@ -239,6 +1223,69 @@ function getStatusBadgeClasses(status: string): string {
     return "border-red-200 bg-red-50 text-red-700";
   }
   return "border-slate-200 bg-slate-100 text-slate-700";
+}
+
+function getAllowedReservationNextStatuses(status: string): string[] {
+  if (status === "pending") return ["confirmed", "cancelled"];
+  if (status === "confirmed") return ["checked_in", "cancelled"];
+  if (status === "checked_in") return ["checked_out"];
+  return [];
+}
+
+function getReservationStatusTransitionError(reservation: HotelReservation, nextStatus: string): string | null {
+  if (!nextStatus || nextStatus === reservation.status) return null;
+
+  const allowedNextStatuses = getAllowedReservationNextStatuses(reservation.status);
+  if (allowedNextStatuses.includes(nextStatus)) return null;
+
+  if (reservation.status === "cancelled") {
+    return "Impossible de modifier une reservation annulee.";
+  }
+
+  if (reservation.status === "checked_out") {
+    return "Impossible de modifier une reservation deja check-out.";
+  }
+
+  if (nextStatus === "checked_in" && reservation.status !== "confirmed") {
+    return "Impossible de faire le check-in d une reservation qui n est pas confirmee.";
+  }
+
+  if (nextStatus === "checked_out" && reservation.status !== "checked_in") {
+    return "Impossible de faire le check-out d une reservation qui n est pas en check-in.";
+  }
+
+  if (nextStatus === "cancelled" && !["pending", "confirmed"].includes(reservation.status)) {
+    return "Impossible d annuler une reservation apres le check-in.";
+  }
+
+  if (nextStatus === "pending" || nextStatus === "confirmed") {
+    return "Impossible de revenir en arriere sur le statut d une reservation.";
+  }
+
+  return "Impossible de changer ce statut pour cette reservation.";
+}
+
+function getReservationOperationError(
+  reservation: HotelReservation,
+  operation: "checkIn" | "checkOut" | "cancel" | "noShow"
+): string | null {
+  if (operation === "checkIn") {
+    return getReservationStatusTransitionError(reservation, "checked_in");
+  }
+
+  if (operation === "checkOut") {
+    return getReservationStatusTransitionError(reservation, "checked_out");
+  }
+
+  if (operation === "cancel") {
+    return getReservationStatusTransitionError(reservation, "cancelled");
+  }
+
+  if (operation === "noShow" && !["pending", "confirmed"].includes(reservation.status)) {
+    return "No-show impossible pour ce statut.";
+  }
+
+  return null;
 }
 
 function getOperationConfirmation(operation: "checkIn" | "checkOut" | "cancel" | "noShow") {
@@ -284,6 +1331,7 @@ export default function HotelReservationsPage() {
 
   const [rooms, setRooms] = useState<HotelRoom[]>([]);
   const [reservations, setReservations] = useState<HotelReservation[]>([]);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [updatingReservationId, setUpdatingReservationId] = useState<number | null>(null);
@@ -313,6 +1361,8 @@ export default function HotelReservationsPage() {
   const [customerModalStep, setCustomerModalStep] = useState(0);
   const [newCustomerForm, setNewCustomerForm] = useState<NewCustomerFormState>(() => createEmptyNewCustomerForm());
   const [detailRoom, setDetailRoom] = useState<HotelRoom | null>(null);
+  const [detailReservation, setDetailReservation] = useState<HotelReservation | null>(null);
+  const [detailReservationCheckOut, setDetailReservationCheckOut] = useState("");
   const [detailSlideIndex, setDetailSlideIndex] = useState(0);
   const [confirmationDialog, setConfirmationDialog] = useState<ReservationConfirmationState | null>(null);
   const [reservationSearch, setReservationSearch] = useState("");
@@ -329,9 +1379,15 @@ export default function HotelReservationsPage() {
   const isReservationsReadOnly =
     canReadReservations && !canCreateReservations && !canEditReservations && !canManageReservations;
 
+  const todayDate = getTodayDateOnly();
   const nights = useMemo(() => getNights(checkIn, checkOut), [checkIn, checkOut]);
+  const isCheckInPast = checkIn !== "" && checkIn < todayDate;
   const periodReady = checkIn !== "" && checkOut !== "";
-  const periodValid = periodReady && nights > 0;
+  const periodValid = periodReady && !isCheckInPast && nights > 0;
+  const checkOutMin = checkIn && checkIn > todayDate ? checkIn : todayDate;
+  const periodValidationMessage = isCheckInPast
+    ? "Le check-in ne peut pas etre une date passee."
+    : "Periode invalide: le check-out doit etre apres le check-in.";
 
   const availableRooms = useMemo(() => {
     if (!periodValid) return [];
@@ -377,6 +1433,7 @@ export default function HotelReservationsPage() {
 
       const roomLabel = `${reservation.room?.name || ""} ${reservation.room?.room_number || ""}`.toLowerCase();
       const haystack = [
+        reservation.reservation_code,
         reservation.guest_name,
         reservation.guest_phone,
         reservation.guest_email,
@@ -399,6 +1456,7 @@ export default function HotelReservationsPage() {
     if (!canReadReservations) {
       setRooms([]);
       setReservations([]);
+      setBusinessSettings(null);
       setStatusDrafts({});
       setLoading(false);
       return;
@@ -406,12 +1464,14 @@ export default function HotelReservationsPage() {
     setLoading(true);
     setError("");
     try {
-      const [roomsData, reservationsData] = await Promise.all([
+      const [roomsData, reservationsData, businessSettingsData] = await Promise.all([
         getHotelRooms(business),
         getHotelReservations(business),
+        getBusinessSettings(business),
       ]);
       setRooms(roomsData);
       setReservations(reservationsData);
+      setBusinessSettings(businessSettingsData);
       setStatusDrafts(() => {
         const next: Record<number, string> = {};
         reservationsData.forEach((reservation) => {
@@ -421,6 +1481,7 @@ export default function HotelReservationsPage() {
       });
     } catch (err) {
       setError(getErrorMessage(err));
+      setBusinessSettings(null);
     } finally {
       setLoading(false);
     }
@@ -689,6 +1750,10 @@ export default function HotelReservationsPage() {
       setError("Check-in et check-out obligatoires.");
       return;
     }
+    if (isCheckInPast) {
+      setError("Le check-in ne peut pas etre une date passee.");
+      return;
+    }
     if (nights <= 0) {
       setError("La periode est invalide. Le check-out doit etre apres le check-in.");
       return;
@@ -715,7 +1780,6 @@ export default function HotelReservationsPage() {
         checkIn,
         checkOut,
         guests: Number(guests || 1),
-        status,
         notes: notes.trim(),
       });
       resetReservationForm();
@@ -727,6 +1791,22 @@ export default function HotelReservationsPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function applyReservationUpdate(updated: HotelReservation) {
+    setReservations((prev) =>
+      prev.some((reservation) => reservation.id === updated.id)
+        ? prev.map((reservation) => (reservation.id === updated.id ? updated : reservation))
+        : [updated, ...prev]
+    );
+    setStatusDrafts((prev) => ({ ...prev, [updated.id]: updated.status }));
+    setDetailReservation((current) => (current?.id === updated.id ? updated : current));
+    setDetailReservationCheckOut((current) => {
+      if (detailReservation?.id !== updated.id) {
+        return current;
+      }
+      return updated.check_out;
+    });
   }
 
   function closeConfirmationDialog(resetStatus = true) {
@@ -746,6 +1826,14 @@ export default function HotelReservationsPage() {
     const previousStatus = statusDrafts[reservation.id] ?? reservation.status;
     if (nextStatus === previousStatus) return;
 
+    const transitionError = getReservationStatusTransitionError(reservation, nextStatus);
+    if (transitionError) {
+      setError(transitionError);
+      setSuccess("");
+      setStatusDrafts((prev) => ({ ...prev, [reservation.id]: previousStatus }));
+      return;
+    }
+
     setStatusDrafts((prev) => ({ ...prev, [reservation.id]: nextStatus }));
     setConfirmationDialog({
       kind: "status",
@@ -762,13 +1850,21 @@ export default function HotelReservationsPage() {
   async function updateReservationStatus(reservationId: number, nextStatus: string, previousStatus: string) {
     if (!business || !canEditReservations) return;
 
-    if (nextStatus === "cancelled") {
+    if (nextStatus === "checked_in" || nextStatus === "checked_out" || nextStatus === "cancelled") {
       setOperationReservationId(reservationId);
       setError("");
       setSuccess("");
       try {
-        await cancelHotelReservation(business, reservationId);
-        setSuccess("Reservation annulee.");
+        if (nextStatus === "checked_in") {
+          await checkInHotelReservation(business, reservationId);
+          setSuccess("Check-in enregistre.");
+        } else if (nextStatus === "checked_out") {
+          await checkOutHotelReservation(business, reservationId);
+          setSuccess("Check-out enregistre.");
+        } else {
+          await cancelHotelReservation(business, reservationId);
+          setSuccess("Reservation annulee.");
+        }
         setConfirmationDialog(null);
         await loadData();
       } catch (err) {
@@ -825,14 +1921,20 @@ export default function HotelReservationsPage() {
   }
 
   function requestOperationConfirmation(
-    reservationId: number,
+    reservation: HotelReservation,
     operation: "checkIn" | "checkOut" | "cancel" | "noShow"
   ) {
     if (!canManageReservations) return;
+    const operationError = getReservationOperationError(reservation, operation);
+    if (operationError) {
+      setError(operationError);
+      setSuccess("");
+      return;
+    }
     const details = getOperationConfirmation(operation);
     setConfirmationDialog({
       kind: "operation",
-      reservationId,
+      reservationId: reservation.id,
       operation,
       title: details.title,
       message: details.message,
@@ -859,6 +1961,66 @@ export default function HotelReservationsPage() {
   function openRoomDetails(room: HotelRoom) {
     setDetailRoom(room);
     setDetailSlideIndex(0);
+  }
+
+  function openReservationDetails(reservation: HotelReservation) {
+    setDetailReservation(reservation);
+    setDetailReservationCheckOut(toDateOnlyValue(reservation.check_out));
+  }
+
+  function closeReservationDetails() {
+    setDetailReservation(null);
+    setDetailReservationCheckOut("");
+  }
+
+  async function handleReservationExtensionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!business || !detailReservation) return;
+    if (!canEditReservations) {
+      setError("Tu n'as pas l'autorisation de modifier cette reservation.");
+      setSuccess("");
+      return;
+    }
+    if (detailReservation.status === "cancelled") {
+      setError("Impossible de prolonger une reservation annulee.");
+      setSuccess("");
+      return;
+    }
+
+    const nextCheckOut = detailReservationCheckOut.trim();
+    if (!nextCheckOut) {
+      setError("Choisis une nouvelle date de depart.");
+      setSuccess("");
+      return;
+    }
+    if (!isDateOnlyAfter(nextCheckOut, detailReservation.check_out)) {
+      setError(
+        `La nouvelle date de depart doit etre apres la date de depart actuelle (${formatReservationDate(
+          detailReservation.check_out
+        )}).`
+      );
+      setSuccess("");
+      return;
+    }
+
+    setUpdatingReservationId(detailReservation.id);
+    setError("");
+    setSuccess("");
+    try {
+      const updated = await updateHotelReservation(business, detailReservation.id, {
+        checkOut: nextCheckOut,
+      });
+      applyReservationUpdate(updated);
+      setSuccess(
+        detailReservation.status === "checked_out" && updated.status === "checked_in"
+          ? "Sejour prolonge. La reservation est repassee en check-in."
+          : "Sejour prolonge."
+      );
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setUpdatingReservationId(null);
+    }
   }
 
   function openCreateModal() {
@@ -893,7 +2055,8 @@ export default function HotelReservationsPage() {
   function renderReservationStatusControl(reservation: HotelReservation) {
     const currentStatus = statusDrafts[reservation.id] ?? reservation.status;
     const isManualStatus = MANUAL_RESERVATION_STATUSES.some((option) => option.value === currentStatus);
-    const isCancelledStatus = currentStatus === "cancelled";
+    const isTerminalStatus = reservation.status === "checked_out" || reservation.status === "cancelled";
+    const isBusy = updatingReservationId === reservation.id || operationReservationId === reservation.id;
 
     if (!canEditReservations) {
       return (
@@ -919,7 +2082,7 @@ export default function HotelReservationsPage() {
         <select
           value={isManualStatus ? currentStatus : ""}
           onChange={(event) => requestStatusConfirmation(reservation, event.target.value)}
-          disabled={updatingReservationId === reservation.id || isCancelledStatus}
+          disabled={isBusy || isTerminalStatus}
           className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none disabled:opacity-60"
         >
           {!isManualStatus ? (
@@ -928,7 +2091,11 @@ export default function HotelReservationsPage() {
             </option>
           ) : null}
           {MANUAL_RESERVATION_STATUSES.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option
+              key={option.value}
+              value={option.value}
+              disabled={getReservationStatusTransitionError(reservation, option.value) !== null}
+            >
               {option.label}
             </option>
           ))}
@@ -937,63 +2104,108 @@ export default function HotelReservationsPage() {
     );
   }
 
-  function renderReservationActions(reservation: HotelReservation) {
+  function renderReservationActions(reservation: HotelReservation, layout: "card" | "table" = "card") {
+    const isTableLayout = layout === "table";
+    const actionButtonBaseClass = isTableLayout
+      ? "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition disabled:opacity-50"
+      : "inline-flex h-10 w-full items-center justify-center rounded-lg border px-2.5 py-2 transition disabled:opacity-50";
+    const showButton = (
+      <button
+        type="button"
+        onClick={() => openReservationDetails(reservation)}
+        title="Voir"
+        aria-label="Voir"
+        className={`${actionButtonBaseClass} border-slate-300 text-slate-700 hover:bg-slate-50`}
+      >
+        <i className="fa-solid fa-eye" aria-hidden="true" />
+      </button>
+    );
+
     if (!canManageReservations) {
-      return <span className="text-xs text-slate-400">Aucune action</span>;
+      if (!canReadReservations) {
+        return <span className="text-xs text-slate-400">Aucune action</span>;
+      }
+
+      return isTableLayout ? (
+        <div className="flex items-center gap-1.5 whitespace-nowrap">{showButton}</div>
+      ) : (
+        <div className="grid w-full min-w-[5.5rem] max-w-[7rem] grid-cols-2 gap-1.5">{showButton}</div>
+      );
     }
 
+    const isBusy = operationReservationId === reservation.id || updatingReservationId === reservation.id;
+    const cancelError = getReservationOperationError(reservation, "cancel");
+
     return (
-      <div className="flex flex-wrap gap-1.5">
+      <div
+        className={
+          isTableLayout
+            ? "flex items-center gap-1.5 whitespace-nowrap"
+            : "grid w-full min-w-[5.5rem] max-w-[7rem] grid-cols-2 gap-1.5"
+        }
+      >
+        {showButton}
         <button
           type="button"
-          onClick={() => requestOperationConfirmation(reservation.id, "checkIn")}
-          disabled={operationReservationId === reservation.id}
-          title="Check-in"
-          aria-label="Check-in"
-          className="rounded-lg border border-emerald-200 px-2.5 py-2 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-        >
-          <i className="fa-solid fa-right-to-bracket" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={() => requestOperationConfirmation(reservation.id, "checkOut")}
-          disabled={operationReservationId === reservation.id}
-          title="Check-out"
-          aria-label="Check-out"
-          className="rounded-lg border border-blue-200 px-2.5 py-2 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-        >
-          <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={() => requestOperationConfirmation(reservation.id, "cancel")}
-          disabled={operationReservationId === reservation.id}
-          title="Annuler"
+          onClick={() => requestOperationConfirmation(reservation, "cancel")}
+          disabled={isBusy || cancelError !== null}
+          title={cancelError ?? "Annuler"}
           aria-label="Annuler"
-          className="rounded-lg border border-orange-200 px-2.5 py-2 text-orange-700 hover:bg-orange-50 disabled:opacity-50"
+          className={`${actionButtonBaseClass} border-orange-200 text-orange-700 hover:bg-orange-50`}
         >
           <i className="fa-solid fa-ban" aria-hidden="true" />
         </button>
         <button
           type="button"
-          onClick={() => requestOperationConfirmation(reservation.id, "noShow")}
-          disabled={operationReservationId === reservation.id}
-          title="No-show"
-          aria-label="No-show"
-          className="rounded-lg border border-red-200 px-2.5 py-2 text-red-700 hover:bg-red-50 disabled:opacity-50"
+          onClick={() => handlePrintReservation(reservation)}
+          title="Imprimer"
+          aria-label="Imprimer"
+          className={`${actionButtonBaseClass} border-violet-200 text-violet-700 hover:bg-violet-50`}
         >
-          <i className="fa-solid fa-user-xmark" aria-hidden="true" />
+          <i className="fa-solid fa-print" aria-hidden="true" />
         </button>
         <Link
           href={business ? `/${business}/hotel/folios?reservation=${reservation.id}` : "/"}
           title="Ajouter paiement"
           aria-label="Ajouter paiement"
-          className="rounded-lg border border-slate-300 px-2.5 py-2 text-slate-700 hover:bg-slate-50"
+          className={`${actionButtonBaseClass} border-slate-300 text-slate-700 hover:bg-slate-50`}
         >
           <i className="fa-solid fa-money-bill-wave" aria-hidden="true" />
         </Link>
       </div>
     );
+  }
+
+  async function handlePrintReservation(reservation: HotelReservation) {
+    const printWindow = window.open("", "_blank", "width=960,height=900");
+    if (!printWindow) {
+      setError("Impossible d'ouvrir la fenetre d'impression.");
+      setSuccess("");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildReservationPrintLoadingHtml(getReservationCodeLabel(reservation)));
+    printWindow.document.close();
+
+    let folio: HotelReservationFolio | null = null;
+
+    try {
+      if (business) {
+        folio = await getHotelReservationFolio(business, reservation.id);
+      }
+    } catch {
+      folio = null;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildReservationPrintHtml(reservation, businessSettings, folio));
+    printWindow.document.close();
+
+    window.setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 250);
   }
 
   const detailHasImages = (detailRoom?.images.length ?? 0) > 0;
@@ -1002,6 +2214,9 @@ export default function HotelReservationsPage() {
   const detailActiveImageUrl = detailActiveImage
     ? resolveImageUrl(detailActiveImage.image_path, detailActiveImage.image_url)
     : "";
+  const detailReservationNights = detailReservation ? getNights(detailReservation.check_in, detailReservation.check_out) : 0;
+  const detailReservationMinCheckOut = detailReservation ? addDaysToDateOnly(detailReservation.check_out, 1) : todayDate;
+  const isSavingDetailReservation = detailReservation ? updatingReservationId === detailReservation.id : false;
   const isLastCustomerStep = customerModalStep === CUSTOMER_MODAL_STEPS.length - 1;
 
   return (
@@ -1157,8 +2372,12 @@ export default function HotelReservationsPage() {
                     type="date"
                     value={checkIn}
                     onChange={(event) => setCheckIn(event.target.value)}
+                    min={todayDate}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
                   />
+                  {isCheckInPast ? (
+                    <span className="block text-xs text-rose-600">Le check-in ne peut pas etre une date passee.</span>
+                  ) : null}
                 </label>
                 <label className="space-y-1 text-sm">
                   <span className="font-semibold text-slate-700">Check-out</span>
@@ -1166,6 +2385,7 @@ export default function HotelReservationsPage() {
                     type="date"
                     value={checkOut}
                     onChange={(event) => setCheckOut(event.target.value)}
+                    min={checkOutMin}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
                   />
                 </label>
@@ -1243,17 +2463,14 @@ export default function HotelReservationsPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1 text-sm">
                   <span className="font-semibold text-slate-700">Statut</span>
-                  <select
-                    value={status}
-                    onChange={(event) => setStatus(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
-                  >
-                    {MANUAL_RESERVATION_STATUSES.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    value={getStatusLabel(status)}
+                    readOnly
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700"
+                  />
+                  <span className="block text-xs text-slate-500">
+                    Toute nouvelle reservation commence en attente.
+                  </span>
                 </label>
                 <label className="space-y-1 text-sm">
                   <span className="font-semibold text-slate-700">Notes</span>
@@ -1281,7 +2498,7 @@ export default function HotelReservationsPage() {
                 </div>
               ) : !periodValid ? (
                 <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-                  Periode invalide: le check-out doit etre apres le check-in.
+                  {periodValidationMessage}
                 </div>
               ) : availableRooms.length === 0 ? (
                 <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
@@ -1708,7 +2925,7 @@ export default function HotelReservationsPage() {
           </div>
         ) : (
           <div className="mt-4 space-y-4">
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_220px_220px_auto]">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_220px_220px_auto]">
               <input
                 value={reservationSearch}
                 onChange={(event) => setReservationSearch(event.target.value)}
@@ -1746,7 +2963,7 @@ export default function HotelReservationsPage() {
                   setReservationStatusFilter("");
                   setReservationRoomFilter("");
                 }}
-                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:col-span-2 xl:col-span-1"
               >
                 Reinitialiser
               </button>
@@ -1766,8 +2983,11 @@ export default function HotelReservationsPage() {
                     index % 2 === 0 ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
+                      <div className="text-[11px] font-semibold tracking-wide text-blue-700">
+                        {getReservationCodeLabel(reservation)}
+                      </div>
                       <div className="font-semibold text-slate-900">{reservation.guest_name}</div>
                       <div className="text-xs text-slate-500">{reservation.guest_phone || "-"}</div>
                     </div>
@@ -1799,7 +3019,7 @@ export default function HotelReservationsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-3 flex flex-col gap-3">
+                  <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <div>
                       <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Statut</div>
                       {renderReservationStatusControl(reservation)}
@@ -1813,54 +3033,111 @@ export default function HotelReservationsPage() {
               ))}
             </div>
 
-            <div className="hidden max-h-[70vh] overflow-auto rounded-xl border border-slate-200 md:block">
-              <table className="min-w-[1100px] bg-white text-sm">
-                <thead>
-                  <tr className="text-left text-slate-500">
-                    <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 pr-3 backdrop-blur">Client</th>
-                    <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 pr-3 backdrop-blur">Chambre</th>
-                    <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 pr-3 backdrop-blur">Periode</th>
-                    <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 pr-3 backdrop-blur">Check-in</th>
-                    <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 pr-3 backdrop-blur">Check-out</th>
-                    <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 pr-3 backdrop-blur">Montant</th>
-                    <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 pr-3 backdrop-blur">Statut</th>
-                    <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReservations.map((reservation, index) => (
-                    <tr
-                      key={reservation.id}
-                      className={`border-t border-slate-100 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/70"}`}
-                    >
-                      <td className="py-3 pr-3">
-                        <div className="font-semibold text-slate-800">{reservation.guest_name}</div>
-                        <div className="text-xs text-slate-500">{reservation.guest_phone || "-"}</div>
-                      </td>
-                      <td className="py-3 pr-3 text-slate-700">
-                        {reservation.room?.name || "-"} #{reservation.room?.room_number || "-"}
-                      </td>
-                      <td className="py-3 pr-3 text-slate-700">
-                        <div className="font-medium text-slate-800">
-                          Arrivee: {formatReservationDate(reservation.check_in)}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Depart: {formatReservationDate(reservation.check_out)}
-                        </div>
-                      </td>
-                      <td className="py-3 pr-3 text-slate-700">
-                        <div>{formatReservationDateTime(reservation.actual_check_in_at)}</div>
-                      </td>
-                      <td className="py-3 pr-3 text-slate-700">
-                        <div>{formatReservationDateTime(reservation.actual_check_out_at)}</div>
-                      </td>
-                      <td className="py-3 pr-3 text-slate-700">{formatMoney(reservation.total_amount, reservation.total_currency)}</td>
-                      <td className="py-3 pr-3">{renderReservationStatusControl(reservation)}</td>
-                      <td className="py-3">{renderReservationActions(reservation)}</td>
+            <div className="hidden rounded-xl border border-slate-200 md:block xl:hidden">
+              <div className="max-h-[70vh] w-full overflow-auto">
+                <table className="min-w-full table-auto bg-white text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Code</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Reservation</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Montant</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Statut</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredReservations.map((reservation, index) => (
+                      <tr
+                        key={`compact-${reservation.id}`}
+                        className={`border-t border-slate-100 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/70"}`}
+                      >
+                        <td className="px-3 py-3 align-top">
+                          <span className="inline-flex break-all rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold tracking-wide text-blue-700">
+                            {getReservationCodeLabel(reservation)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 align-top text-slate-700">
+                          <div className="break-words font-semibold text-slate-800">{reservation.guest_name}</div>
+                          <div className="break-words text-xs text-slate-500">{reservation.guest_phone || "-"}</div>
+                          <div className="mt-1 break-words text-xs text-slate-600">
+                            {reservation.room?.name || "-"} #{reservation.room?.room_number || "-"}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {formatReservationDate(reservation.check_in)} - {formatReservationDate(reservation.check_out)}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 align-top text-slate-700">
+                          <div className="break-words">{formatMoney(reservation.total_amount, reservation.total_currency)}</div>
+                        </td>
+                        <td className="px-3 py-3 align-top">{renderReservationStatusControl(reservation)}</td>
+                        <td className="px-3 py-3 align-top whitespace-nowrap">{renderReservationActions(reservation, "table")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="hidden rounded-xl border border-slate-200 xl:block">
+              <div className="max-h-[70vh] w-full overflow-auto">
+                <table className="min-w-full table-auto bg-white text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Code</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Client</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Chambre</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Periode</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Check-in</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Check-out</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Montant</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Statut</th>
+                      <th className="sticky top-0 z-10 bg-slate-100/95 px-3 py-3 backdrop-blur">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredReservations.map((reservation, index) => (
+                      <tr
+                        key={reservation.id}
+                        className={`border-t border-slate-100 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/70"}`}
+                      >
+                        <td className="px-3 py-3 align-top">
+                          <span className="inline-flex break-all rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold tracking-wide text-blue-700">
+                            {getReservationCodeLabel(reservation)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <div className="break-words font-semibold text-slate-800">{reservation.guest_name}</div>
+                          <div className="break-words text-xs text-slate-500">{reservation.guest_phone || "-"}</div>
+                        </td>
+                        <td className="px-3 py-3 align-top text-slate-700">
+                          <div className="break-words">
+                            {reservation.room?.name || "-"} #{reservation.room?.room_number || "-"}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 align-top text-slate-700">
+                          <div className="font-medium text-slate-800">
+                            Arrivee: {formatReservationDate(reservation.check_in)}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            Depart: {formatReservationDate(reservation.check_out)}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 align-top text-slate-700">
+                          <div className="break-words">{formatReservationDateTime(reservation.actual_check_in_at)}</div>
+                        </td>
+                        <td className="px-3 py-3 align-top text-slate-700">
+                          <div className="break-words">{formatReservationDateTime(reservation.actual_check_out_at)}</div>
+                        </td>
+                        <td className="px-3 py-3 align-top text-slate-700">
+                          <div className="break-words">{formatMoney(reservation.total_amount, reservation.total_currency)}</div>
+                        </td>
+                        <td className="px-3 py-3 align-top">{renderReservationStatusControl(reservation)}</td>
+                        <td className="px-3 py-3 align-top whitespace-nowrap">{renderReservationActions(reservation, "table")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -1907,6 +3184,140 @@ export default function HotelReservationsPage() {
               >
                 {confirmationDialog.confirmLabel}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {detailReservation ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reservation-detail-title"
+          onClick={closeReservationDetails}
+        >
+          <div
+            className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.3em] text-blue-700">
+                  {getReservationCodeLabel(detailReservation)}
+                </div>
+                <h3 id="reservation-detail-title" className="mt-1 text-lg font-extrabold text-slate-900">
+                  Voir la reservation
+                </h3>
+                <p className="text-sm text-slate-600">
+                  {detailReservation.guest_name} - {detailReservation.room?.name || "-"} #
+                  {detailReservation.room?.room_number || "-"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeReservationDetails}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client</div>
+                <div className="mt-2 text-base font-semibold text-slate-900">{detailReservation.guest_name || "-"}</div>
+                <div className="mt-1 text-sm text-slate-600">Telephone: {detailReservation.guest_phone || "-"}</div>
+                <div className="mt-1 text-sm text-slate-600">Email: {detailReservation.guest_email || "-"}</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Fiche client: {detailReservation.customer?.name || "Aucun client lie"}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sejour</div>
+                <div className="mt-2 text-sm text-slate-700">
+                  Arrivee prevue: <span className="font-semibold text-slate-900">{formatReservationDate(detailReservation.check_in)}</span>
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Depart prevu: <span className="font-semibold text-slate-900">{formatReservationDate(detailReservation.check_out)}</span>
+                </div>
+                <div className="mt-1 text-sm text-slate-700">Nuits: {detailReservationNights || 1}</div>
+                <div className="mt-1 text-sm text-slate-700">Voyageurs: {detailReservation.guests || 1}</div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Montant: {formatMoney(detailReservation.total_amount, detailReservation.total_currency)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Suivi</div>
+                <div className="mt-2">
+                  <span
+                    className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getStatusBadgeClasses(
+                      detailReservation.status
+                    )}`}
+                  >
+                    {getStatusLabel(detailReservation.status)}
+                  </span>
+                </div>
+                <div className="mt-2 text-sm text-slate-700">
+                  Check-in reel: {formatReservationDateTime(detailReservation.actual_check_in_at)}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Check-out reel: {formatReservationDateTime(detailReservation.actual_check_out_at)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</div>
+                <div className="mt-2 text-sm text-slate-700">{detailReservation.notes?.trim() || "Aucune note."}</div>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-base font-bold text-slate-900">Prolonger le sejour</h4>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Choisis une nouvelle date de depart plus tardive pour cette reservation.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Depart actuel: {formatReservationDate(detailReservation.check_out)}. Nouvelle date minimale:{" "}
+                    {formatReservationDate(detailReservationMinCheckOut)}.
+                  </p>
+                </div>
+                {detailReservation.status === "checked_out" ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                    Une prolongation apres check-out remettra la reservation en check-in.
+                  </div>
+                ) : null}
+              </div>
+
+              {!canEditReservations ? (
+                <p className="mt-4 text-sm text-slate-600">Mode lecture seule: la prolongation est reservee aux utilisateurs autorises.</p>
+              ) : detailReservation.status === "cancelled" ? (
+                <p className="mt-4 text-sm text-red-600">Une reservation annulee ne peut pas etre prolongee.</p>
+              ) : (
+                <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={(event) => void handleReservationExtensionSubmit(event)}>
+                  <label className="flex-1">
+                    <span className="mb-1 block text-sm font-semibold text-slate-700">Nouveau depart</span>
+                    <input
+                      type="date"
+                      value={detailReservationCheckOut}
+                      min={detailReservationMinCheckOut}
+                      onChange={(event) => setDetailReservationCheckOut(event.target.value)}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-400 focus:outline-none"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={isSavingDetailReservation}
+                    className="rounded-xl bg-[#0d63b8] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0a4d8f] disabled:opacity-60"
+                  >
+                    {isSavingDetailReservation ? "En cours..." : "Prolonger"}
+                  </button>
+                </form>
+              )}
             </div>
           </div>
         </div>

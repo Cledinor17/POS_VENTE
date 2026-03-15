@@ -73,6 +73,33 @@ function isCommandCharge(label: string | null | undefined): boolean {
   return (label ?? "").trim().toLowerCase().startsWith("commande hotel ");
 }
 
+function getReservationActionError(
+  status: string | null | undefined,
+  action: "checkIn" | "checkOut" | "cancel" | "noShow"
+): string | null {
+  const currentStatus = (status ?? "").trim();
+
+  if (action === "checkIn") {
+    return currentStatus === "confirmed"
+      ? null
+      : "Impossible de faire le check-in d une reservation qui n est pas confirmee.";
+  }
+
+  if (action === "checkOut") {
+    return currentStatus === "checked_in"
+      ? null
+      : "Impossible de faire le check-out d une reservation qui n est pas en check-in.";
+  }
+
+  if (action === "cancel") {
+    return ["pending", "confirmed"].includes(currentStatus)
+      ? null
+      : "Impossible d annuler une reservation apres le check-in.";
+  }
+
+  return ["pending", "confirmed"].includes(currentStatus) ? null : "No-show impossible pour ce statut.";
+}
+
 export default function HotelFoliosPage() {
   const params = useParams<{ business: string }>();
   const business = params?.business ?? "";
@@ -293,6 +320,10 @@ export default function HotelFoliosPage() {
     () => reservations.find((item) => String(item.id) === selectedReservationId) ?? null,
     [reservations, selectedReservationId]
   );
+  const checkInActionError = getReservationActionError(folio?.reservation?.status, "checkIn");
+  const checkOutActionError = getReservationActionError(folio?.reservation?.status, "checkOut");
+  const cancelActionError = getReservationActionError(folio?.reservation?.status, "cancel");
+  const noShowActionError = getReservationActionError(folio?.reservation?.status, "noShow");
 
   async function handleAddCharge(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -339,6 +370,7 @@ export default function HotelFoliosPage() {
     setError("");
     setSuccess("");
     try {
+      const previousStatus = folio?.reservation?.status ?? "";
       const next = await addHotelReservationPayment(business, Number(selectedReservationId), {
         amount,
         paymentCurrency,
@@ -352,7 +384,11 @@ export default function HotelFoliosPage() {
       setPaymentMethod("cash");
       setPaymentReference("");
       setPaymentNotes("");
-      setSuccess("Paiement ajoute au folio.");
+      setSuccess(
+        previousStatus === "pending" && next.reservation.status === "confirmed"
+          ? "Paiement ajoute. Reservation confirmee."
+          : "Paiement ajoute au folio."
+      );
       await loadReservations();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -437,6 +473,12 @@ export default function HotelFoliosPage() {
 
   async function runReservationAction(action: "checkIn" | "checkOut" | "cancel" | "noShow") {
     if (!business || !selectedReservationId) return;
+    const actionError = getReservationActionError(folio?.reservation?.status, action);
+    if (actionError) {
+      setError(actionError);
+      setSuccess("");
+      return;
+    }
     setRunningAction(true);
     setError("");
     setSuccess("");
@@ -548,7 +590,8 @@ export default function HotelFoliosPage() {
               <button
                 type="button"
                 onClick={() => void runReservationAction("checkIn")}
-                disabled={runningAction}
+                disabled={runningAction || checkInActionError !== null}
+                title={checkInActionError ?? "Check-in"}
                 className="rounded-xl border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
               >
                 Check-in
@@ -556,7 +599,8 @@ export default function HotelFoliosPage() {
               <button
                 type="button"
                 onClick={() => void runReservationAction("checkOut")}
-                disabled={runningAction}
+                disabled={runningAction || checkOutActionError !== null}
+                title={checkOutActionError ?? "Check-out"}
                 className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"
               >
                 Check-out
@@ -564,7 +608,8 @@ export default function HotelFoliosPage() {
               <button
                 type="button"
                 onClick={() => void runReservationAction("cancel")}
-                disabled={runningAction}
+                disabled={runningAction || cancelActionError !== null}
+                title={cancelActionError ?? "Annuler"}
                 className="rounded-xl border border-orange-200 px-3 py-2 text-xs font-semibold text-orange-700 hover:bg-orange-50 disabled:opacity-60"
               >
                 Annuler
@@ -572,7 +617,8 @@ export default function HotelFoliosPage() {
               <button
                 type="button"
                 onClick={() => void runReservationAction("noShow")}
-                disabled={runningAction}
+                disabled={runningAction || noShowActionError !== null}
+                title={noShowActionError ?? "No-show"}
                 className="rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
               >
                 No-show

@@ -11,6 +11,7 @@ import { convertAmount, formatMoney } from "@/lib/currency";
 import {
   createHotelMoment,
   deleteHotelMoment,
+  extractHotelMomentIdentityDocument,
   getHotelMoments,
   getHotelReservations,
   getHotelRooms,
@@ -74,6 +75,7 @@ type MomentConfirmationState =
   | {
       kind: "status";
       momentId: number;
+      previousStatus: string;
       nextStatus: string;
       title: string;
       message: string;
@@ -158,12 +160,17 @@ export default function HotelMomentsPage() {
   const [confirmationDialog, setConfirmationDialog] = useState<MomentConfirmationState | null>(null);
 
   const [roomId, setRoomId] = useState("");
-  const [guestName, setGuestName] = useState("");
-  const [guestPhone, setGuestPhone] = useState("");
+  const [guestFirstName, setGuestFirstName] = useState("");
+  const [guestLastName, setGuestLastName] = useState("");
+  const [guestAddress, setGuestAddress] = useState("");
+  const [guestDocumentNumber, setGuestDocumentNumber] = useState("");
   const [startAt, setStartAt] = useState(() => getCurrentLocalDateTimeInput());
   const [totalAmount, setTotalAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [identityDocumentFile, setIdentityDocumentFile] = useState<File | null>(null);
+  const [importingIdentity, setImportingIdentity] = useState(false);
+  const [identityImportError, setIdentityImportError] = useState("");
+  const [identityImportSuccess, setIdentityImportSuccess] = useState("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const canReadMoments = hasPermission(currentPermissions, ["moments.read", "moments.manage"]);
   const canCreateMoments = hasPermission(currentPermissions, ["moments.create", "moments.manage"]);
@@ -291,12 +298,17 @@ export default function HotelMomentsPage() {
 
   function resetCreateForm() {
     setRoomId("");
-    setGuestName("");
-    setGuestPhone("");
+    setGuestFirstName("");
+    setGuestLastName("");
+    setGuestAddress("");
+    setGuestDocumentNumber("");
     setStartAt(getCurrentLocalDateTimeInput());
     setTotalAmount("");
     setNotes("");
     setIdentityDocumentFile(null);
+    setImportingIdentity(false);
+    setIdentityImportError("");
+    setIdentityImportSuccess("");
   }
 
   function openCreateModal() {
@@ -318,12 +330,63 @@ export default function HotelMomentsPage() {
     setTotalAmount(nextRoom ? getMomentDefaultAmount(nextRoom, businessSettings).toFixed(2) : "");
   }
 
+  function handleIdentityDocumentChange(file: File | null) {
+    setIdentityDocumentFile(file);
+    setIdentityImportError("");
+    setIdentityImportSuccess("");
+  }
+
+  async function handleIdentityImport() {
+    if (!business) return;
+    if (!identityDocumentFile) {
+      setIdentityImportError("Ajoute d'abord une piece d'identite.");
+      setIdentityImportSuccess("");
+      return;
+    }
+
+    setImportingIdentity(true);
+    setIdentityImportError("");
+    setIdentityImportSuccess("");
+    try {
+      const extracted = await extractHotelMomentIdentityDocument(business, identityDocumentFile);
+      const hasImportedData =
+        extracted.lastName.trim() !== "" ||
+        extracted.firstName.trim() !== "" ||
+        extracted.address.trim() !== "" ||
+        extracted.documentNumber.trim() !== "";
+
+      if (!hasImportedData) {
+        setIdentityImportError("Aucune information exploitable n'a ete detectee sur cette piece.");
+        return;
+      }
+
+      if (extracted.lastName.trim() !== "") {
+        setGuestLastName(extracted.lastName);
+      }
+      if (extracted.firstName.trim() !== "") {
+        setGuestFirstName(extracted.firstName);
+      }
+      if (extracted.address.trim() !== "") {
+        setGuestAddress(extracted.address);
+      }
+      if (extracted.documentNumber.trim() !== "") {
+        setGuestDocumentNumber(extracted.documentNumber);
+      }
+
+      setIdentityImportSuccess("Informations importees. Verifie les champs avant d'enregistrer.");
+    } catch (err) {
+      setIdentityImportError(getErrorMessage(err));
+    } finally {
+      setImportingIdentity(false);
+    }
+  }
+
   useEffect(() => {
     if (!confirmationDialog) return undefined;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setConfirmationDialog(null);
+      closeConfirmationDialog();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -344,8 +407,8 @@ export default function HotelMomentsPage() {
       setError("Selectionne une chambre.");
       return;
     }
-    if (guestName.trim().length < 2) {
-      setError("Nom client obligatoire.");
+    if (guestLastName.trim().length === 0 && guestFirstName.trim().length === 0) {
+      setError("Nom ou prenom obligatoire.");
       return;
     }
     if (!startAt) {
@@ -359,8 +422,10 @@ export default function HotelMomentsPage() {
     try {
       await createHotelMoment(business, {
         roomId: Number(roomId),
-        guestName: guestName.trim(),
-        guestPhone: guestPhone.trim(),
+        guestFirstName: guestFirstName.trim(),
+        guestLastName: guestLastName.trim(),
+        guestAddress: guestAddress.trim(),
+        guestDocumentNumber: guestDocumentNumber.trim(),
         startAt: new Date(startAt).toISOString(),
         totalAmount: totalAmount.trim() !== "" ? Number(totalAmount) : undefined,
         notes: notes.trim(),
@@ -390,10 +455,10 @@ export default function HotelMomentsPage() {
     }
   }
 
-  async function handleStatusSave(moment: HotelMoment) {
-    if (!business || !canEditMoments) return;
+  async function handleStatusSave(moment: HotelMoment): Promise<boolean> {
+    if (!business || !canEditMoments) return false;
     const nextStatus = statusDrafts[moment.id] ?? moment.status;
-    if (nextStatus === moment.status) return;
+    if (nextStatus === moment.status) return true;
 
     setUpdatingMomentId(moment.id);
     setError("");
@@ -408,28 +473,56 @@ export default function HotelMomentsPage() {
             : "Statut moment mis a jour."
       );
       await loadData();
+      return true;
     } catch (err) {
       setError(getErrorMessage(err));
+      return false;
     } finally {
       setUpdatingMomentId(null);
     }
   }
 
-  function requestStatusConfirmation(moment: HotelMoment) {
-    if (!canEditMoments) return;
-    const nextStatus = statusDrafts[moment.id] ?? moment.status;
-    if (nextStatus === moment.status) return;
+  function closeConfirmationDialog() {
+    setConfirmationDialog((current) => {
+      if (current?.kind === "status") {
+        setStatusDrafts((prev) => ({
+          ...prev,
+          [current.momentId]: current.previousStatus,
+        }));
+      }
+      return null;
+    });
+  }
 
-    const details = getMomentStatusConfirmation(nextStatus);
+  function requestStatusConfirmation(moment: HotelMoment, nextStatus?: string) {
+    if (!canEditMoments) return;
+    const resolvedNextStatus = nextStatus ?? statusDrafts[moment.id] ?? moment.status;
+    if (resolvedNextStatus === moment.status) return;
+
+    const details = getMomentStatusConfirmation(resolvedNextStatus);
     setConfirmationDialog({
       kind: "status",
       momentId: moment.id,
-      nextStatus,
+      previousStatus: moment.status,
+      nextStatus: resolvedNextStatus,
       title: details.title,
       message: details.message,
       confirmLabel: details.confirmLabel,
       tone: details.tone,
     });
+  }
+
+  function handleStatusChange(moment: HotelMoment, nextStatus: string) {
+    setStatusDrafts((prev) => ({
+      ...prev,
+      [moment.id]: nextStatus,
+    }));
+
+    if (nextStatus === moment.status) {
+      return;
+    }
+
+    requestStatusConfirmation(moment, nextStatus);
   }
 
   function requestDeleteConfirmation(moment: HotelMoment) {
@@ -451,11 +544,15 @@ export default function HotelMomentsPage() {
     if (confirmationDialog.kind === "status") {
       const moment = moments.find((item) => item.id === confirmationDialog.momentId);
       if (!moment) {
-        setConfirmationDialog(null);
+        closeConfirmationDialog();
         return;
       }
-      await handleStatusSave(moment);
-      setConfirmationDialog(null);
+      const saved = await handleStatusSave(moment);
+      if (saved) {
+        setConfirmationDialog(null);
+      } else {
+        closeConfirmationDialog();
+      }
       return;
     }
 
@@ -523,7 +620,9 @@ export default function HotelMomentsPage() {
                 <h2 id="moment-modal-title" className="text-lg font-bold text-slate-900">
                   Nouveau moment (2h)
                 </h2>
-                <p className="mt-1 text-sm text-slate-600">Choisis la chambre, le client et confirme le montant du moment.</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Choisis la chambre, charge la piece du client si besoin, puis confirme le montant du moment.
+                </p>
               </div>
               <button
                 type="button"
@@ -538,7 +637,7 @@ export default function HotelMomentsPage() {
               {error ? (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
               ) : null}
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1 text-sm">
                   <span className="font-semibold text-slate-700">Chambre libre et propre</span>
                   <select
@@ -560,18 +659,82 @@ export default function HotelMomentsPage() {
                   ) : null}
                 </label>
                 <label className="space-y-1 text-sm">
-                  <span className="font-semibold text-slate-700">Client</span>
+                  <span className="font-semibold text-slate-700">Debut</span>
                   <input
-                    value={guestName}
-                    onChange={(event) => setGuestName(event.target.value)}
+                    type="datetime-local"
+                    value={startAt}
+                    onChange={(event) => setStartAt(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
+                <div className="space-y-3">
+                  <IdentityDocumentField
+                    file={identityDocumentFile}
+                    onFileChange={handleIdentityDocumentChange}
+                    title="Piece du client"
+                    description="Televerse la piece ou prends une photo, puis utilise l'import automatique pour remplir les champs."
+                    className="h-fit"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleIdentityImport()}
+                      disabled={!identityDocumentFile || importingIdentity}
+                      className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {importingIdentity ? "Import en cours..." : "Importer les informations"}
+                    </button>
+                  </div>
+                  {identityImportError ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                      {identityImportError}
+                    </div>
+                  ) : null}
+                  {identityImportSuccess ? (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                      {identityImportSuccess}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  <div className="font-semibold text-slate-900">Import auto</div>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                    L'import lit la piece pour proposer le nom, le prenom, l'adresse et le numero du document. Verifie toujours le resultat avant validation.
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 text-sm">
+                  <span className="font-semibold text-slate-700">Nom</span>
+                  <input
+                    value={guestLastName}
+                    onChange={(event) => setGuestLastName(event.target.value)}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
                   />
                 </label>
                 <label className="space-y-1 text-sm">
-                  <span className="font-semibold text-slate-700">Telephone</span>
+                  <span className="font-semibold text-slate-700">Prenom</span>
                   <input
-                    value={guestPhone}
-                    onChange={(event) => setGuestPhone(event.target.value)}
+                    value={guestFirstName}
+                    onChange={(event) => setGuestFirstName(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
+                  />
+                </label>
+                <label className="space-y-1 text-sm md:col-span-2">
+                  <span className="font-semibold text-slate-700">Adresse</span>
+                  <input
+                    value={guestAddress}
+                    onChange={(event) => setGuestAddress(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-semibold text-slate-700">Numero de piece</span>
+                  <input
+                    value={guestDocumentNumber}
+                    onChange={(event) => setGuestDocumentNumber(event.target.value)}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
                   />
                 </label>
@@ -600,46 +763,27 @@ export default function HotelMomentsPage() {
                   </div>
                 </div>
               ) : null}
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <label className="space-y-1 text-sm">
-                    <span className="font-semibold text-slate-700">Debut</span>
-                    <input
-                      type="datetime-local"
-                      value={startAt}
-                      onChange={(event) => setStartAt(event.target.value)}
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
-                    />
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="font-semibold text-slate-700">Montant</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={totalAmount}
-                      onChange={(event) => setTotalAmount(event.target.value)}
-                      placeholder="Montant du moment"
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
-                    />
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span className="font-semibold text-slate-700">Notes</span>
-                    <input
-                      value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
-                    />
-                  </label>
-                </div>
-                <IdentityDocumentField
-                  file={identityDocumentFile}
-                  onFileChange={setIdentityDocumentFile}
-                  title="Piece du client"
-                  description="Tu peux televerser une copie ou prendre une photo de la piece du client avant d'enregistrer le moment."
-                  className="h-fit"
-                  compact
-                />
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 text-sm">
+                  <span className="font-semibold text-slate-700">Montant</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={totalAmount}
+                    onChange={(event) => setTotalAmount(event.target.value)}
+                    placeholder="Montant du moment"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-semibold text-slate-700">Notes</span>
+                  <input
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
+                  />
+                </label>
               </div>
               <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
                 <button
@@ -702,7 +846,11 @@ export default function HotelMomentsPage() {
                   <tr key={moment.id} className="border-t border-slate-100">
                     <td className="py-2 pr-3">
                       <div className="font-semibold text-slate-800">{moment.guest_name}</div>
-                      <div className="text-xs text-slate-500">{moment.guest_phone || "-"}</div>
+                      <div className="text-xs text-slate-500">
+                        {moment.guest_document_number
+                          ? `Piece: ${moment.guest_document_number}`
+                          : moment.guest_address || "-"}
+                      </div>
                     </td>
                     <td className="py-2 pr-3 text-slate-700">
                       {moment.room?.name || "-"} #{moment.room?.room_number || "-"}
@@ -719,10 +867,8 @@ export default function HotelMomentsPage() {
                         return (
                           <select
                             value={isSelectable ? currentStatus : ""}
-                            onChange={(event) =>
-                              setStatusDrafts((prev) => ({ ...prev, [moment.id]: event.target.value }))
-                            }
-                            disabled={isLockedStatus || !canEditMoments}
+                            onChange={(event) => handleStatusChange(moment, event.target.value)}
+                            disabled={isLockedStatus || !canEditMoments || updatingMomentId === moment.id}
                             className="rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none disabled:opacity-60"
                           >
                             {!isSelectable ? (
@@ -740,16 +886,6 @@ export default function HotelMomentsPage() {
                       })()}
                     </td>
                     <td className="py-2">
-                      {canEditMoments ? (
-                        <button
-                          type="button"
-                          onClick={() => requestStatusConfirmation(moment)}
-                          disabled={updatingMomentId === moment.id}
-                          className="mr-2 rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-                        >
-                          {updatingMomentId === moment.id ? "..." : "Sauver"}
-                        </button>
-                      ) : null}
                       {canManageMoments ? (
                         <button
                           type="button"
@@ -777,7 +913,7 @@ export default function HotelMomentsPage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="moment-confirmation-title"
-          onClick={() => setConfirmationDialog(null)}
+          onClick={closeConfirmationDialog}
         >
           <div
             className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
@@ -800,7 +936,7 @@ export default function HotelMomentsPage() {
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setConfirmationDialog(null)}
+                onClick={closeConfirmationDialog}
                 className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Non

@@ -34,7 +34,16 @@ function normalizeSearchValue(value: string | null | undefined): string {
     .toLowerCase();
 }
 
-function getEmployeeKeywordsForTask(taskType: "cleaning" | "inspection" | "maintenance" | "linen" | "refill") {
+type HousekeepingTaskType = "cleaning" | "inspection" | "maintenance";
+type HousekeepingTaskStatus = "pending" | "in_progress" | "done" | "cancelled";
+
+type HousekeepingStatusConfirmationState = {
+  taskId: number;
+  previousStatus: HousekeepingTaskStatus;
+  nextStatus: HousekeepingTaskStatus;
+};
+
+function getEmployeeKeywordsForTask(taskType: HousekeepingTaskType) {
   if (taskType === "maintenance") {
     return ["maintenance", "technicien", "technician", "repair", "reparation"];
   }
@@ -43,7 +52,45 @@ function getEmployeeKeywordsForTask(taskType: "cleaning" | "inspection" | "maint
     return ["housekeeping", "supervisor", "inspect", "inspection", "controle", "entretien"];
   }
 
-  return ["housekeeping", "housekeeper", "cleaning", "cleaner", "entretien", "menage", "linen", "refill"];
+  return ["housekeeping", "housekeeper", "cleaning", "cleaner", "entretien", "menage"];
+}
+
+function getTaskTypeLabel(taskType: string): string {
+  if (taskType === "cleaning") return "Nettoyage";
+  if (taskType === "inspection") return "Inspection";
+  if (taskType === "maintenance") return "Maintenance";
+  return taskType || "-";
+}
+
+function getTaskStatusLabel(status: string): string {
+  if (status === "pending") return "En attente";
+  if (status === "in_progress") return "En cours";
+  if (status === "done") return "Terminee";
+  if (status === "cancelled") return "Annulee";
+  return status || "-";
+}
+
+function getAllowedTaskNextStatuses(status: HousekeepingTaskStatus): HousekeepingTaskStatus[] {
+  if (status === "pending") return ["in_progress", "done", "cancelled"];
+  if (status === "in_progress") return ["done", "cancelled"];
+  return [];
+}
+
+function getTaskStatusTransitionError(task: HotelHousekeepingTask, nextStatus: HousekeepingTaskStatus): string | null {
+  if (!nextStatus || nextStatus === task.status) return null;
+  if (getAllowedTaskNextStatuses(task.status as HousekeepingTaskStatus).includes(nextStatus)) {
+    return null;
+  }
+
+  if (task.status === "done") {
+    return "Impossible de modifier une tache housekeeping terminee.";
+  }
+
+  if (task.status === "cancelled") {
+    return "Impossible de modifier une tache housekeeping annulee.";
+  }
+
+  return "Impossible de revenir en arriere sur le statut d une tache housekeeping.";
 }
 
 export default function HotelHousekeepingPage() {
@@ -59,13 +106,14 @@ export default function HotelHousekeepingPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [statusDrafts, setStatusDrafts] = useState<Record<number, string>>({});
+  const [confirmationDialog, setConfirmationDialog] = useState<HousekeepingStatusConfirmationState | null>(null);
   const [dateFilter, setDateFilter] = useState(formatDateInput(new Date()));
 
   const [roomId, setRoomId] = useState("");
   const [taskDate, setTaskDate] = useState(formatDateInput(new Date()));
-  const [taskType, setTaskType] = useState<"cleaning" | "inspection" | "maintenance" | "linen" | "refill">("cleaning");
+  const [taskType, setTaskType] = useState<HousekeepingTaskType>("cleaning");
   const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">("normal");
-  const [status, setStatus] = useState<"pending" | "in_progress" | "done" | "cancelled">("pending");
+  const [status, setStatus] = useState<HousekeepingTaskStatus>("pending");
   const [assignedEmployeeId, setAssignedEmployeeId] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -175,25 +223,68 @@ export default function HotelHousekeepingPage() {
     }
   }
 
-  async function handleStatusSave(task: HotelHousekeepingTask) {
-    if (!business) return;
-    const nextStatus = statusDrafts[task.id] ?? task.status;
-    if (nextStatus === task.status) return;
+  function closeConfirmationDialog(resetStatus = true) {
+    setConfirmationDialog((current) => {
+      if (resetStatus && current) {
+        setStatusDrafts((prev) => ({
+          ...prev,
+          [current.taskId]: current.previousStatus,
+        }));
+      }
+      return null;
+    });
+  }
 
-    setUpdatingTaskId(task.id);
+  function requestStatusConfirmation(task: HotelHousekeepingTask, nextStatus: string) {
+    const previousStatus = (statusDrafts[task.id] ?? task.status) as HousekeepingTaskStatus;
+    const normalizedStatus = nextStatus as HousekeepingTaskStatus;
+    if (normalizedStatus === previousStatus) return;
+
+    const transitionError = getTaskStatusTransitionError(task, normalizedStatus);
+    if (transitionError) {
+      setError(transitionError);
+      setSuccess("");
+      setStatusDrafts((prev) => ({ ...prev, [task.id]: previousStatus }));
+      return;
+    }
+
+    setStatusDrafts((prev) => ({ ...prev, [task.id]: normalizedStatus }));
+    setConfirmationDialog({
+      taskId: task.id,
+      previousStatus,
+      nextStatus: normalizedStatus,
+    });
+  }
+
+  async function handleStatusSave(taskId: number, previousStatus: HousekeepingTaskStatus, nextStatus: HousekeepingTaskStatus) {
+    if (!business) return;
+
+    setUpdatingTaskId(taskId);
     setError("");
     setSuccess("");
     try {
-      await updateHotelHousekeepingTask(business, task.id, {
-        status: nextStatus as "pending" | "in_progress" | "done" | "cancelled",
+      await updateHotelHousekeepingTask(business, taskId, {
+        status: nextStatus,
       });
       setSuccess("Statut housekeeping mis a jour.");
+      setConfirmationDialog(null);
       await loadData();
     } catch (err) {
+      setStatusDrafts((prev) => ({ ...prev, [taskId]: previousStatus }));
       setError(getErrorMessage(err));
     } finally {
       setUpdatingTaskId(null);
     }
+  }
+
+  async function confirmPendingStatusChange() {
+    if (!confirmationDialog) return;
+
+    await handleStatusSave(
+      confirmationDialog.taskId,
+      confirmationDialog.previousStatus,
+      confirmationDialog.nextStatus
+    );
   }
 
   return (
@@ -245,15 +336,13 @@ export default function HotelHousekeepingPage() {
             <select
               value={taskType}
               onChange={(event) =>
-                setTaskType(event.target.value as "cleaning" | "inspection" | "maintenance" | "linen" | "refill")
+                setTaskType(event.target.value as HousekeepingTaskType)
               }
               className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
             >
-              <option value="cleaning">Cleaning</option>
+              <option value="cleaning">Nettoyage</option>
               <option value="inspection">Inspection</option>
               <option value="maintenance">Maintenance</option>
-              <option value="linen">Linen</option>
-              <option value="refill">Refill</option>
             </select>
           </label>
         </div>
@@ -277,14 +366,14 @@ export default function HotelHousekeepingPage() {
             <select
               value={status}
               onChange={(event) =>
-                setStatus(event.target.value as "pending" | "in_progress" | "done" | "cancelled")
+                setStatus(event.target.value as HousekeepingTaskStatus)
               }
               className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
             >
-              <option value="pending">Pending</option>
-              <option value="in_progress">In progress</option>
-              <option value="done">Done</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="pending">En attente</option>
+              <option value="in_progress">En cours</option>
+              <option value="done">Terminee</option>
+              <option value="cancelled">Annulee</option>
             </select>
           </label>
           <label className="space-y-1 text-sm">
@@ -378,7 +467,7 @@ export default function HotelHousekeepingPage() {
                     <td className="py-2 pr-3 text-slate-700">
                       {task.room?.name || "-"} #{task.room?.room_number || "-"}
                     </td>
-                    <td className="py-2 pr-3 text-slate-700">{task.task_type || "-"}</td>
+                    <td className="py-2 pr-3 text-slate-700">{getTaskTypeLabel(task.task_type)}</td>
                     <td className="py-2 pr-3 text-slate-700">{task.priority || "-"}</td>
                     <td className="py-2 pr-3 text-slate-700">
                       {task.assigned_employee?.name || task.assigned_to || "-"}
@@ -386,26 +475,34 @@ export default function HotelHousekeepingPage() {
                     <td className="py-2 pr-3">
                       <select
                         value={statusDrafts[task.id] ?? task.status}
-                        onChange={(event) =>
-                          setStatusDrafts((prev) => ({ ...prev, [task.id]: event.target.value }))
-                        }
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none"
+                        onChange={(event) => requestStatusConfirmation(task, event.target.value)}
+                        disabled={updatingTaskId === task.id || task.status === "done" || task.status === "cancelled"}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none disabled:opacity-60"
                       >
-                        <option value="pending">Pending</option>
-                        <option value="in_progress">In progress</option>
-                        <option value="done">Done</option>
-                        <option value="cancelled">Cancelled</option>
+                        <option
+                          value="pending"
+                          disabled={task.status !== "pending"}
+                        >
+                          En attente
+                        </option>
+                        <option
+                          value="in_progress"
+                          disabled={getTaskStatusTransitionError(task, "in_progress") !== null}
+                        >
+                          En cours
+                        </option>
+                        <option value="done" disabled={getTaskStatusTransitionError(task, "done") !== null}>
+                          Terminee
+                        </option>
+                        <option
+                          value="cancelled"
+                          disabled={getTaskStatusTransitionError(task, "cancelled") !== null}
+                        >
+                          Annulee
+                        </option>
                       </select>
                     </td>
                     <td className="py-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleStatusSave(task)}
-                        disabled={updatingTaskId === task.id}
-                        className="mr-2 rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-                      >
-                        {updatingTaskId === task.id ? "..." : "Sauver"}
-                      </button>
                       <button
                         type="button"
                         onClick={() => void handleDelete(task.id)}
@@ -421,6 +518,57 @@ export default function HotelHousekeepingPage() {
           </div>
         )}
       </div>
+
+      {confirmationDialog ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="housekeeping-status-confirmation-title"
+          onClick={() => closeConfirmationDialog()}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 id="housekeeping-status-confirmation-title" className="text-lg font-bold text-slate-900">
+              Confirmer le changement de statut
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Veux-tu vraiment changer le statut de{" "}
+              <span className="font-semibold text-slate-900">
+                {getTaskStatusLabel(confirmationDialog.previousStatus)}
+              </span>{" "}
+              vers{" "}
+              <span className="font-semibold text-slate-900">
+                {getTaskStatusLabel(confirmationDialog.nextStatus)}
+              </span>
+              ?
+            </p>
+            <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+              Attention: apres validation, tu ne pourras plus revenir en arriere sur ce statut.
+            </p>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => closeConfirmationDialog()}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Non
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmPendingStatusChange()}
+                disabled={updatingTaskId === confirmationDialog.taskId}
+                className="rounded-xl bg-[#0d63b8] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0a4d8f] disabled:opacity-60"
+              >
+                {updatingTaskId === confirmationDialog.taskId ? "Validation..." : "Oui, valider"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

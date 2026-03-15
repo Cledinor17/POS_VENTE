@@ -40,6 +40,22 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString("fr-FR");
 }
 
+function getEmployeePaymentDefaults(employee: EmployeeItem | null | undefined) {
+  if (!employee) {
+    return {
+      amount: "",
+      currency: "",
+    };
+  }
+
+  const salaryAmount = Number(employee.salaryAmount);
+
+  return {
+    amount: Number.isFinite(salaryAmount) && salaryAmount > 0 ? String(salaryAmount) : "",
+    currency: employee.salaryCurrency ?? "",
+  };
+}
+
 const PAY_FREQUENCIES: Array<"monthly" | "biweekly" | "weekly" | "hourly"> = [
   "monthly",
   "biweekly",
@@ -179,9 +195,11 @@ export default function EmployeesPage() {
   );
 
   useEffect(() => {
-    if (!selectedEmployee) return;
-    setPaymentCurrency((current) => current || selectedEmployee.salaryCurrency || "");
-  }, [selectedEmployee]);
+    if (!paymentModalOpen || !selectedEmployee) return;
+    const defaults = getEmployeePaymentDefaults(selectedEmployee);
+    setPaymentAmount((current) => current || defaults.amount);
+    setPaymentCurrency((current) => current || defaults.currency);
+  }, [paymentModalOpen, selectedEmployee]);
 
   useEffect(() => {
     if (!employeeModalOpen && !paymentModalOpen && !paymentConfirmOpen) return;
@@ -232,12 +250,13 @@ export default function EmployeesPage() {
   }
 
   function resetPaymentForm() {
-    setPaymentAmount("");
+    const defaults = getEmployeePaymentDefaults(selectedEmployee);
+    setPaymentAmount(defaults.amount);
     setPaymentMethod("");
     setPaymentReference("");
     setPaymentNotes("");
     setPaymentDate(new Date().toISOString().slice(0, 10));
-    setPaymentCurrency(selectedEmployee?.salaryCurrency ?? "");
+    setPaymentCurrency(defaults.currency);
   }
 
   function openNewEmployeeModal() {
@@ -258,14 +277,15 @@ export default function EmployeesPage() {
   }
 
   function openPaymentModal(employee?: EmployeeItem) {
+    const targetEmployee = employee ?? selectedEmployee;
+    const defaults = getEmployeePaymentDefaults(targetEmployee);
+
     if (employee) {
       setSelectedEmployeeId(employee.id);
-      setPaymentCurrency(employee.salaryCurrency ?? "");
-    } else if (selectedEmployee) {
-      setPaymentCurrency(selectedEmployee.salaryCurrency ?? "");
     }
 
-    setPaymentAmount("");
+    setPaymentAmount(defaults.amount);
+    setPaymentCurrency(defaults.currency);
     setPaymentMethod("");
     setPaymentReference("");
     setPaymentNotes("");
@@ -862,7 +882,16 @@ export default function EmployeesPage() {
             >
               <select
                 value={selectedEmployeeId}
-                onChange={(event) => setSelectedEmployeeId(event.target.value)}
+                onChange={(event) => {
+                  const nextEmployeeId = event.target.value;
+                  const nextEmployee =
+                    items.find((item) => item.id === nextEmployeeId) ?? null;
+                  const defaults = getEmployeePaymentDefaults(nextEmployee);
+
+                  setSelectedEmployeeId(nextEmployeeId);
+                  setPaymentAmount(defaults.amount);
+                  setPaymentCurrency(defaults.currency);
+                }}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               >
                 <option value="">Selectionner un employe</option>

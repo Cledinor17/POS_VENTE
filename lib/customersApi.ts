@@ -28,6 +28,8 @@ export type CustomerItem = {
   creditLimit: number | null;
   identityDocumentPath: string | null;
   identityDocumentUrl: string | null;
+  identityDocumentType: string | null;
+  identityDocumentNumber: string | null;
   createdAt: string | null;
 };
 
@@ -61,9 +63,19 @@ export type CreateCustomerInput = {
   paymentTermsDays?: number;
   creditLimit?: number;
   identityDocumentFile?: File | null;
+  identityDocumentType?: string;
+  identityDocumentNumber?: string;
 };
 
 export type UpdateCustomerInput = Partial<CreateCustomerInput>;
+
+export type CustomerIdentityDocumentFields = {
+  lastName: string;
+  firstName: string;
+  address: string;
+  documentType: string;
+  documentNumber: string;
+};
 
 function isObject(value: unknown): value is Dict {
   return typeof value === "object" && value !== null;
@@ -170,6 +182,8 @@ function normalizeCustomer(raw: unknown): CustomerItem {
       : null,
     identityDocumentPath: toString(obj.identity_document_path ?? obj.identityDocumentPath, "") || null,
     identityDocumentUrl: toString(obj.identity_document_url ?? obj.identityDocumentUrl, "") || null,
+    identityDocumentType: toString(obj.identity_document_type ?? obj.identityDocumentType, "") || null,
+    identityDocumentNumber: toString(obj.identity_document_number ?? obj.identityDocumentNumber, "") || null,
     createdAt: toString(obj.created_at ?? obj.createdAt, "") || null,
   };
 }
@@ -189,6 +203,8 @@ function toCreatePayload(input: CreateCustomerInput): Record<string, unknown> {
     is_active: typeof input.isActive === "boolean" ? input.isActive : true,
     payment_terms_days: input.paymentTermsDays ?? null,
     credit_limit: input.creditLimit ?? null,
+    identity_document_type: input.identityDocumentType ?? null,
+    identity_document_number: input.identityDocumentNumber ?? null,
   };
 }
 
@@ -207,6 +223,8 @@ function toUpdatePayload(input: UpdateCustomerInput): Record<string, unknown> {
   if ("notes" in input) payload.notes = input.notes ?? null;
   if ("paymentTermsDays" in input) payload.payment_terms_days = input.paymentTermsDays ?? null;
   if ("creditLimit" in input) payload.credit_limit = input.creditLimit ?? null;
+  if ("identityDocumentType" in input) payload.identity_document_type = input.identityDocumentType ?? null;
+  if ("identityDocumentNumber" in input) payload.identity_document_number = input.identityDocumentNumber ?? null;
   if ("isActive" in input && typeof input.isActive === "boolean") payload.is_active = input.isActive;
 
   return payload;
@@ -286,6 +304,29 @@ export async function createCustomer(
         json: toCreatePayload(input),
       });
   return normalizeCustomer(raw);
+}
+
+export async function extractCustomerIdentityDocument(
+  business: string,
+  file: File
+): Promise<CustomerIdentityDocumentFields> {
+  const formData = new FormData();
+  formData.append("identity_document", file);
+
+  const raw = await apiFetch<unknown>(`${basePath(business)}/extract-identity-document`, {
+    method: "POST",
+    body: formData,
+  });
+  const root = isObject(raw) ? raw : {};
+  const fields = isObject(root.fields) ? root.fields : {};
+
+  return {
+    lastName: toString(fields.last_name ?? fields.lastName),
+    firstName: toString(fields.first_name ?? fields.firstName),
+    address: toString(fields.address),
+    documentType: toString(fields.document_type ?? fields.documentType),
+    documentNumber: toString(fields.document_number ?? fields.documentNumber),
+  };
 }
 
 export async function updateCustomer(
