@@ -69,6 +69,7 @@ export type PosCheckoutResult = {
   businessPhone: string;
   businessEmail: string;
   businessLogoDataUri: string | null;
+  businessInvoiceFooter: string | null;
   paymentCurrency: string;
   paymentAmount: number;
   paymentDateLabel: string | null;
@@ -303,6 +304,8 @@ function normalizeCheckoutResult(raw: unknown): PosCheckoutResult {
     businessPhone: toString(obj.business_phone ?? obj.businessPhone, ""),
     businessEmail: toString(obj.business_email ?? obj.businessEmail, ""),
     businessLogoDataUri: toString(obj.business_logo_data_uri ?? obj.businessLogoDataUri, "") || null,
+    businessInvoiceFooter:
+      toString(obj.business_invoice_footer ?? obj.businessInvoiceFooter ?? obj.invoice_footer ?? obj.invoiceFooter, "") || null,
     paymentCurrency: toString(obj.payment_currency ?? obj.paymentCurrency, "HTG"),
     paymentAmount: toNumber(obj.payment_amount ?? obj.paymentAmount, 0),
     paymentDateLabel: toString(obj.payment_date_label ?? obj.paymentDateLabel, "") || null,

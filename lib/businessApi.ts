@@ -40,13 +40,8 @@ export type BusinessSettings = {
   address: BusinessAddress;
 };
 
-type BusinessSettingsPayload = Partial<BusinessSettings> & {
-  address?: BusinessAddress;
-  logoFile?: File | null;
-};
-
-export type CreateBusinessInput = {
-  name: string;
+type BusinessMultipartPayload = {
+  name?: string;
   slug?: string;
   legal_name?: string;
   email?: string;
@@ -59,6 +54,13 @@ export type CreateBusinessInput = {
   timezone?: string;
   invoice_footer?: string;
   address?: BusinessAddress;
+  logoFile?: File | null;
+};
+
+type BusinessSettingsPayload = BusinessMultipartPayload;
+
+export type CreateBusinessInput = BusinessMultipartPayload & {
+  name: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -120,12 +122,13 @@ function normalizeBusiness(raw: unknown): BusinessSettings {
   };
 }
 
-function buildBusinessFormData(payload: BusinessSettingsPayload): FormData {
+function buildBusinessFormData(payload: BusinessMultipartPayload): FormData {
   const formData = new FormData();
   const address = payload.address ?? {};
 
   const scalarKeys: Array<keyof BusinessSettingsPayload> = [
     "name",
+    "slug",
     "legal_name",
     "email",
     "phone",
@@ -173,10 +176,16 @@ export async function getBusinessSettings(business: string): Promise<BusinessSet
 }
 
 export async function createBusiness(payload: CreateBusinessInput): Promise<BusinessSettings> {
-  const raw = await apiFetch<unknown>("/api/app/businesses", {
-    method: "POST",
-    json: payload,
-  });
+  const { logoFile, ...jsonPayload } = payload;
+  const raw = logoFile instanceof File
+    ? await apiFetch<unknown>("/api/app/businesses", {
+        method: "POST",
+        body: buildBusinessFormData(payload),
+      })
+    : await apiFetch<unknown>("/api/app/businesses", {
+        method: "POST",
+        json: jsonPayload,
+      });
   const body = asRecord(raw);
   return normalizeBusiness(body.data ?? body);
 }
