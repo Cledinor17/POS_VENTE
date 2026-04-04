@@ -695,6 +695,12 @@ export default function UsersPage() {
 
             <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col">
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+                {error ? (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {error}
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <input
                     value={name}
@@ -816,6 +822,12 @@ export default function UsersPage() {
             </div>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+              {error ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {error}
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">

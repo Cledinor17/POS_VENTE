@@ -39,6 +39,7 @@ export default function SuppliersPage() {
   const [reloadSeq, setReloadSeq] = useState(0);
   const [name, setName] = useState("");
   const [contactPerson, setContactPerson] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [department, setDepartment] = useState("General");
@@ -78,6 +79,7 @@ export default function SuppliersPage() {
     setEditingId("");
     setName("");
     setContactPerson("");
+    setEmail("");
     setPhone("");
     setAddress("");
     setDepartment("General");
@@ -127,6 +129,7 @@ export default function SuppliersPage() {
         const updated = await updateSupplier(businessSlug, editingId, {
           name: name.trim(),
           contactPerson: contactPerson.trim() || undefined,
+          email: email.trim() || undefined,
           phone: phone.trim() || undefined,
           address: address.trim() || undefined,
           department: department.trim() || "General",
@@ -140,6 +143,7 @@ export default function SuppliersPage() {
         await createSupplier(businessSlug, {
           name: name.trim(),
           contactPerson: contactPerson.trim() || undefined,
+          email: email.trim() || undefined,
           phone: phone.trim() || undefined,
           address: address.trim() || undefined,
           department: department.trim() || "General",
@@ -163,6 +167,7 @@ export default function SuppliersPage() {
     setEditingId(item.id);
     setName(item.name);
     setContactPerson(item.contactPerson ?? "");
+    setEmail(item.email ?? "");
     setPhone(item.phone ?? "");
     setAddress(item.address ?? "");
     setDepartment(item.department || "General");
@@ -226,7 +231,7 @@ export default function SuppliersPage() {
             <input
               value={queryInput}
               onChange={(event) => setQueryInput(event.target.value)}
-              placeholder="Rechercher (nom, representant, phone, adresse, departement)"
+              placeholder="Rechercher (nom, email, representant, phone, adresse, departement)"
               className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />{" "}
             <button
@@ -251,11 +256,12 @@ export default function SuppliersPage() {
           ) : (
             <div className="overflow-x-auto">
               {" "}
-              <table className="w-full min-w-[1120px] text-sm">
+              <table className="w-full min-w-[1240px] text-sm">
                 <thead>
                   <tr className="text-left text-slate-500 border-b">
                     <th className="py-3 pr-3 font-semibold">Nom</th>
                     <th className="py-3 pr-3 font-semibold">Representant</th>
+                    <th className="py-3 pr-3 font-semibold">Email</th>
                     <th className="py-3 pr-3 font-semibold">Telephone</th>
                     <th className="py-3 pr-3 font-semibold">Adresse</th>
                     <th className="py-3 pr-3 font-semibold">Departement</th>
@@ -272,6 +278,9 @@ export default function SuppliersPage() {
                       </td>
                       <td className="py-3 pr-3 text-slate-600">
                         {item.contactPerson || "-"}
+                      </td>
+                      <td className="py-3 pr-3 text-slate-600">
+                        {item.email || "-"}
                       </td>
                       <td className="py-3 pr-3 text-slate-600">
                         {item.phone || "-"}
@@ -381,6 +390,13 @@ export default function SuppliersPage() {
                 value={contactPerson}
                 onChange={(event) => setContactPerson(event.target.value)}
                 placeholder="Representant"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="Email"
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />
               <input

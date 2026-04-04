@@ -41,7 +41,7 @@ const FEATURE_CARDS: FeatureCard[] = [
   {
     icon: ShieldCheck,
     title: "Trace utilisateur",
-    text: "Les operations restent reliees a l utilisateur connecte et au business actif.",
+    text: "Les operations restent reliees a l utilisateur connecte.",
   },
 ];
 

@@ -60,6 +60,32 @@ function paymentMethodLabel(value: string | null) {
   }
 }
 
+function remittanceCurrencyLabel(currency: string) {
+  switch (currency.toUpperCase()) {
+    case "HTG":
+      return "HTG";
+    case "USD":
+      return "$";
+    default:
+      return currency;
+  }
+}
+
+const REMITTANCE_CURRENCIES = ["HTG", "USD"] as const;
+
+type RemittanceCurrency = (typeof REMITTANCE_CURRENCIES)[number];
+
+function formatAmountInput(amount: number) {
+  return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+
+function differenceTone(value: number | null) {
+  if (value === null) return "text-slate-600";
+  if (value > 0) return "text-emerald-700";
+  if (value < 0) return "text-red-600";
+  return "text-slate-700";
+}
+
 function parseMoneyInput(value: string): number | null {
   if (value.trim() === "") return null;
   const parsed = Number(value);
@@ -97,7 +123,10 @@ export default function CurrentUserDailyReportModal({
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [submittedCashInput, setSubmittedCashInput] = useState("");
+  const [submittedCashInputs, setSubmittedCashInputs] = useState<Record<RemittanceCurrency, string>>({
+    HTG: "0.00",
+    USD: "0.00",
+  });
   const [closureNotes, setClosureNotes] = useState("");
 
   useEffect(() => {
@@ -147,21 +176,50 @@ export default function CurrentUserDailyReportModal({
 
   useEffect(() => {
     if (!report) return;
-    const nextAmount = report.closure.submittedCashAmount ?? report.closure.expectedCashAmount ?? report.summary.cashToSubmit;
-    setSubmittedCashInput(nextAmount.toFixed(2));
+    const nextAmounts = report.summary.cashToSubmitByCurrency;
+    setSubmittedCashInputs({
+      HTG: formatAmountInput(nextAmounts.HTG ?? 0),
+      USD: formatAmountInput(nextAmounts.USD ?? 0),
+    });
     setClosureNotes(report.closure.notes || "");
   }, [report]);
 
   const currency = report?.currency || "USD";
-  const enteredAmount = parseMoneyInput(submittedCashInput);
-  const expectedCash = report?.summary.cashToSubmit ?? 0;
-  const differencePreview = enteredAmount === null ? null : Number((enteredAmount - expectedCash).toFixed(2));
-  const differenceTone = useMemo(() => {
-    if (differencePreview === null) return "text-slate-600";
-    if (differencePreview > 0) return "text-emerald-700";
-    if (differencePreview < 0) return "text-red-600";
-    return "text-slate-700";
-  }, [differencePreview]);
+  const remainingCash = report?.summary.cashToSubmit ?? 0;
+  const remainingCashByCurrency = report?.summary.cashToSubmitByCurrency ?? { HTG: 0, USD: 0 };
+  const expectedCash = report?.closure.currentExpectedCashAmount ?? 0;
+  const expectedCashByCurrency =
+    report?.closure.currentExpectedCashAmountByCurrency ??
+    report?.closure.expectedCashAmountByCurrency ?? { HTG: 0, USD: 0 };
+  const cashBreakdown = useMemo(
+    () =>
+      REMITTANCE_CURRENCIES.map((code) => ({
+        code,
+        label: remittanceCurrencyLabel(code),
+        amount: remainingCashByCurrency[code] ?? 0,
+      })),
+    [remainingCashByCurrency]
+  );
+  const enteredBreakdown = useMemo<Record<RemittanceCurrency, number | null>>(
+    () => ({
+      HTG: parseMoneyInput(submittedCashInputs.HTG),
+      USD: parseMoneyInput(submittedCashInputs.USD),
+    }),
+    [submittedCashInputs]
+  );
+  const differencePreviewByCurrency = useMemo<Record<RemittanceCurrency, number | null>>(
+    () => ({
+      HTG:
+        enteredBreakdown.HTG === null
+          ? null
+          : Number((enteredBreakdown.HTG - (remainingCashByCurrency.HTG ?? 0)).toFixed(2)),
+      USD:
+        enteredBreakdown.USD === null
+          ? null
+          : Number((enteredBreakdown.USD - (remainingCashByCurrency.USD ?? 0)).toFixed(2)),
+    }),
+    [enteredBreakdown, remainingCashByCurrency]
+  );
 
   async function handleExportPdf() {
     if (!business) return;
@@ -182,8 +240,12 @@ export default function CurrentUserDailyReportModal({
 
   async function handleSaveClosure() {
     if (!business || !report) return;
-    if (enteredAmount === null || enteredAmount < 0) {
-      setError("Saisis un montant remis valide.");
+    const submittedCashAmountByCurrency = {
+      HTG: enteredBreakdown.HTG ?? 0,
+      USD: enteredBreakdown.USD ?? 0,
+    };
+    if (submittedCashAmountByCurrency.HTG < 0 || submittedCashAmountByCurrency.USD < 0) {
+      setError("Saisis des montants remis valides en HTG et en $.");
       return;
     }
 
@@ -194,13 +256,13 @@ export default function CurrentUserDailyReportModal({
     try {
       const next = await saveCurrentUserDailyClosure(business, {
         date: selectedDate,
-        submittedCashAmount: enteredAmount,
+        submittedCashAmountByCurrency,
         notes: closureNotes,
       });
       setReport(next);
-      setNotice("La cloture de caisse a ete enregistree.");
+      setNotice("La remise de caisse a ete enregistree.");
     } catch (e: any) {
-      setError(e?.message ?? "Impossible d'enregistrer la cloture.");
+      setError(e?.message ?? "Impossible d'enregistrer la remise.");
     } finally {
       setSaving(false);
     }
@@ -278,7 +340,17 @@ export default function CurrentUserDailyReportModal({
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                   <div className="text-xs font-semibold text-emerald-700">Cash a remettre</div>
                   <div className="mt-1 text-xl font-extrabold text-emerald-900">
-                    {formatMoney(report.summary.cashToSubmit, currency)}
+                    {formatMoney(remainingCash, currency)}
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {cashBreakdown.map((item) => (
+                      <div key={item.code} className="rounded-xl border border-emerald-200/80 bg-white/70 px-3 py-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                          {item.label}
+                        </div>
+                        <div className="mt-1 text-sm font-bold text-emerald-950">{formatMoney(item.amount, item.code)}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -308,7 +380,9 @@ export default function CurrentUserDailyReportModal({
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="font-bold text-slate-900">Cloture de caisse</div>
-                    <div className="text-xs text-slate-500">Enregistre le montant cash remis pour la date selectionnee.</div>
+                    <div className="text-xs text-slate-500">
+                      Enregistre une remise partielle ou complete. Les champs HTG et $ se rechargent avec le reste a remettre.
+                    </div>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                     Derniere cloture: {report.closure.submittedAt ? formatDateTime(report.closure.submittedAt) : "pas encore"}
@@ -317,17 +391,26 @@ export default function CurrentUserDailyReportModal({
 
                 <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
                   <div className="grid gap-3">
-                    <label className="text-sm font-semibold text-slate-700">
-                      <span className="mb-1 block">Montant remis</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={submittedCashInput}
-                        onChange={(event) => setSubmittedCashInput(event.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 outline-none transition focus:border-[#0d63b8] focus:ring-2 focus:ring-blue-500/20"
-                      />
-                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {REMITTANCE_CURRENCIES.map((code) => (
+                        <label key={code} className="text-sm font-semibold text-slate-700">
+                          <span className="mb-1 block">{`Nouvelle remise ${remittanceCurrencyLabel(code)}`}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={submittedCashInputs[code]}
+                            onChange={(event) =>
+                              setSubmittedCashInputs((prev) => ({
+                                ...prev,
+                                [code]: event.target.value,
+                              }))
+                            }
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 outline-none transition focus:border-[#0d63b8] focus:ring-2 focus:ring-blue-500/20"
+                          />
+                        </label>
+                      ))}
+                    </div>
 
                     <label className="text-sm font-semibold text-slate-700">
                       <span className="mb-1 block">Notes</span>
@@ -344,19 +427,84 @@ export default function CurrentUserDailyReportModal({
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">Attendu actuel</span>
+                        <span className="text-slate-500">Cash encaisse du jour</span>
                         <span className="font-bold text-slate-900">{formatMoney(expectedCash, currency)}</span>
                       </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Reste a remettre par devise</div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {REMITTANCE_CURRENCIES.map((code) => (
+                            <div key={code} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {remittanceCurrencyLabel(code)}
+                              </div>
+                              <div className="mt-1 font-bold text-slate-900">
+                                {formatMoney(remainingCashByCurrency[code] ?? 0, code)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Cash du jour par devise</div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {REMITTANCE_CURRENCIES.map((code) => (
+                            <div key={code} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {remittanceCurrencyLabel(code)}
+                              </div>
+                              <div className="mt-1 font-bold text-slate-900">
+                                {formatMoney(expectedCashByCurrency[code] ?? 0, code)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Total deja remis par devise</div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {REMITTANCE_CURRENCIES.map((code) => (
+                            <div key={code} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {remittanceCurrencyLabel(code)}
+                              </div>
+                              <div className="mt-1 font-bold text-slate-900">
+                                {report.closure.submittedCashAmountByCurrency
+                                  ? formatMoney(report.closure.submittedCashAmountByCurrency[code] ?? 0, code)
+                                  : "-"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">Dernier remis</span>
+                        <span className="text-slate-500">Total deja remis</span>
                         <span className="font-bold text-slate-900">
                           {report.closure.submittedCashAmount === null ? "-" : formatMoney(report.closure.submittedCashAmount, currency)}
                         </span>
                       </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Ecart en cours par devise</div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {REMITTANCE_CURRENCIES.map((code) => {
+                            const preview = differencePreviewByCurrency[code];
+                            return (
+                              <div key={code} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                  {remittanceCurrencyLabel(code)}
+                                </div>
+                                <div className={`mt-1 font-bold ${differenceTone(preview)}`}>
+                                  {preview === null ? "-" : formatMoney(preview, code)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">Ecart en cours</span>
-                        <span className={`font-bold ${differenceTone}`}>
-                          {differencePreview === null ? "-" : formatMoney(differencePreview, currency)}
+                        <span className="text-slate-500">Ecart cumule enregistre</span>
+                        <span className={`font-bold ${differenceTone(report.closure.differenceAmount)}`}>
+                          {report.closure.differenceAmount === null ? "-" : formatMoney(report.closure.differenceAmount, currency)}
                         </span>
                       </div>
                     </div>
@@ -366,7 +514,7 @@ export default function CurrentUserDailyReportModal({
                       disabled={saving || loading}
                       className="mt-4 w-full rounded-2xl brand-primary-btn py-3 font-bold disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {saving ? "Enregistrement..." : report.closure.isClosed ? "Mettre a jour la cloture" : "Enregistrer la cloture"}
+                      {saving ? "Enregistrement..." : report.closure.isClosed ? "Enregistrer une autre remise" : "Enregistrer la remise"}
                     </button>
                   </div>
                 </div>

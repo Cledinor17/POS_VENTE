@@ -64,9 +64,13 @@ export type DailyReportClosure = {
   isClosed: boolean;
   reportDate: string;
   expectedCashAmount: number;
+  expectedCashAmountByCurrency: Record<string, number>;
   currentExpectedCashAmount: number;
+  currentExpectedCashAmountByCurrency: Record<string, number>;
   submittedCashAmount: number | null;
+  submittedCashAmountByCurrency: Record<string, number> | null;
   differenceAmount: number | null;
+  differenceAmountByCurrency: Record<string, number> | null;
   notes: string;
   submittedAt: string | null;
 };
@@ -86,6 +90,7 @@ export type CurrentUserDailyReport = {
     receiptsCount: number;
     receiptsTotal: number;
     cashToSubmit: number;
+    cashToSubmitByCurrency: Record<string, number>;
     nonCashTotal: number;
   };
   paymentMethods: Record<string, number>;
@@ -96,9 +101,22 @@ export type CurrentUserDailyReport = {
 
 export type SaveCurrentUserDailyClosureInput = {
   date: string;
-  submittedCashAmount: number;
+  submittedCashAmountByCurrency: Record<string, number>;
   notes?: string;
 };
+
+function normalizeCurrencyBreakdown(raw: unknown): Record<string, number> {
+  const obj = asRecord(raw);
+  return {
+    HTG: toNumber(obj.HTG, 0),
+    USD: toNumber(obj.USD, 0),
+  };
+}
+
+function normalizeNullableCurrencyBreakdown(raw: unknown): Record<string, number> | null {
+  if (raw === null || raw === undefined) return null;
+  return normalizeCurrencyBreakdown(raw);
+}
 
 function normalizeItem(raw: unknown): DailyReportSaleItem {
   const obj = asRecord(raw);
@@ -139,15 +157,19 @@ function normalizeClosure(raw: unknown, fallbackDate: string, fallbackExpected: 
     isClosed: Boolean(obj.is_closed),
     reportDate: toString(obj.report_date, fallbackDate),
     expectedCashAmount: toNumber(obj.expected_cash_amount, fallbackExpected),
+    expectedCashAmountByCurrency: normalizeCurrencyBreakdown(obj.expected_cash_amount_by_currency),
     currentExpectedCashAmount: toNumber(obj.current_expected_cash_amount, fallbackExpected),
+    currentExpectedCashAmountByCurrency: normalizeCurrencyBreakdown(obj.current_expected_cash_amount_by_currency),
     submittedCashAmount:
       obj.submitted_cash_amount === null || obj.submitted_cash_amount === undefined
         ? null
         : toNumber(obj.submitted_cash_amount, 0),
+    submittedCashAmountByCurrency: normalizeNullableCurrencyBreakdown(obj.submitted_cash_amount_by_currency),
     differenceAmount:
       obj.difference_amount === null || obj.difference_amount === undefined
         ? null
         : toNumber(obj.difference_amount, 0),
+    differenceAmountByCurrency: normalizeNullableCurrencyBreakdown(obj.difference_amount_by_currency),
     notes: toString(obj.notes),
     submittedAt: toString(obj.submitted_at, "") || null,
   };
@@ -170,6 +192,10 @@ function normalizeReport(raw: unknown): CurrentUserDailyReport {
     receiptsCount: toNumber(summary.receipts_count, 0),
     receiptsTotal: toNumber(summary.receipts_total, 0),
     cashToSubmit: toNumber(summary.cash_to_submit, 0),
+    cashToSubmitByCurrency: {
+      HTG: toNumber(asRecord(summary.cash_to_submit_by_currency).HTG, 0),
+      USD: toNumber(asRecord(summary.cash_to_submit_by_currency).USD, 0),
+    },
     nonCashTotal: toNumber(summary.non_cash_total, 0),
   };
 
@@ -208,7 +234,7 @@ export async function saveCurrentUserDailyClosure(
       method: "POST",
       json: {
         date: input.date,
-        submitted_cash_amount: input.submittedCashAmount,
+        submitted_cash_amount_by_currency: input.submittedCashAmountByCurrency,
         notes: input.notes ?? "",
       },
     }

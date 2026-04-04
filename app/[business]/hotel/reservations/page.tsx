@@ -193,13 +193,13 @@ function buildReservationPrintLoadingHtml(reservationCode: string): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Preparation impression ${escapeHtml(reservationCode)}</title>
+    <title>Preparation facture reservation ${escapeHtml(reservationCode)}</title>
     <style>
       html, body {
         margin: 0;
         min-height: 100%;
-        font-family: Arial, sans-serif;
-        background: #f8fafc;
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: #f1f5f9;
         color: #0f172a;
       }
       body {
@@ -209,10 +209,10 @@ function buildReservationPrintLoadingHtml(reservationCode: string): string {
       }
       .card {
         width: min(100%, 420px);
-        border: 1px solid #dbe4f0;
+        border: 1px solid #dbe3ee;
         border-radius: 18px;
         background: #ffffff;
-        padding: 24px;
+        padding: 26px;
         text-align: center;
         box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
       }
@@ -221,9 +221,22 @@ function buildReservationPrintLoadingHtml(reservationCode: string): string {
         height: 42px;
         margin: 0 auto 14px;
         border-radius: 999px;
-        border: 4px solid #dbeafe;
-        border-top-color: #2563eb;
+        border: 4px solid #dbe3ee;
+        border-top-color: #0f172a;
         animation: spin 0.9s linear infinite;
+      }
+      .reference {
+        margin-top: 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #334155;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
       }
       h1 {
         margin: 0;
@@ -243,8 +256,9 @@ function buildReservationPrintLoadingHtml(reservationCode: string): string {
   <body>
     <section class="card">
       <div class="spinner"></div>
-      <h1>Preparation de la fiche de reservation</h1>
+      <h1>Preparation de la facture de reservation</h1>
       <p>Chargement du detail de facturation et des paiements pour ${escapeHtml(reservationCode)}...</p>
+      <div class="reference">${escapeHtml(reservationCode)}</div>
     </section>
   </body>
 </html>`;
@@ -272,6 +286,14 @@ function buildReservationPrintHtml(
   const hotelCurrency = businessSettings?.currency?.trim() || reservation.total_currency || "USD";
   const hotelLogo = businessSettings?.logo_url?.trim() || "";
   const customerIdentity = splitReservationCustomerName(reservation);
+  const guestFullName =
+    [customerIdentity.firstName, customerIdentity.lastName]
+      .map((value) => value.trim())
+      .filter((value) => value && value !== "-")
+      .join(" ") ||
+    reservation.guest_name?.trim() ||
+    reservation.customer?.name?.trim() ||
+    "Client";
   const customerCode = reservation.customer?.code?.trim() || "-";
   const customerEmail = reservation.customer?.email?.trim() || reservation.guest_email?.trim() || "-";
   const customerPhone = reservation.customer?.phone?.trim() || reservation.guest_phone?.trim() || "-";
@@ -308,34 +330,27 @@ function buildReservationPrintHtml(
         : paymentStatus.tone === "danger"
           ? "settlement-danger"
           : "settlement-neutral";
+  const paymentStatusNote =
+    balanceDue <= 0.009
+      ? "Facture integralement reglee."
+      : paymentsTotal > 0
+        ? "Paiements partiels enregistres sur cette reservation."
+        : "Aucun paiement enregistre pour le moment.";
+  const hotelContactLine =
+    [hotelPhone !== "-" ? `Tel: ${hotelPhone}` : "", hotelEmail !== "-" ? `Email: ${hotelEmail}` : ""]
+      .filter((value) => value)
+      .join(" | ") || "-";
+  const notesHtml = escapeHtml(notesLabel).replace(/\n/g, "<br />");
+  const footerNoteHtml = escapeHtml(footerNote || "Merci pour votre confiance.").replace(/\n/g, "<br />");
   const dueDate = formatReservationDate(reservation.check_out);
-  const documentMetaCards = [
-    ["Document", "Fiche / Facture reservation"],
-    ["Numero", reservationCode],
-    ["Emission", printedAt],
-    ["Echeance", dueDate],
-    ["Devise", folioCurrency],
-    ["Statut reglement", paymentStatus.label],
-  ]
-    .map(
-      ([label, value]) => `
-        <div class="meta-card">
-          <div class="meta-label">${escapeHtml(label)}</div>
-          <div class="meta-value">${escapeHtml(value)}</div>
-        </div>
-      `
-    )
-    .join("");
-
+  const documentTitle = balanceDue <= 0.009 ? "Facture d hebergement acquittee" : "Facture d hebergement";
   const reservationRows = [
+    ["Reference reservation", reservationCode],
     ["Statut reservation", getStatusLabel(reservation.status)],
-    ["Chambre", roomLabel],
-    ["Arrivee prevue", formatReservationDate(reservation.check_in)],
-    ["Depart prevu", formatReservationDate(reservation.check_out)],
-    ["Nombre de nuits", String(nights || 1)],
-    ["Nombre de clients", String(reservation.guests || 1)],
+    ["Voyageurs", String(reservation.guests || 1)],
     ["Check-in reel", formatReservationDateTime(reservation.actual_check_in_at)],
     ["Check-out reel", formatReservationDateTime(reservation.actual_check_out_at)],
+    ["Solde courant", formatMoney(balanceDue, folioCurrency)],
   ]
     .map(
       ([label, value]) => `
@@ -349,10 +364,10 @@ function buildReservationPrintHtml(
 
   const lineItemRows = [
     {
-      description: `Hebergement - ${roomLabel}`,
+      description: `Hebergement chambre ${roomLabel}`,
       details:
         `${formatReservationDate(reservation.check_in)} au ${formatReservationDate(reservation.check_out)}` +
-        ` | ${reservation.guests || 1} client(s)`,
+        ` | ${billableNights} nuit(s) | ${reservation.guests || 1} client(s)`,
       quantity: billableNights,
       unitPrice: roomUnitPrice,
       amount: roomAmount,
@@ -370,8 +385,9 @@ function buildReservationPrintHtml(
     })),
   ]
     .map(
-      (item) => `
+      (item, index) => `
         <tr>
+          <td data-label="#" class="line-index">${index + 1}</td>
           <td data-label="Designation">
             <div class="table-primary">${escapeHtml(item.description)}</div>
             <div class="table-secondary">${escapeHtml(item.details)}</div>
@@ -386,7 +402,7 @@ function buildReservationPrintHtml(
 
   const paymentRows = payments.length
     ? payments
-      .map((payment) => {
+      .map((payment, index) => {
         const originalAmount =
           payment.payment_currency !== folioCurrency
             ? `${formatMoney(payment.payment_amount, payment.payment_currency)} | applique ${formatMoney(payment.amount, folioCurrency)}`
@@ -394,6 +410,7 @@ function buildReservationPrintHtml(
 
         return `
           <tr>
+            <td data-label="#" class="line-index">${index + 1}</td>
             <td data-label="Date">${escapeHtml(formatReservationDateTime(payment.paid_at || reservation.check_in))}</td>
             <td data-label="Methode / ref">
               <div class="table-primary">${escapeHtml(formatReservationPaymentMethodLabel(payment.payment_method))}</div>
@@ -406,17 +423,17 @@ function buildReservationPrintHtml(
       .join("")
     : `
       <tr>
-        <td colspan="3" class="empty-table">Aucun paiement enregistre pour cette reservation.</td>
+        <td colspan="4" class="empty-table">Aucun paiement enregistre pour cette reservation.</td>
       </tr>
     `;
 
   const summaryRows = [
     ["Sous-total hebergement", formatMoney(roomAmount, folioCurrency), ""],
-    ["Extras et services", formatMoney(extrasNetAmount, folioCurrency), ""],
-    ["Taxes / frais identifies", formatMoney(identifiedTaxAmount, folioCurrency), ""],
+    ["Services et consommations", formatMoney(extrasNetAmount, folioCurrency), ""],
+    ["Taxes et frais identifies", formatMoney(identifiedTaxAmount, folioCurrency), ""],
     ["Total facture", formatMoney(grossTotal, folioCurrency), "summary-strong"],
-    ["Paiements recus", formatMoney(paymentsTotal, folioCurrency), ""],
-    ["Balance due", formatMoney(balanceDue, folioCurrency), "summary-balance"],
+    ["Paiements / acomptes recus", formatMoney(paymentsTotal, folioCurrency), ""],
+    ["Solde restant", formatMoney(balanceDue, folioCurrency), "summary-balance"],
   ]
     .map(
       ([label, value, rowClass]) => `
@@ -433,39 +450,56 @@ function buildReservationPrintHtml(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fiche reservation ${escapeHtml(reservationCode)}</title>
+    <title>Facture reservation ${escapeHtml(reservationCode)}</title>
     <style>
-      @page { size: auto; margin: 10mm; }
+      @page { size: A4; margin: 12mm; }
+      :root {
+        --ink: #0f172a;
+        --muted: #475569;
+        --line: #dbe3ee;
+        --panel: #f8fafc;
+        --accent: #9a7b4f;
+        --accent-soft: #f7f1e6;
+        --navy: #111827;
+      }
       * { box-sizing: border-box; }
       html, body {
         margin: 0;
         padding: 0;
-        background: #ffffff;
-        color: #0f172a;
-        font-family: Arial, sans-serif;
+        background: #eef2f7;
+        color: var(--ink);
+        font-family: "Segoe UI", Arial, sans-serif;
       }
       body {
-        padding: 6mm 0;
+        padding: 20px 0;
       }
       .sheet {
-        width: min(100%, 200mm);
+        width: min(100%, 210mm);
         margin: 0 auto;
-        padding: 0 2mm;
+        padding: 0 10px;
       }
       .invoice-shell {
-        border: 1px solid #dbe4f0;
-        border-radius: 18px;
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 16px;
         overflow: hidden;
         background: #ffffff;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+      }
+      .invoice-shell::before {
+        content: "";
+        display: block;
+        height: 6px;
+        background: #0f172a;
       }
       .header {
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
         gap: 16px;
-        padding: 16px 18px;
-        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
-        border-bottom: 1px solid #dbe4f0;
+        padding: 20px;
+        background: #ffffff;
+        border-bottom: 1px solid var(--line);
       }
       .brand {
         display: flex;
@@ -478,48 +512,108 @@ function buildReservationPrintHtml(
         border-radius: 14px;
         object-fit: contain;
         background: #ffffff;
-        border: 1px solid #dbe4f0;
+        border: 1px solid var(--line);
         padding: 6px;
       }
-      .title {
-        font-size: 24px;
+      .brand-copy {
+        max-width: 360px;
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: #0f172a;
+        color: #ffffff;
+        font-size: 10px;
         font-weight: 800;
-        margin: 0;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .title {
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 26px;
+        font-weight: 800;
+        margin: 10px 0 4px;
       }
       .hotel-name {
-        font-size: 18px;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 22px;
         font-weight: 800;
         margin: 0 0 4px;
       }
       .subtitle {
-        color: #475569;
+        color: var(--muted);
         font-size: 12px;
         margin-top: 2px;
         line-height: 1.5;
       }
-      .badge {
+      .document-panel {
+        min-width: min(100%, 310px);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel);
+        color: var(--ink);
+        padding: 16px 18px;
+      }
+      .document-badge {
         display: inline-flex;
         align-items: center;
-        padding: 6px 10px;
+        padding: 6px 12px;
         border-radius: 999px;
-        background: #eff6ff;
-        color: #1d4ed8;
+        background: #0f172a;
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .document-code {
+        margin-top: 10px;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 20px;
+        font-weight: 800;
+        word-break: break-word;
+      }
+      .document-note {
+        margin-top: 8px;
+        color: var(--muted);
         font-size: 12px;
+        line-height: 1.55;
+      }
+      .document-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 14px;
+        margin-top: 14px;
+      }
+      .document-label {
+        display: block;
+        font-size: 10px;
         font-weight: 700;
-        word-break: break-all;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+      .document-value {
+        display: block;
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--ink);
       }
       .kpi-strip {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 12px;
-        padding: 0 18px 18px;
-        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
-        border-bottom: 1px solid #dbe4f0;
+        padding: 0 20px 18px;
+        background: #ffffff;
+        border-bottom: 1px solid var(--line);
       }
       .kpi-card {
-        border: 1px solid #dbe4f0;
+        border: 1px solid #e2e8f0;
         border-radius: 14px;
-        background: rgba(255, 255, 255, 0.92);
+        background: #f8fafc;
         padding: 12px;
       }
       .kpi-label {
@@ -531,9 +625,10 @@ function buildReservationPrintHtml(
       }
       .kpi-value {
         margin-top: 8px;
+        font-family: Georgia, "Times New Roman", serif;
         font-size: 18px;
         font-weight: 800;
-        color: #0f172a;
+        color: var(--ink);
         word-break: break-word;
       }
       .content {
@@ -549,7 +644,7 @@ function buildReservationPrintHtml(
         border: 1px solid #e2e8f0;
         border-radius: 14px;
         padding: 12px;
-        background: #ffffff;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
       }
       .meta-label {
         font-size: 11px;
@@ -567,7 +662,7 @@ function buildReservationPrintHtml(
       }
       .invoice-top {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
         gap: 16px;
         margin-bottom: 16px;
       }
@@ -578,6 +673,9 @@ function buildReservationPrintHtml(
         background: #ffffff;
         break-inside: avoid;
       }
+      .panel-client {
+        margin-top: 20px;
+      }
       .panel-title {
         margin: 0 0 10px;
         font-size: 12px;
@@ -585,6 +683,23 @@ function buildReservationPrintHtml(
         text-transform: uppercase;
         letter-spacing: 0.08em;
         color: #64748b;
+      }
+      .bill-to-name {
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--ink);
+        margin-bottom: 10px;
+      }
+      .value-stack {
+        display: grid;
+        gap: 10px;
+      }
+      .value-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: linear-gradient(180deg, #ffffff 0%, #faf7f2 100%);
       }
       .identity-grid {
         display: grid;
@@ -649,12 +764,20 @@ function buildReservationPrintHtml(
         vertical-align: top;
       }
       .data-table th {
-        background: #f8fafc;
-        color: #475569;
+        background: #0f172a;
+        color: #ffffff;
         text-align: left;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         font-size: 11px;
+      }
+      .data-table tbody tr:nth-child(even) td {
+        background: #f8fafc;
+      }
+      .line-index {
+        width: 44px;
+        color: #64748b;
+        font-weight: 700;
       }
       .data-table tbody tr:last-child td {
         border-bottom: 0;
@@ -688,10 +811,10 @@ function buildReservationPrintHtml(
         margin-top: 16px;
       }
       .totals-panel {
-        border: 1px solid #dbe4f0;
+        border: 1px solid var(--line);
         border-radius: 14px;
         padding: 14px;
-        background: #f8fafc;
+        background: var(--panel);
       }
       .totals-table {
         width: 100%;
@@ -712,6 +835,9 @@ function buildReservationPrintHtml(
         color: #0f172a;
       }
       .summary-strong td {
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+        font-size: 15px;
         font-weight: 800;
       }
       .summary-balance td {
@@ -720,7 +846,7 @@ function buildReservationPrintHtml(
         border-bottom: 0;
         font-size: 16px;
         font-weight: 800;
-        color: #0f172a;
+        color: var(--ink);
       }
       .summary-note {
         margin-top: 12px;
@@ -789,18 +915,28 @@ function buildReservationPrintHtml(
       }
       .footer {
         margin-top: 14px;
-        color: #64748b;
-        font-size: 11px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 12px 14px;
+        background: var(--panel);
+        color: #334155;
+        font-size: 12px;
+        line-height: 1.6;
         text-align: center;
+        white-space: pre-wrap;
       }
       @media print {
         body {
+          background: #ffffff;
           padding: 0;
         }
         .sheet {
           width: 100%;
           max-width: none;
           padding: 0;
+        }
+        .invoice-shell {
+          box-shadow: none;
         }
       }
       @media (max-width: 820px) {
@@ -811,6 +947,12 @@ function buildReservationPrintHtml(
         }
         .settlement-grid {
           grid-template-columns: 1fr;
+        }
+        .document-grid {
+          grid-template-columns: 1fr;
+        }
+        .panel-client {
+          margin-top: 0;
         }
       }
       @media (max-width: 480px) {
@@ -843,6 +985,9 @@ function buildReservationPrintHtml(
         }
         .hotel-name {
           font-size: 15px;
+        }
+        .document-panel {
+          min-width: 100%;
         }
         .meta-grid,
         .identity-grid {
@@ -907,36 +1052,58 @@ function buildReservationPrintHtml(
         <section class="header">
           <div class="brand">
             ${hotelLogo ? `<img class="logo" src="${escapeHtml(hotelLogo)}" alt="Logo hotel" />` : ""}
-            <div>
+            <div class="brand-copy">
+              <div class="eyebrow">Facture de reservation</div>
               <div class="hotel-name">${escapeHtml(hotelName)}</div>
               <div class="subtitle">${escapeHtml(hotelAddress)}</div>
-              <div class="subtitle">Tel: ${escapeHtml(hotelPhone)} | Email: ${escapeHtml(hotelEmail)}</div>
+              <div class="subtitle">${escapeHtml(hotelContactLine)}</div>
               ${hotelWebsite ? `<div class="subtitle">${escapeHtml(hotelWebsite)}</div>` : ""}
               <div class="subtitle">No fiscal: ${escapeHtml(hotelTaxNumber)}</div>
             </div>
           </div>
-          <div>
-            <h1 class="title">Fiche de reservation</h1>
-            <div class="subtitle">Imprime le ${escapeHtml(printedAt)}</div>
-            <div style="margin-top:10px" class="badge">${escapeHtml(reservationCode)}</div>
+          <div class="document-panel">
+            <div class="document-badge">Facture</div>
+            <div class="title">${escapeHtml(documentTitle)}</div>
+            <div class="document-code">${escapeHtml(reservationCode)}</div>
+            <div class="document-note">
+              ${escapeHtml(paymentStatusNote)}
+            </div>
+            <div class="document-grid">
+              <div>
+                <span class="document-label">Emission</span>
+                <span class="document-value">${escapeHtml(printedAt)}</span>
+              </div>
+              <div>
+                <span class="document-label">Depart</span>
+                <span class="document-value">${escapeHtml(dueDate)}</span>
+              </div>
+              <div>
+                <span class="document-label">Devise</span>
+                <span class="document-value">${escapeHtml(folioCurrency)}</span>
+              </div>
+              <div>
+                <span class="document-label">Statut paiement</span>
+                <span class="document-value">${escapeHtml(paymentStatus.label)}</span>
+              </div>
+            </div>
           </div>
         </section>
 
         <section class="kpi-strip">
           <article class="kpi-card">
-            <p class="kpi-label">Total facture</p>
+            <p class="kpi-label">Montant facture</p>
             <div class="kpi-value">${escapeHtml(formatMoney(grossTotal, folioCurrency))}</div>
           </article>
           <article class="kpi-card">
-            <p class="kpi-label">Paiements recus</p>
+            <p class="kpi-label">Acomptes recus</p>
             <div class="kpi-value">${escapeHtml(formatMoney(paymentsTotal, folioCurrency))}</div>
           </article>
           <article class="kpi-card">
-            <p class="kpi-label">Balance due</p>
+            <p class="kpi-label">Solde a regler</p>
             <div class="kpi-value">${escapeHtml(formatMoney(balanceDue, folioCurrency))}</div>
           </article>
           <article class="kpi-card">
-            <p class="kpi-label">Reglement</p>
+            <p class="kpi-label">Etat du reglement</p>
             <div class="kpi-value">
               <span class="settlement-badge ${paymentStatusClass}">${escapeHtml(paymentStatus.label)}</span>
             </div>
@@ -944,13 +1111,27 @@ function buildReservationPrintHtml(
         </section>
 
         <section class="content">
-          <section class="meta-grid">
-            ${documentMetaCards}
-          </section>
-
           <section class="invoice-top">
             <div class="panel">
-              <h2 class="panel-title">Informations client</h2>
+              <h2 class="panel-title">Informations du sejour</h2>
+              <div class="value-stack">
+                <div class="value-card">
+                  <div class="label">Periode facturee</div>
+                  <div class="value">${escapeHtml(formatReservationDate(reservation.check_in))} au ${escapeHtml(formatReservationDate(reservation.check_out))}</div>
+                </div>
+                <div class="value-card">
+                  <div class="label">Chambre attribuee</div>
+                  <div class="value">${escapeHtml(roomLabel)}</div>
+                </div>
+              </div>
+              <div style="margin-top: 10px;">
+                ${reservationRows}
+              </div>
+            </div>
+
+            <div class="panel panel-client">
+              <h2 class="panel-title">Facture a</h2>
+              <div class="bill-to-name">${escapeHtml(guestFullName)}</div>
               <div class="identity-grid">
                 <div>
                   <div class="label">Code client</div>
@@ -974,11 +1155,6 @@ function buildReservationPrintHtml(
                 </div>
               </div>
             </div>
-
-            <div class="panel">
-              <h2 class="panel-title">Informations reservation</h2>
-              ${reservationRows}
-            </div>
           </section>
 
           <section class="table-panel">
@@ -987,7 +1163,8 @@ function buildReservationPrintHtml(
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Designation</th>
+                    <th>#</th>
+                    <th>Prestation</th>
                     <th class="text-right">Quantite</th>
                     <th class="text-right">Prix unitaire</th>
                     <th class="text-right">Montant</th>
@@ -1007,6 +1184,7 @@ function buildReservationPrintHtml(
                 <table class="data-table">
                   <thead>
                     <tr>
+                      <th>#</th>
                       <th>Date</th>
                       <th>Methode / reference</th>
                       <th class="text-right">Montant</th>
@@ -1020,14 +1198,14 @@ function buildReservationPrintHtml(
             </section>
 
             <section class="totals-panel">
-              <h2 class="panel-title">Recapitulatif financier</h2>
+              <h2 class="panel-title">Resume facture</h2>
               <table class="totals-table">
                 <tbody>
                   ${summaryRows}
                 </tbody>
               </table>
               <div class="summary-note">
-                Conditions de paiement: paiement attendu au plus tard a la date de depart (${escapeHtml(dueDate)}).
+                Conditions de paiement: solde attendu au plus tard a la date de depart (${escapeHtml(dueDate)}).
                 ${identifiedTaxAmount > 0
                   ? ` Les taxes et frais identifies sont inclus dans le total facture.`
                   : ` Aucune taxe distincte n est detaillee dans le systeme pour cette reservation.`}
@@ -1036,22 +1214,11 @@ function buildReservationPrintHtml(
           </section>
 
           <section class="notes">
-            <div class="label">Notes</div>
-            <p>${escapeHtml(notesLabel)}</p>
+            <div class="label">Notes de reservation</div>
+            <p>${notesHtml}</p>
           </section>
 
-          <section class="signature-grid">
-            <article class="signature-box">
-              <div class="label">Validation hotel</div>
-              <div class="signature-line">Nom, signature et cachet</div>
-            </article>
-            <article class="signature-box">
-              <div class="label">Validation client</div>
-              <div class="signature-line">Nom et signature du client</div>
-            </article>
-          </section>
-
-          ${footerNote ? `<div class="footer">${escapeHtml(footerNote)}</div>` : `<div class="footer">Merci pour votre confiance.</div>`}
+          <div class="footer">${footerNoteHtml}</div>
         </section>
       </section>
     </main>

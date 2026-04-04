@@ -1039,7 +1039,7 @@ export default function PosPage() {
                 Aucun produit trouve.
               </div>
             ) : (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {" "}
                 {visibleProducts.map((product) => {
                   const productId = String(product.id);
@@ -1055,29 +1055,29 @@ export default function PosPage() {
                   return (
                     <article
                       key={productId}
-                      className={`rounded-xl border p-2 sm:p-3 space-y-1.5 sm:space-y-2 ${canSell ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-80"}`}
+                      className={`rounded-xl border p-2 space-y-1.5 ${canSell ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-80"}`}
                     >
                       {" "}
                       <div className="flex flex-col items-start justify-between gap-2">
                         <div className="w-full flex justify-end">
-                        <span className="text-[11px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full bg-slate-100 text-slate-600">
+                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 sm:px-2 sm:text-[11px]">
                           {" "}
                           {product.type}{" "}
                         </span>{" "}
                         </div>
                         {" "}
-                        <div className="min-w-0 w-full flex flex-col gap-2">
+                        <div className="min-w-0 w-full flex flex-col gap-1.5">
                            <div className="min-w-0">
                             {" "}
-                            <h3 className="text-xs sm:text-sm font-semibold text-slate-800 truncate">
+                            <h3 className="truncate text-[11px] font-semibold text-slate-800 sm:text-xs">
                               {product.name}
                             </h3>{" "}
-                            <p className="text-[10px] sm:text-xs text-slate-500 truncate">
+                            <p className="truncate text-[10px] text-slate-500">
                               {product.sku}
                             </p>{" "}
                           </div>
                           <div className="w-full flex items-center justify-center">
-                          <div className="w-full min-h-24 sm:min-h-48 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                          <div className="flex w-full min-h-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-xs font-bold text-slate-500 sm:min-h-28">
                             <img
                               src={imageSrc}
                               alt={product.name}
@@ -1094,9 +1094,9 @@ export default function PosPage() {
                         </div>{" "}
                         
                       </div>{" "}
-                      <div className="flex min-w-0 items-center justify-between gap-1 sm:gap-2">
+                      <div className="flex min-w-0 items-center justify-between gap-1">
                         <div className="min-w-0 pr-1">
-                          <div className="truncate text-[11px] sm:text-sm font-bold text-slate-900">
+                          <div className="truncate text-[11px] font-bold text-slate-900 sm:text-xs">
                             {formatMoney(product.price, product.priceCurrency)}
                           </div>
                           {product.priceCurrency !== saleCurrency ? (
@@ -1137,7 +1137,7 @@ export default function PosPage() {
                           </button>{" "}
                         </div>
                       </div>
-                      <div className="text-xs text-slate-500">
+                      <div className="text-[10px] text-slate-500">
                         {" "}
                         Stock:{" "}
                         {product.type === "service" ? "N/A" : product.stock} |
@@ -1146,7 +1146,7 @@ export default function PosPage() {
                       <button
                         onClick={() => addToCart(product, requestedQty)}
                         disabled={!canSell}
-                        className="w-full rounded-lg brand-primary-btn text-white text-xs sm:text-sm font-semibold py-1.5 sm:py-2 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                        className="w-full rounded-lg brand-primary-btn py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                       >
                         {" "}
                         Ajouter au panier{" "}

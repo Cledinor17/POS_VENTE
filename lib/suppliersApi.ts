@@ -10,6 +10,7 @@ export type SupplierItem = {
   department: string;
   name: string;
   contactPerson: string | null;
+  email: string | null;
   phone: string | null;
   address: string | null;
   balance: number;
@@ -34,6 +35,7 @@ export type CreateSupplierInput = {
   department?: string;
   name: string;
   contactPerson?: string;
+  email?: string;
   phone?: string;
   address?: string;
   balance?: number;
@@ -103,6 +105,7 @@ function normalizeSupplier(raw: unknown): SupplierItem {
     department: toString(obj.department, "General"),
     name: toString(obj.name, "Fournisseur"),
     contactPerson: toString(obj.contact_person ?? obj.contactPerson, "") || null,
+    email: toString(obj.email, "") || null,
     phone: toString(obj.phone, "") || null,
     address: toString(obj.address, "") || null,
     balance: toNumber(obj.balance, 0),
@@ -115,6 +118,7 @@ function toPayload(input: CreateSupplierInput | UpdateSupplierInput): Record<str
     department: input.department ?? null,
     name: input.name,
     contact_person: input.contactPerson ?? null,
+    email: input.email ?? null,
     phone: input.phone ?? null,
     address: input.address ?? null,
     balance: input.balance ?? null,
