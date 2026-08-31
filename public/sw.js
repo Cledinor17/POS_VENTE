@@ -7,7 +7,7 @@
 
 const CACHE_VERSION = "pos-static-v2";
 
-self.addEventListener("install", (event) => {
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 

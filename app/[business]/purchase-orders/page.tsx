@@ -147,11 +147,11 @@ export default function PurchaseOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [businessSlug, page, query, reloadSeq, statusFilter]);
+  }, [businessSlug, page, query, statusFilter]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadSeq]);
 
   function resetForm() {
     setSupplierId("");

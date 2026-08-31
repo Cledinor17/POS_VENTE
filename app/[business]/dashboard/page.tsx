@@ -265,7 +265,7 @@ export default function DashboardPage() {
         else setLoading(false);
       }
     },
-    [businessSlug]
+    [businessSlug, t]
   );
 
   useEffect(() => {

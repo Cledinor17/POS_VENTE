@@ -238,7 +238,7 @@ export default function CustomersPage() {
     return () => {
       mounted = false;
     };
-  }, [activeFilter, businessSlug, canReadCustomers, page, permissionsLoading, query]);
+  }, [activeFilter, businessSlug, canReadCustomers, page, permissionsLoading, query, t]);
   const activeCount = useMemo(
     () => items.filter((item) => item.isActive).length,
     [items],

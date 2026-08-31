@@ -50,11 +50,11 @@ export default function CustomRolesPage() {
     } finally {
       setLoading(false);
     }
-  }, [businessSlug, reloadSeq]);
+  }, [businessSlug]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadSeq]);
 
   function resetForm() {
     setEditingId("");

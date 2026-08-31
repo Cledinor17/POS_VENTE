@@ -85,11 +85,11 @@ export default function ReturnsPage() {
     } finally {
       setLoading(false);
     }
-  }, [businessSlug, page, query, reloadSeq]);
+  }, [businessSlug, page, query]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadSeq]);
 
   useEffect(() => {
     if (!approvalOpen || !businessSlug || canSelfApproveRefund) return;

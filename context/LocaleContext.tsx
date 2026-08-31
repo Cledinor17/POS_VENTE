@@ -36,8 +36,14 @@ export function LocaleProvider({
   // cookie was just set client-side).
   useEffect(() => {
     const stored = getStoredLocale();
-    setLocaleState((current) => (stored !== current ? stored : current));
-  }, []);
+    if (stored === initialLocale) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setLocaleState((current) => (stored !== current ? stored : current));
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [initialLocale]);
 
   // A returning user's server-stored preference (from /api/me) can win over
   // whatever is in the cookie on this device, mirroring the existing

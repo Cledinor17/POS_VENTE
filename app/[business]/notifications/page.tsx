@@ -51,11 +51,11 @@ export default function NotificationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, unreadOnly, reloadSeq]);
+  }, [page, unreadOnly]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadSeq]);
 
   async function handleItemClick(notification: AppNotification) {
     if (notification.readAt) return;
