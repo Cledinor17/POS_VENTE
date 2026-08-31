@@ -176,10 +176,23 @@ export function ExpensesPageContent({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       if (expenseModalOpen) {
-        closeExpenseModal();
+        setExpenseModalOpen(false);
+        setExpenseCategoryId(activeCategories[0]?.id ?? "");
+        setExpenseAmount("");
+        setExpenseCurrency("");
+        setExpenseDate(todayValue());
+        setExpensePurpose("");
+        setExpenseJustification("");
+        setExpenseMethod("");
+        setExpenseReference("");
+        setExpenseNotes("");
+        setExpenseAttachment(null);
+        setExpenseAttachmentInputKey((prev) => prev + 1);
         return;
       }
-      closeCategoryModal();
+      setCategoryModalOpen(false);
+      setCategoryName("");
+      setCategoryDescription("");
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -351,7 +364,7 @@ export function ExpensesPageContent({
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Depenses</h1>
             <p className="mt-1 text-slate-500">
-              Enregistre les categories, les sorties d'argent et l'utilisateur qui les a saisies.
+              Enregistre les categories, les sorties d&apos;argent et l&apos;utilisateur qui les a saisies.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -634,7 +647,7 @@ export function ExpensesPageContent({
               <div>
                 <h2 className="font-bold text-slate-900">Categorie de depense</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Ajoute une categorie pour classer les sorties d'argent.
+                  Ajoute une categorie pour classer les sorties d&apos;argent.
                 </p>
               </div>
               <button
@@ -699,7 +712,7 @@ export function ExpensesPageContent({
               <div>
                 <h2 className="font-bold text-slate-900">Nouvelle depense</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Enregistre le montant, l'objectif et une fiche justificative si disponible.
+                  Enregistre le montant, l&apos;objectif et une fiche justificative si disponible.
                 </p>
               </div>
               <button
@@ -809,7 +822,7 @@ export function ExpensesPageContent({
 
               {activeCategories.length === 0 ? (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                  Ajoute d'abord une categorie active pour enregistrer une depense.
+                  Ajoute d&apos;abord une categorie active pour enregistrer une depense.
                 </div>
               ) : null}
 

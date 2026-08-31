@@ -3,26 +3,13 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ApiError } from "@/lib/api";
+import { useTranslations } from "next-intl";
 import { resendVerificationCode, verifyRegistration } from "@/lib/authApi";
+import { getErrorMessage } from "@/lib/errors";
 import { useAuth } from "@/context/AuthContext";
 
-type ErrorBody = { message?: unknown };
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.body && typeof error.body === "object") {
-      const body = error.body as ErrorBody;
-      if (typeof body.message === "string" && body.message.length > 0) return body.message;
-    }
-    return error.message;
-  }
-
-  if (error instanceof Error && error.message.trim().length > 0) return error.message;
-  return "Validation impossible.";
-}
-
 export default function VerifyAccountForm() {
+  const t = useTranslations("auth.verify");
   const router = useRouter();
   const searchParams = useSearchParams();
   const { refresh } = useAuth();
@@ -50,7 +37,7 @@ export default function VerifyAccountForm() {
       await refresh();
       router.replace("/onboarding/business");
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(getErrorMessage(err, t("generic_error")));
     } finally {
       setLoading(false);
     }
@@ -66,7 +53,7 @@ export default function VerifyAccountForm() {
       setMessage(result.message);
       setDebugCode(result.debug_code ?? "");
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(getErrorMessage(err, t("generic_error")));
     } finally {
       setResending(false);
     }
@@ -75,10 +62,8 @@ export default function VerifyAccountForm() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h2 className="text-3xl font-semibold text-slate-900">Valider votre compte</h2>
-        <p className="text-sm leading-6 text-slate-500">
-          Entrez le code de validation recu pour activer votre compte puis continuer vers la creation du business.
-        </p>
+        <h2 className="text-3xl font-semibold text-slate-900">{t("title")}</h2>
+        <p className="text-sm leading-6 text-slate-500">{t("subtitle")}</p>
       </div>
 
       {message ? (
@@ -91,13 +76,13 @@ export default function VerifyAccountForm() {
 
       {debugCode ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Code de validation disponible en mode local: <span className="font-semibold">{debugCode}</span>
+          {t("debug_code_prefix")} <span className="font-semibold">{debugCode}</span>
         </div>
       ) : null}
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label className="text-sm font-medium text-slate-700">Email</label>
+          <label className="text-sm font-medium text-slate-700">{t("email_label")}</label>
           <input
             type="email"
             required
@@ -109,14 +94,14 @@ export default function VerifyAccountForm() {
         </div>
 
         <div>
-          <label className="text-sm font-medium text-slate-700">Code de validation</label>
+          <label className="text-sm font-medium text-slate-700">{t("code_label")}</label>
           <input
             type="text"
             required
             value={code}
             onChange={(event) => setCode(event.target.value)}
             className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 text-center text-lg tracking-[0.35em] outline-none transition focus:border-[#0b4f88]"
-            placeholder="123456"
+            placeholder={t("code_placeholder")}
             maxLength={12}
           />
         </div>
@@ -126,7 +111,7 @@ export default function VerifyAccountForm() {
           disabled={!canSubmit || loading}
           className="w-full rounded-2xl bg-[#0b4f88] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#0a4273] disabled:opacity-60"
         >
-          {loading ? "Validation..." : "Valider mon compte"}
+          {loading ? t("submit_loading") : t("submit")}
         </button>
       </form>
 
@@ -137,11 +122,11 @@ export default function VerifyAccountForm() {
           disabled={resending || email.trim().length === 0}
           className="font-semibold text-[#0b4f88] hover:text-[#f59e0b] disabled:opacity-60"
         >
-          {resending ? "Renvoi..." : "Renvoyer le code"}
+          {resending ? t("resend_loading") : t("resend")}
         </button>
 
         <Link href="/login" className="text-slate-500 hover:text-slate-700">
-          Retour a la connexion
+          {t("back_to_login")}
         </Link>
       </div>
     </div>

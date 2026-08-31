@@ -14,6 +14,7 @@ export type SupplierItem = {
   phone: string | null;
   address: string | null;
   balance: number;
+  currency: string;
   createdAt: string | null;
 };
 
@@ -39,6 +40,7 @@ export type CreateSupplierInput = {
   phone?: string;
   address?: string;
   balance?: number;
+  currency?: string;
 };
 
 export type UpdateSupplierInput = Partial<CreateSupplierInput>;
@@ -109,6 +111,7 @@ function normalizeSupplier(raw: unknown): SupplierItem {
     phone: toString(obj.phone, "") || null,
     address: toString(obj.address, "") || null,
     balance: toNumber(obj.balance, 0),
+    currency: toString(obj.currency, "HTG").toUpperCase() || "HTG",
     createdAt: toString(obj.created_at ?? obj.createdAt, "") || null,
   };
 }
@@ -122,6 +125,7 @@ function toPayload(input: CreateSupplierInput | UpdateSupplierInput): Record<str
     phone: input.phone ?? null,
     address: input.address ?? null,
     balance: input.balance ?? null,
+    currency: input.currency ?? null,
   };
 }
 

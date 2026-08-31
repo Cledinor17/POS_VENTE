@@ -1,17 +1,32 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useAuth } from "../context/AuthContext";
+import { useAppLocale } from "../context/LocaleContext";
 import { updatePassword, updateAvatar } from "../lib/authApi";
-import { getCurrentUserDailyReport, type CurrentUserDailyReport } from "../lib/currentUserReportApi";
+import { getErrorMessage } from "../lib/errors";
+import type { Locale } from "../lib/locale";
 import CurrentUserDailyReportModal from "./CurrentUserDailyReportModal";
+import LoginActivityModal from "./LoginActivityModal";
+import NotificationBell from "./NotificationBell";
 import { PanelLeftClose, PanelLeftOpen, ShoppingCart } from "lucide-react";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).slice(0, 2);
   return parts.map(p => p[0]?.toUpperCase()).join("") || "U";
 }
+
+const LANGUAGE_OPTIONS: Array<{ value: Locale; label: string }> = [
+  { value: "fr", label: "Français" },
+  { value: "en", label: "English" },
+  { value: "ht", label: "Kreyòl ayisyen" },
+  { value: "es", label: "Español" },
+  { value: "zh", label: "中文" },
+  { value: "ar", label: "العربية" },
+];
 
 export default function Topbar({
   business,
@@ -40,26 +55,26 @@ export default function Topbar({
   onCartClick?: () => void;
   onLogout: () => void;
 }) {
+  const t = useTranslations("topbar");
   const router = useRouter();
   const { refresh, activeBusiness } = useAuth();
 
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
 
   const [pwOpen, setPwOpen] = useState(false);
   const [avOpen, setAvOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
   const [dailyReportOpen, setDailyReportOpen] = useState(false);
+  const [loginActivityOpen, setLoginActivityOpen] = useState(false);
 
   const role = useMemo(() => {
-    const r = (activeBusiness as any)?.pivot?.role ?? (activeBusiness as any)?.role ?? null;
+    const r = activeBusiness?.pivot?.role ?? activeBusiness?.role ?? null;
     return r ? String(r) : "";
   }, [activeBusiness]);
-  const showProfilePhoto = Boolean(userAvatarUrl) && !avatarLoadFailed;
-
-  useEffect(() => {
-    setAvatarLoadFailed(false);
-  }, [userAvatarUrl]);
+  const profileAvatarUrl = userAvatarUrl || "";
+  const showProfilePhoto = Boolean(profileAvatarUrl) && failedAvatarUrl !== profileAvatarUrl;
 
   function onSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,8 +90,8 @@ export default function Topbar({
         <button
           onClick={onToggleSidebar}
           className="inline-flex items-center justify-center p-2 rounded-xl border border-slate-200 bg-white transition-colors hover:border-blue-200 hover:bg-orange-50"
-          aria-label={isSidebarOpen ? "Masquer le menu" : "Afficher le menu"}
-          title={isSidebarOpen ? "Masquer le menu" : "Afficher le menu"}
+          aria-label={isSidebarOpen ? t("hide_menu") : t("show_menu")}
+          title={isSidebarOpen ? t("hide_menu") : t("show_menu")}
         >
           {isSidebarOpen ? (
             <PanelLeftClose className="h-4 w-4 text-slate-700" />
@@ -87,7 +102,7 @@ export default function Topbar({
       ) : null}
 
       <div className="min-w-[180px]">
-        <div className="text-xs text-slate-500">Business</div>
+        <div className="text-xs text-slate-500">{t("business_label")}</div>
         <div className="font-extrabold text-slate-900">{title}</div>
       </div>
 
@@ -97,7 +112,7 @@ export default function Topbar({
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="🔎 Rechercher : produit, client, facture, ticket…"
+            placeholder={t("search_placeholder")}
             className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 outline-none transition focus:border-[#0d63b8] focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
@@ -107,8 +122,8 @@ export default function Topbar({
         <button
           onClick={onCartClick}
           className="relative inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-orange-50"
-          aria-label="Voir le panier"
-          title="Voir le panier"
+          aria-label={t("view_cart")}
+          title={t("view_cart")}
         >
           <ShoppingCart className="h-4 w-4 text-slate-700" />
           <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold inline-flex items-center justify-center">
@@ -117,6 +132,8 @@ export default function Topbar({
         </button>
       ) : null}
 
+      <NotificationBell business={business} />
+
       {/* Profile */}
       <div className="relative">
         <button
@@ -124,11 +141,14 @@ export default function Topbar({
           className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-orange-50"
         >
           {showProfilePhoto ? (
-            <img
-              src={userAvatarUrl}
+            <Image
+              src={profileAvatarUrl}
               alt={`Avatar ${userName}`}
+              width={36}
+              height={36}
               className="h-9 w-9 rounded-full border border-slate-200 bg-white object-cover"
-              onError={() => setAvatarLoadFailed(true)}
+              unoptimized
+              onError={() => setFailedAvatarUrl(profileAvatarUrl)}
             />
           ) : (
             <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-[#0d63b8] to-[#f59e0b] text-white flex items-center justify-center font-bold">
@@ -138,7 +158,7 @@ export default function Topbar({
           <div className="text-left leading-tight hidden lg:block">
             <div className="text-sm font-bold text-slate-900">{userName}</div>
             <div className="text-[11px] text-slate-500 truncate max-w-[220px]">
-              {role ? `Rôle: ${role}` : userEmail}
+              {role ? t("role_label", { role }) : userEmail}
             </div>
           </div>
           <span className="text-slate-500">▾</span>
@@ -149,7 +169,7 @@ export default function Topbar({
             <div className="px-4 py-3 border-b border-slate-100">
               <div className="font-semibold text-slate-900">{userName}</div>
               <div className="text-xs text-slate-500 truncate">{userEmail}</div>
-              {role ? <div className="text-xs text-[#0d63b8] font-semibold mt-1">Rôle: {role}</div> : null}
+              {role ? <div className="text-xs text-[#0d63b8] font-semibold mt-1">{t("role_label", { role })}</div> : null}
             </div>
 
             <div className="p-2 space-y-1">
@@ -160,7 +180,7 @@ export default function Topbar({
                 }}
                 className="w-full text-left px-3 py-2 rounded-xl transition-colors hover:bg-orange-50"
               >
-                Mon rapport du jour
+                {t("my_daily_report")}
               </button>
 
               <button
@@ -170,7 +190,7 @@ export default function Topbar({
                 }}
                 className="w-full text-left px-3 py-2 rounded-xl transition-colors hover:bg-orange-50"
               >
-                🖼️ Mettre à jour l’avatar
+                {t("update_avatar")}
               </button>
 
               <button
@@ -180,7 +200,27 @@ export default function Topbar({
                 }}
                 className="w-full text-left px-3 py-2 rounded-xl transition-colors hover:bg-orange-50"
               >
-                🔐 Changer le mot de passe
+                {t("change_password")}
+              </button>
+
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  setLoginActivityOpen(true);
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl transition-colors hover:bg-orange-50"
+              >
+                {t("login_activity")}
+              </button>
+
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  setLangOpen(true);
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl transition-colors hover:bg-orange-50"
+              >
+                {t("language")}
               </button>
 
               <button
@@ -190,7 +230,7 @@ export default function Topbar({
                 }}
                 className="w-full text-left px-3 py-2 rounded-xl hover:bg-red-50 text-red-600 font-semibold"
               >
-                🚪 Déconnexion
+                {t("logout")}
               </button>
             </div>
           </div>
@@ -218,6 +258,12 @@ export default function Topbar({
         />
       )}
 
+      {langOpen && <LanguageModal onClose={() => setLangOpen(false)} />}
+
+      {loginActivityOpen && (
+        <LoginActivityModal mode="self" onClose={() => setLoginActivityOpen(false)} />
+      )}
+
       {dailyReportOpen && (
         <CurrentUserDailyReportModal
           business={business}
@@ -232,7 +278,15 @@ export default function Topbar({
 
 /* ---------------- Modals ---------------- */
 
-function ModalShell({ title, onClose, children }: any) {
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
   return (
     <div className="absolute z-[60] top-0 left-0 w-[100%] h-[100vh] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -249,240 +303,6 @@ function ModalShell({ title, onClose, children }: any) {
   );
 }
 
-function formatMoney(amount: number, currency: string) {
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: currency || "USD",
-      maximumFractionDigits: 2,
-    }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency || "USD"}`;
-  }
-}
-
-function formatDateTime(value: string) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function paymentMethodLabel(value: string | null) {
-  switch ((value || "").toLowerCase()) {
-    case "cash":
-      return "Cash";
-    case "card":
-      return "Carte";
-    case "bank":
-      return "Banque";
-    case "mobile":
-    case "moncash":
-      return "Mobile";
-    case "other":
-      return "Autre";
-    default:
-      return value || "-";
-  }
-}
-
-function DailyReportModal({
-  business,
-  userName,
-  onClose,
-}: {
-  business: string;
-  userName: string;
-  onClose: () => void;
-}) {
-  const [report, setReport] = useState<CurrentUserDailyReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      if (!business) return;
-      setLoading(true);
-      setErr("");
-
-      try {
-        const next = await getCurrentUserDailyReport(business);
-        if (!cancelled) {
-          setReport(next);
-        }
-      } catch (e: any) {
-        if (!cancelled) {
-          setErr(e?.message ?? "Impossible de charger le rapport du jour.");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [business]);
-
-  const currency = report?.currency || "USD";
-  const paymentMethods = report?.paymentMethods ?? {};
-
-  return (
-    <ModalShell title={`Mon rapport du jour - ${userName}`} onClose={onClose}>
-      {err ? <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{err}</div> : null}
-
-      {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          Chargement du rapport...
-        </div>
-      ) : report ? (
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rapport du {report.date}</div>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
-                <div className="text-xs font-semibold text-emerald-700">Cash a remettre</div>
-                <div className="mt-1 text-xl font-extrabold text-emerald-900">
-                  {formatMoney(report.summary.cashToSubmit, currency)}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="text-xs font-semibold text-slate-500">Ventes du jour</div>
-                <div className="mt-1 text-lg font-extrabold text-slate-900">
-                  {formatMoney(report.summary.salesTotal, currency)}
-                </div>
-                <div className="text-xs text-slate-500">{report.summary.salesCount} operation(s)</div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="text-xs font-semibold text-slate-500">Encaissements du jour</div>
-                <div className="mt-1 text-lg font-extrabold text-slate-900">
-                  {formatMoney(report.summary.receiptsTotal, currency)}
-                </div>
-                <div className="text-xs text-slate-500">{report.summary.receiptsCount} encaissement(s)</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="mb-3">
-              <div className="font-bold text-slate-900">Ventilation des encaissements</div>
-              <div className="text-xs text-slate-500">Montants collectes aujourd&apos;hui par mode de paiement.</div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              {Object.entries(paymentMethods).map(([method, amount]) => (
-                <div key={method} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs font-semibold text-slate-500">{paymentMethodLabel(method)}</div>
-                  <div className="mt-1 font-extrabold text-slate-900">{formatMoney(amount, currency)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="mb-3">
-              <div className="font-bold text-slate-900">Mes ventes du jour</div>
-              <div className="text-xs text-slate-500">Produits et services vendus ou postes a mon nom aujourd&apos;hui.</div>
-            </div>
-
-            {report.sales.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-                Aucune vente enregistree pour aujourd&apos;hui.
-              </div>
-            ) : (
-              <div className="max-h-[280px] overflow-y-auto rounded-2xl border border-slate-100">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-left text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Operation</th>
-                      <th className="px-3 py-2 font-semibold">Client / contexte</th>
-                      <th className="px-3 py-2 font-semibold">Heure</th>
-                      <th className="px-3 py-2 font-semibold">Montant</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.sales.map((item) => (
-                      <tr key={item.id} className="border-t border-slate-100 align-top">
-                        <td className="px-3 py-2">
-                          <div className="font-semibold text-slate-900">{item.label}</div>
-                          <div className="text-xs text-slate-500">
-                            {item.source}
-                            {item.reference ? ` - ${item.reference}` : ""}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="text-slate-700">{item.counterparty || "-"}</div>
-                          {item.note ? <div className="text-xs text-slate-500">{item.note}</div> : null}
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">{formatDateTime(item.occurredAt)}</td>
-                        <td className="px-3 py-2 font-bold text-slate-900">{formatMoney(item.amount, currency)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="mb-3">
-              <div className="font-bold text-slate-900">Mes encaissements du jour</div>
-              <div className="text-xs text-slate-500">Encaissements relies a mon utilisateur aujourd&apos;hui.</div>
-            </div>
-
-            {report.receipts.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-                Aucun encaissement enregistre pour aujourd&apos;hui.
-              </div>
-            ) : (
-              <div className="max-h-[220px] overflow-y-auto rounded-2xl border border-slate-100">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-left text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Encaissement</th>
-                      <th className="px-3 py-2 font-semibold">Mode</th>
-                      <th className="px-3 py-2 font-semibold">Heure</th>
-                      <th className="px-3 py-2 font-semibold">Montant</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.receipts.map((item) => (
-                      <tr key={item.id} className="border-t border-slate-100 align-top">
-                        <td className="px-3 py-2">
-                          <div className="font-semibold text-slate-900">{item.label}</div>
-                          <div className="text-xs text-slate-500">
-                            {item.source}
-                            {item.counterparty ? ` - ${item.counterparty}` : ""}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-slate-700">{paymentMethodLabel(item.paymentMethod)}</td>
-                        <td className="px-3 py-2 text-slate-600">{formatDateTime(item.occurredAt)}</td>
-                        <td className="px-3 py-2 font-bold text-slate-900">{formatMoney(item.amount, currency)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
-    </ModalShell>
-  );
-}
-
 function ChangePasswordModal({
   onClose,
   onSaved,
@@ -490,6 +310,7 @@ function ChangePasswordModal({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const t = useTranslations("topbar.password_modal");
   const [current, setCurrent] = useState("");
   const [pwd, setPwd] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -498,27 +319,27 @@ function ChangePasswordModal({
 
   async function submit() {
     setErr("");
-    if (pwd.length < 8) return setErr("Le nouveau mot de passe doit avoir au moins 8 caractères.");
-    if (pwd !== confirm) return setErr("La confirmation ne correspond pas.");
+    if (pwd.length < 8) return setErr(t("too_short"));
+    if (pwd !== confirm) return setErr(t("mismatch"));
     setLoading(true);
     try {
       await updatePassword(current, pwd, confirm);
       await onSaved();
       onClose();
-    } catch (e: any) {
-      setErr(e?.message ?? "Échec du changement de mot de passe.");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e, t("generic_error")));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <ModalShell title="Changer le mot de passe" onClose={onClose}>
+    <ModalShell title={t("title")} onClose={onClose}>
       {err ? <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{err}</div> : null}
 
       <div className="space-y-3">
         <div>
-          <label className="text-sm font-semibold text-slate-700">Mot de passe actuel</label>
+          <label className="text-sm font-semibold text-slate-700">{t("current_label")}</label>
           <input
             type="password"
             value={current}
@@ -528,7 +349,7 @@ function ChangePasswordModal({
         </div>
 
         <div>
-          <label className="text-sm font-semibold text-slate-700">Nouveau mot de passe</label>
+          <label className="text-sm font-semibold text-slate-700">{t("new_label")}</label>
           <input
             type="password"
             value={pwd}
@@ -538,7 +359,7 @@ function ChangePasswordModal({
         </div>
 
         <div>
-          <label className="text-sm font-semibold text-slate-700">Confirmer</label>
+          <label className="text-sm font-semibold text-slate-700">{t("confirm_label")}</label>
           <input
             type="password"
             value={confirm}
@@ -552,7 +373,7 @@ function ChangePasswordModal({
           disabled={loading}
           className="w-full rounded-2xl brand-primary-btn py-3 font-bold disabled:opacity-60"
         >
-          {loading ? "Mise à jour..." : "Mettre à jour"}
+          {loading ? t("submit_loading") : t("submit")}
         </button>
       </div>
     </ModalShell>
@@ -570,6 +391,7 @@ function AvatarModal({
   currentAvatarUrl?: string;
   onSaved: () => Promise<void>;
 }) {
+  const t = useTranslations("topbar.avatar_modal");
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -596,32 +418,35 @@ function AvatarModal({
 
   async function submit() {
     setErr("");
-    if (!file) return setErr("Choisis une image (PNG/JPG).");
+    if (!file) return setErr(t("no_file_selected"));
     setLoading(true);
     try {
       await updateAvatar(file);
       await onSaved();
       onClose();
-    } catch (e: any) {
-      setErr(e?.message ?? "Échec upload avatar.");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e, t("generic_error")));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <ModalShell title="Mettre à jour l’avatar" onClose={onClose}>
+    <ModalShell title={t("title")} onClose={onClose}>
       {err ? <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{err}</div> : null}
 
       <div className="space-y-3">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-          <div className="text-xs font-semibold text-slate-600">Apercu avatar</div>
+          <div className="text-xs font-semibold text-slate-600">{t("preview_label")}</div>
           <div className="mt-2 flex items-center gap-3">
             {showPreviewPhoto ? (
-              <img
+              <Image
                 src={previewSource}
-                alt="Apercu avatar"
+                alt={t("preview_label")}
+                width={64}
+                height={64}
                 className="h-16 w-16 rounded-full border border-slate-200 bg-white object-cover"
+                unoptimized
                 onError={() => setPreviewLoadFailed(true)}
               />
             ) : (
@@ -632,10 +457,10 @@ function AvatarModal({
             <div className="text-sm text-slate-700">
               {file ? (
                 <>
-                  Fichier: <span className="font-semibold">{file.name}</span>
+                  {t("file_prefix")} <span className="font-semibold">{file.name}</span>
                 </>
               ) : (
-                "Selectionne une image pour previsualiser avant upload."
+                t("choose_hint")
               )}
             </div>
           </div>
@@ -653,7 +478,7 @@ function AvatarModal({
           onClick={() => fileRef.current?.click()}
           className="w-full rounded-2xl border border-orange-200 bg-orange-50 py-3 font-semibold text-orange-700 transition-colors hover:bg-orange-100"
         >
-          📁 Choisir une image
+          {t("choose_button")}
         </button>
 
         <button
@@ -661,7 +486,46 @@ function AvatarModal({
           disabled={loading}
           className="w-full rounded-2xl brand-primary-btn py-3 font-bold disabled:opacity-60"
         >
-          {loading ? "Upload..." : "Enregistrer"}
+          {loading ? t("submit_loading") : t("submit")}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function LanguageModal({ onClose }: { onClose: () => void }) {
+  const t = useTranslations("topbar.language_modal");
+  const { locale, setLocale } = useAppLocale();
+  const [selected, setSelected] = useState<Locale>(locale);
+
+  function submit() {
+    setLocale(selected);
+    onClose();
+  }
+
+  return (
+    <ModalShell title={t("title")} onClose={onClose}>
+      <div className="space-y-2">
+        {LANGUAGE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            onClick={() => setSelected(option.value)}
+            className={`w-full flex items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${
+              selected === option.value
+                ? "border-[#0d63b8] bg-blue-50 text-[#0d63b8] font-semibold"
+                : "border-slate-200 hover:border-blue-200 hover:bg-orange-50"
+            }`}
+          >
+            <span>{option.label}</span>
+            {selected === option.value ? <span>✓</span> : null}
+          </button>
+        ))}
+
+        <button
+          onClick={submit}
+          className="w-full rounded-2xl brand-primary-btn py-3 font-bold mt-2"
+        >
+          {t("submit")}
         </button>
       </div>
     </ModalShell>

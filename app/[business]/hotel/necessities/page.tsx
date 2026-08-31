@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
@@ -33,7 +33,7 @@ export default function HotelNecessitiesPage() {
   const [stockQuantity, setStockQuantity] = useState("0");
   const [reorderLevel, setReorderLevel] = useState("0");
 
-  async function loadNecessities() {
+  const loadNecessities = useCallback(async () => {
     if (!business) return;
     setLoading(true);
     setError("");
@@ -45,11 +45,11 @@ export default function HotelNecessitiesPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [business]);
 
   useEffect(() => {
     void loadNecessities();
-  }, [business]);
+  }, [loadNecessities]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

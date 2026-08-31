@@ -188,6 +188,7 @@ export type HotelMoment = {
   duration_minutes: number;
   total_amount: number;
   total_currency: string;
+  payment_method: string | null;
   status: string;
   notes: string;
   identity_document_path: string | null;
@@ -417,6 +418,7 @@ function normalizeMoment(raw: unknown): HotelMoment {
     duration_minutes: toNumber(obj.duration_minutes, 120),
     total_amount: toNumber(obj.total_amount, 0),
     total_currency: toString(obj.total_currency, "HTG"),
+    payment_method: toString(obj.payment_method, "") || null,
     status: toString(obj.status),
     notes: toString(obj.notes),
     identity_document_path: toString(obj.identity_document_path, "") || null,
@@ -818,6 +820,8 @@ export async function createHotelMoment(
     guestDocumentNumber?: string;
     startAt: string;
     totalAmount?: number;
+    exchangeRate?: number;
+    paymentMethod?: string;
     status?: string;
     notes?: string;
     identityDocumentFile?: File | null;
@@ -833,6 +837,10 @@ export async function createHotelMoment(
   appendIfDefined(formData, "guest_document_number", input.guestDocumentNumber ?? "");
   appendIfDefined(formData, "start_at", input.startAt);
   appendIfDefined(formData, "total_amount", input.totalAmount);
+  if (input.exchangeRate && input.exchangeRate > 0) {
+    formData.append("exchange_rate", String(input.exchangeRate));
+  }
+  appendIfDefined(formData, "payment_method", input.paymentMethod ?? "");
   appendIfDefined(formData, "status", input.status ?? "pending");
   appendIfDefined(formData, "notes", input.notes ?? "");
   if (typeof File !== "undefined" && input.identityDocumentFile instanceof File) {

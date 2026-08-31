@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ApiError } from "@/lib/api";
+import { useLocale, useTranslations } from "next-intl";
+import { getErrorMessage } from "@/lib/errors";
 import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
 import { convertAmount, formatMoney as formatCurrency } from "@/lib/currency";
 import { listAllPosSales, type PosSaleHistoryItem } from "@/lib/posApi";
@@ -56,10 +57,10 @@ ChartJS.register(
 type RangeKey = "7d" | "30d" | "90d";
 type Tone = "emerald" | "indigo" | "amber" | "sky" | "rose" | "slate";
 
-const RANGE_OPTIONS: Array<{ id: RangeKey; label: string; days: number }> = [
-  { id: "7d", label: "7 jours", days: 7 },
-  { id: "30d", label: "30 jours", days: 30 },
-  { id: "90d", label: "90 jours", days: 90 },
+const RANGE_OPTIONS: Array<{ id: RangeKey; labelKey: "range_7d" | "range_30d" | "range_90d"; days: number }> = [
+  { id: "7d", labelKey: "range_7d", days: 7 },
+  { id: "30d", labelKey: "range_30d", days: 30 },
+  { id: "90d", labelKey: "range_90d", days: 90 },
 ];
 
 const EMPTY_SUMMARY: InventorySummaryResult = {
@@ -97,8 +98,8 @@ function formatMoney(amount: number, currency: string): string {
   return formatCurrency(amount, currency);
 }
 
-function formatCompactMoney(amount: number, currency: string): string {
-  return new Intl.NumberFormat("fr-FR", {
+function formatCompactMoney(amount: number, currency: string, locale: string): string {
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
     notation: "compact",
@@ -106,14 +107,8 @@ function formatCompactMoney(amount: number, currency: string): string {
   }).format(amount);
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat("fr-FR").format(value);
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Une erreur est survenue.";
+function formatNumber(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale).format(value);
 }
 
 function normalizeStatus(value: string | null): string {
@@ -121,14 +116,14 @@ function normalizeStatus(value: string | null): string {
   return normalized || "issued";
 }
 
-function statusLabel(status: string | null): string {
+function statusLabel(status: string | null, t: ReturnType<typeof useTranslations>): string {
   const key = normalizeStatus(status);
-  if (key === "paid") return "Paye";
-  if (key === "partial") return "Partiel";
-  if (key === "void") return "Annule";
-  if (key === "refunded") return "Rembourse";
-  if (key === "draft") return "Brouillon";
-  return "Emis";
+  if (key === "paid") return t("status.paid");
+  if (key === "partial") return t("status.partial");
+  if (key === "void") return t("status.void");
+  if (key === "refunded") return t("status.refunded");
+  if (key === "draft") return t("status.draft");
+  return t("status.issued");
 }
 
 function statusTone(status: string | null): string {
@@ -139,13 +134,13 @@ function statusTone(status: string | null): string {
   return "bg-slate-100 text-slate-700 border-slate-200";
 }
 
-function paymentLabel(value: string | null): string {
+function paymentLabel(value: string | null, notSetLabel: string): string {
   const method = (value ?? "").trim();
-  if (!method) return "Non defini";
+  if (!method) return notSetLabel;
   return method.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-function buildRange(days: number): { keys: string[]; labels: string[] } {
+function buildRange(days: number, locale: string): { keys: string[]; labels: string[] } {
   const keys: string[] = [];
   const labels: string[] = [];
   const now = new Date();
@@ -153,13 +148,15 @@ function buildRange(days: number): { keys: string[]; labels: string[] } {
   for (let i = days - 1; i >= 0; i -= 1) {
     const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
     keys.push(toDateKey(date));
-    labels.push(date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }));
+    labels.push(date.toLocaleDateString(locale, { day: "2-digit", month: "short" }));
   }
 
   return { keys, labels };
 }
 
 export default function DashboardPage() {
+  const t = useTranslations("dashboard");
+  const locale = useLocale();
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
 
@@ -199,61 +196,62 @@ export default function DashboardPage() {
         ]);
 
         const nextWarnings: string[] = [];
-        const addWarning = (label: string, reason: unknown) => nextWarnings.push(`${label}: ${getErrorMessage(reason)}`);
+        const addWarning = (label: string, reason: unknown) =>
+          nextWarnings.push(`${label}: ${getErrorMessage(reason, t("common_error"))}`);
 
         const businessRes = results[0];
         if (businessRes.status === "fulfilled") setBusinessSettings(businessRes.value);
         else {
           setBusinessSettings(null);
-          addWarning("Business", businessRes.reason);
+          addWarning(t("warning_business"), businessRes.reason);
         }
 
         const salesRes = results[1];
         if (salesRes.status === "fulfilled") setSales(salesRes.value);
         else {
           setSales([]);
-          addWarning("Ventes", salesRes.reason);
+          addWarning(t("warning_sales"), salesRes.reason);
         }
 
         const stockRes = results[2];
         if (stockRes.status === "fulfilled") setInventory(stockRes.value);
         else {
           setInventory(EMPTY_SUMMARY);
-          addWarning("Stock", stockRes.reason);
+          addWarning(t("warning_stock"), stockRes.reason);
         }
 
         const customersRes = results[3];
         if (customersRes.status === "fulfilled") setCustomersTotal(customersRes.value.total);
         else {
           setCustomersTotal(0);
-          addWarning("Clients", customersRes.reason);
+          addWarning(t("warning_customers"), customersRes.reason);
         }
 
         const pnlRes = results[4];
         if (pnlRes.status === "fulfilled") setPnl(pnlRes.value);
         else {
           setPnl(null);
-          addWarning("Profit/Loss", pnlRes.reason);
+          addWarning(t("warning_pnl"), pnlRes.reason);
         }
 
         const agingRes = results[5];
         if (agingRes.status === "fulfilled") setArAging(agingRes.value);
         else {
           setArAging(null);
-          addWarning("AR Aging", agingRes.reason);
+          addWarning(t("warning_ar_aging"), agingRes.reason);
         }
 
         const arSummaryRes = results[6];
         if (arSummaryRes.status === "fulfilled") setArSummary(arSummaryRes.value);
         else {
           setArSummary(null);
-          addWarning("AR Summary", arSummaryRes.reason);
+          addWarning(t("warning_ar_summary"), arSummaryRes.reason);
         }
 
         const failures = results.filter((r) => r.status === "rejected").length;
         if (failures === results.length) {
           const rejected = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
-          setError(getErrorMessage(rejected?.reason));
+          setError(getErrorMessage(rejected?.reason, t("common_error")));
         } else {
           setError("");
         }
@@ -261,7 +259,7 @@ export default function DashboardPage() {
         setWarnings(nextWarnings);
         setLastUpdatedAt(new Date().toISOString());
       } catch (e) {
-        setError(getErrorMessage(e));
+        setError(getErrorMessage(e, t("common_error")));
       } finally {
         if (silent) setRefreshing(false);
         else setLoading(false);
@@ -292,7 +290,7 @@ export default function DashboardPage() {
 
   const insights = useMemo(() => {
     const validSales = sales.filter((sale) => normalizeStatus(sale.status) !== "void");
-    const rangeWindow = buildRange(selectedDays);
+    const rangeWindow = buildRange(selectedDays, locale);
     const totals = rangeWindow.keys.map(() => 0);
     const tickets = rangeWindow.keys.map(() => 0);
     const indexMap = new Map<string, number>();
@@ -335,7 +333,7 @@ export default function DashboardPage() {
 
       balanceDue += Math.max(0, saleBalance);
 
-      const method = paymentLabel(sale.paymentMethod);
+      const method = paymentLabel(sale.paymentMethod, t("payment_method_undefined"));
       const amount = sale.paidTotal > 0 ? salePaidTotal : salePaid;
       paymentMap.set(method, (paymentMap.get(method) ?? 0) + Math.max(0, amount));
     }
@@ -360,7 +358,7 @@ export default function DashboardPage() {
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 6),
     };
-  }, [convertDisplayAmount, sales, selectedDays]);
+  }, [convertDisplayAmount, sales, selectedDays, locale, t]);
 
   const recentSales = useMemo(() => {
     return [...sales]
@@ -373,7 +371,7 @@ export default function DashboardPage() {
       labels: insights.labels,
       datasets: [
         {
-          label: "Montant ventes",
+          label: t("chart_sales_amount"),
           data: insights.totals,
           yAxisID: "y",
           borderColor: "#f59e0b",
@@ -384,7 +382,7 @@ export default function DashboardPage() {
           pointRadius: 2,
         },
         {
-          label: "Tickets",
+          label: t("chart_tickets"),
           data: insights.tickets,
           yAxisID: "yTickets",
           borderColor: "#0b4f88",
@@ -395,7 +393,7 @@ export default function DashboardPage() {
         },
       ],
     }),
-    [insights]
+    [insights, t]
   );
 
   const salesChartOptions: ChartOptions<"line"> = {
@@ -405,7 +403,7 @@ export default function DashboardPage() {
     plugins: { legend: { position: "bottom", labels: { boxWidth: 12, usePointStyle: true } } },
     scales: {
       x: { grid: { display: false } },
-      y: { beginAtZero: true, ticks: { callback: (v) => formatCompactMoney(Number(v), reportCurrency) } },
+      y: { beginAtZero: true, ticks: { callback: (v) => formatCompactMoney(Number(v), reportCurrency, locale) } },
       yTickets: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, ticks: { precision: 0 } },
     },
   };
@@ -432,10 +430,10 @@ export default function DashboardPage() {
   };
 
   const agingChartData = {
-    labels: ["Courant", "1-30j", "31-60j", "61-90j", "90+j"],
+    labels: [t("aging_current"), t("aging_1_30"), t("aging_31_60"), t("aging_61_90"), t("aging_90_plus")],
     datasets: [
       {
-        label: "Creances",
+        label: t("chart_receivables"),
         data: arAging
           ? [
               arAging.totals.current,
@@ -458,7 +456,7 @@ export default function DashboardPage() {
     plugins: { legend: { display: false } },
     scales: {
       x: { grid: { display: false } },
-      y: { beginAtZero: true, ticks: { callback: (v) => formatCompactMoney(Number(v), reportCurrency) } },
+      y: { beginAtZero: true, ticks: { callback: (v) => formatCompactMoney(Number(v), reportCurrency, locale) } },
     },
   };
 
@@ -471,10 +469,12 @@ export default function DashboardPage() {
       <section className="rounded-3xl border border-blue-200 bg-gradient-to-r from-[#0b4f88] via-[#0d63b8] to-[#f59e0b] p-5 text-white shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Dashboard dynamique</h1>
-            <p className="mt-1 text-sm text-slate-200">Vue temps reel sur ventes, stock, paiements et creances.</p>
+            <h1 className="text-2xl font-semibold">{t("title")}</h1>
+            <p className="mt-1 text-sm text-slate-200">{t("subtitle")}</p>
             <p className="mt-2 text-xs text-slate-300">
-              Derniere mise a jour: {lastUpdatedAt ? parseDate(lastUpdatedAt)?.toLocaleString("fr-FR") : "en attente"}
+              {t("last_update", {
+                value: lastUpdatedAt ? parseDate(lastUpdatedAt)?.toLocaleString(locale) ?? "" : t("last_update_pending"),
+              })}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -489,7 +489,7 @@ export default function DashboardPage() {
                     : "border-slate-300/40 bg-white/10 text-white hover:bg-white/20"
                 }`}
               >
-                {option.label}
+                {t(option.labelKey)}
               </button>
             ))}
             <button
@@ -499,7 +499,7 @@ export default function DashboardPage() {
               className="inline-flex items-center gap-2 rounded-xl border border-slate-300/40 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-60"
             >
               <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              Actualiser
+              {t("refresh")}
             </button>
           </div>
         </div>
@@ -513,7 +513,7 @@ export default function DashboardPage() {
         <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <div className="mb-1 inline-flex items-center gap-2 font-semibold">
             <AlertTriangle className="h-4 w-4" />
-            Donnees partielles
+            {t("partial_data")}
           </div>
           {warnings.slice(0, 4).map((warning, index) => (
             <p key={`${warning}-${index}`}>- {warning}</p>
@@ -522,18 +522,18 @@ export default function DashboardPage() {
       ) : null}
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <MetricCard title="Ventes du jour" value={formatMoney(insights.todayTotal, reportCurrency)} note={`${insights.todayTickets} tickets`} icon={CircleDollarSign} tone="emerald" />
-        <MetricCard title="Encaissements du jour" value={formatMoney(insights.todayPaid, reportCurrency)} note={`Moy. ticket: ${formatMoney(insights.avgTicket, reportCurrency)}`} icon={CreditCard} tone="indigo" />
-        <MetricCard title="Soldes en attente" value={formatMoney(insights.balanceDue, reportCurrency)} note={`AR total: ${formatMoney(arSummary?.totalAr ?? 0, reportCurrency)}`} icon={ShoppingCart} tone="amber" />
-        <MetricCard title="Resultat net mois" value={formatMoney(netProfit, reportCurrency)} note={`CA: ${formatMoney(monthIncome, reportCurrency)} | Charges: ${formatMoney(monthExpense, reportCurrency)}`} icon={CircleDollarSign} tone={netProfit >= 0 ? "sky" : "rose"} />
-        <MetricCard title="Valeur stock" value={formatMoney(inventory.summary.stockValue, reportCurrency)} note={`Potentiel: ${formatMoney(inventory.summary.potentialRevenue, reportCurrency)}`} icon={Boxes} tone="slate" />
-        <MetricCard title="Clients" value={formatNumber(customersTotal)} note={`${inventory.summary.lowStockCount} stock faible`} icon={Users} tone="sky" />
+        <MetricCard title={t("metric_today_sales")} value={formatMoney(insights.todayTotal, reportCurrency)} note={t("metric_today_sales_note", { count: insights.todayTickets })} icon={CircleDollarSign} tone="emerald" />
+        <MetricCard title={t("metric_today_payments")} value={formatMoney(insights.todayPaid, reportCurrency)} note={t("metric_today_payments_note", { value: formatMoney(insights.avgTicket, reportCurrency) })} icon={CreditCard} tone="indigo" />
+        <MetricCard title={t("metric_pending_balance")} value={formatMoney(insights.balanceDue, reportCurrency)} note={t("metric_pending_balance_note", { value: formatMoney(arSummary?.totalAr ?? 0, reportCurrency) })} icon={ShoppingCart} tone="amber" />
+        <MetricCard title={t("metric_net_result")} value={formatMoney(netProfit, reportCurrency)} note={t("metric_net_result_note", { income: formatMoney(monthIncome, reportCurrency), expense: formatMoney(monthExpense, reportCurrency) })} icon={CircleDollarSign} tone={netProfit >= 0 ? "sky" : "rose"} />
+        <MetricCard title={t("metric_stock_value")} value={formatMoney(inventory.summary.stockValue, reportCurrency)} note={t("metric_stock_value_note", { value: formatMoney(inventory.summary.potentialRevenue, reportCurrency) })} icon={Boxes} tone="slate" />
+        <MetricCard title={t("metric_customers")} value={formatNumber(customersTotal, locale)} note={t("metric_customers_note", { count: inventory.summary.lowStockCount })} icon={Users} tone="sky" />
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel title={`Evolution des ventes (${selectedDays} jours)`} loading={loading} className="xl:col-span-2">
+        <Panel title={t("panel_sales_evolution", { days: selectedDays })} loading={loading} className="xl:col-span-2">
           {insights.totals.every((value) => value === 0) ? (
-            <EmptyPanel text="Aucune vente sur la periode." />
+            <EmptyPanel text={t("empty_sales_period")} />
           ) : (
             <div className="h-80">
               <Line data={salesChartData} options={salesChartOptions} />
@@ -541,9 +541,9 @@ export default function DashboardPage() {
           )}
         </Panel>
 
-        <Panel title="Paiements par methode" loading={loading}>
+        <Panel title={t("panel_payments_by_method")} loading={loading}>
           {insights.paymentRows.length === 0 ? (
-            <EmptyPanel text="Aucun paiement sur la periode." />
+            <EmptyPanel text={t("empty_payments_period")} />
           ) : (
             <>
               <div className="h-64">
@@ -563,22 +563,22 @@ export default function DashboardPage() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel title="Aging creances" loading={loading}>
+        <Panel title={t("panel_ar_aging")} loading={loading}>
           {arAging ? (
             <>
               <div className="h-56">
                 <Bar data={agingChartData} options={agingChartOptions} />
               </div>
-              <p className="mt-3 text-sm text-slate-600">Total creances: {formatMoney(arSummary?.totalAr ?? 0, reportCurrency)}</p>
+              <p className="mt-3 text-sm text-slate-600">{t("total_ar", { value: formatMoney(arSummary?.totalAr ?? 0, reportCurrency) })}</p>
             </>
           ) : (
-            <EmptyPanel text="Donnees de creances indisponibles." />
+            <EmptyPanel text={t("empty_ar_data")} />
           )}
         </Panel>
 
-        <Panel title="Top clients en creance" loading={loading}>
+        <Panel title={t("panel_top_customers_ar")} loading={loading}>
           {!arSummary || arSummary.rows.length === 0 ? (
-            <EmptyPanel text="Aucune creance client." />
+            <EmptyPanel text={t("empty_ar_customer")} />
           ) : (
             <div className="space-y-3">
               {[...arSummary.rows].sort((a, b) => b.balance - a.balance).slice(0, 6).map((row, index) => {
@@ -599,9 +599,9 @@ export default function DashboardPage() {
           )}
         </Panel>
 
-        <Panel title="Alertes stock" loading={loading}>
+        <Panel title={t("panel_stock_alerts")} loading={loading}>
           {inventory.lowStockProducts.length === 0 ? (
-            <EmptyPanel text="Aucune alerte stock." />
+            <EmptyPanel text={t("empty_stock_alerts")} />
           ) : (
             <div className="space-y-3">
               {inventory.lowStockProducts.slice(0, 6).map((item, index) => (
@@ -609,11 +609,11 @@ export default function DashboardPage() {
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-slate-800">{item.name}</p>
-                      <p className="text-xs text-slate-500">{item.sku || "SKU non defini"}</p>
+                      <p className="text-xs text-slate-500">{item.sku || t("sku_not_defined")}</p>
                     </div>
                     <div className="text-right text-xs">
-                      <p className="font-semibold text-rose-700">{formatNumber(item.stock)} u</p>
-                      <p className="text-slate-500">Seuil {formatNumber(item.alertQuantity)}</p>
+                      <p className="font-semibold text-rose-700">{formatNumber(item.stock, locale)} u</p>
+                      <p className="text-slate-500">{t("threshold", { value: formatNumber(item.alertQuantity, locale) })}</p>
                     </div>
                   </div>
                   <div className="h-2 rounded-full bg-slate-100">
@@ -626,35 +626,35 @@ export default function DashboardPage() {
         </Panel>
       </section>
 
-      <Panel title="Ventes recentes" loading={loading}>
+      <Panel title={t("panel_recent_sales")} loading={loading}>
         {recentSales.length === 0 ? (
-          <EmptyPanel text="Aucune vente recente." />
+          <EmptyPanel text={t("empty_recent_sales")} />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-3 py-2">Ticket</th>
-                  <th className="px-3 py-2">Client</th>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2 text-right">Total</th>
-                  <th className="px-3 py-2 text-right">Paye</th>
-                  <th className="px-3 py-2 text-right">Reste</th>
-                  <th className="px-3 py-2">Statut</th>
+                  <th className="px-3 py-2">{t("table_ticket")}</th>
+                  <th className="px-3 py-2">{t("table_customer")}</th>
+                  <th className="px-3 py-2">{t("table_date")}</th>
+                  <th className="px-3 py-2 text-right">{t("table_total")}</th>
+                  <th className="px-3 py-2 text-right">{t("table_paid")}</th>
+                  <th className="px-3 py-2 text-right">{t("table_remaining")}</th>
+                  <th className="px-3 py-2">{t("table_status")}</th>
                 </tr>
               </thead>
               <tbody>
                 {recentSales.map((sale, index) => (
                   <tr key={sale.id || `${sale.receiptNo}-${sale.createdAt}-${index}`} className="border-b border-slate-100 last:border-0">
                     <td className="px-3 py-2 font-semibold text-slate-800">{sale.receiptNo || "-"}</td>
-                    <td className="px-3 py-2 text-slate-700">{sale.customerName || "Client comptoir"}</td>
-                    <td className="px-3 py-2 text-slate-600">{parseDate(sale.createdAt)?.toLocaleString("fr-FR") || "-"}</td>
+                    <td className="px-3 py-2 text-slate-700">{sale.customerName || t("counter_customer")}</td>
+                    <td className="px-3 py-2 text-slate-600">{parseDate(sale.createdAt)?.toLocaleString(locale) || "-"}</td>
                     <td className="px-3 py-2 text-right font-semibold text-slate-800">{formatMoney(convertDisplayAmount(sale.total, sale.currency), reportCurrency)}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{formatMoney(convertDisplayAmount(sale.amountPaid, sale.currency), reportCurrency)}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{formatMoney(convertDisplayAmount(sale.balanceDue, sale.currency), reportCurrency)}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusTone(sale.status)}`}>
-                        {statusLabel(sale.status)}
+                        {statusLabel(sale.status, t)}
                       </span>
                     </td>
                   </tr>
@@ -679,12 +679,13 @@ function Panel({
   loading?: boolean;
   className?: string;
 }) {
+  const t = useTranslations("dashboard");
   return (
     <section className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
       <h2 className="mb-3 border-b border-slate-100 pb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
         {title}
       </h2>
-      {loading ? <div className="py-12 text-center text-sm text-slate-500">Chargement...</div> : children}
+      {loading ? <div className="py-12 text-center text-sm text-slate-500">{t("loading")}</div> : children}
     </section>
   );
 }

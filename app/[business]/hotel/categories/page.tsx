@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
@@ -42,7 +43,7 @@ export default function HotelCategoriesPage() {
   const [description, setDescription] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
 
-  async function loadCategories() {
+  const loadCategories = useCallback(async () => {
     if (!business) return;
     setLoading(true);
     setError("");
@@ -54,11 +55,11 @@ export default function HotelCategoriesPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [business]);
 
   useEffect(() => {
     void loadCategories();
-  }, [business]);
+  }, [loadCategories]);
 
   const totalRooms = useMemo(
     () => categories.reduce((sum, category) => sum + (category.rooms_count || 0), 0),
@@ -203,14 +204,17 @@ export default function HotelCategoriesPage() {
               return (
                 <div key={category.id} className="rounded-xl border border-slate-200 p-3">
                   {imageUrl ? (
-                    <img
+                    <Image
                       src={imageUrl}
                       alt={`Categorie ${category.name}`}
+                      width={640}
+                      height={160}
                       className="h-40 w-full rounded-lg object-cover"
+                      unoptimized
                     />
                   ) : (
                     <div className="h-40 w-full rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center text-sm">
-                      Pas d'image
+                      Pas d&apos;image
                     </div>
                   )}
                   <div className="mt-3">

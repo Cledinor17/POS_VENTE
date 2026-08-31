@@ -8,6 +8,12 @@ import {
   saveCurrentUserDailyClosure,
   type CurrentUserDailyReport,
 } from "../lib/currentUserReportApi";
+import {
+  closeCashSession,
+  getCurrentCashSession,
+  openCashSession,
+  type CashSession,
+} from "../lib/cashSessionApi";
 
 function todayLocalDate() {
   const now = new Date();
@@ -104,6 +110,10 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function CurrentUserDailyReportModal({
   business,
   userName,
@@ -115,7 +125,6 @@ export default function CurrentUserDailyReportModal({
   onClose: () => void;
   variant?: "desktop" | "mobile";
 }) {
-  const [mounted, setMounted] = useState(false);
   const [selectedDate, setSelectedDate] = useState(todayLocalDate());
   const [report, setReport] = useState<CurrentUserDailyReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,10 +138,14 @@ export default function CurrentUserDailyReportModal({
   });
   const [closureNotes, setClosureNotes] = useState("");
 
-  useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
+  // Cash session
+  const [cashSession, setCashSession] = useState<CashSession | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [openingInputs, setOpeningInputs] = useState<Record<RemittanceCurrency, string>>({ HTG: "0.00", USD: "0.00" });
+  const [openingNote, setOpeningNote] = useState("");
+  const [closingInputs, setClosingInputs] = useState<Record<RemittanceCurrency, string>>({ HTG: "0.00", USD: "0.00" });
+  const [closingNote, setClosingNote] = useState("");
+  const [showSessionForm, setShowSessionForm] = useState<"open" | "close" | null>(null);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -157,9 +170,9 @@ export default function CurrentUserDailyReportModal({
         if (!cancelled) {
           setReport(next);
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (!cancelled) {
-          setError(e?.message ?? "Impossible de charger le rapport utilisateur.");
+          setError(getErrorMessage(e, "Impossible de charger le rapport utilisateur."));
         }
       } finally {
         if (!cancelled) {
@@ -186,7 +199,10 @@ export default function CurrentUserDailyReportModal({
 
   const currency = report?.currency || "USD";
   const remainingCash = report?.summary.cashToSubmit ?? 0;
-  const remainingCashByCurrency = report?.summary.cashToSubmitByCurrency ?? { HTG: 0, USD: 0 };
+  const remainingCashByCurrency = useMemo(
+    () => report?.summary.cashToSubmitByCurrency ?? { HTG: 0, USD: 0 },
+    [report?.summary.cashToSubmitByCurrency]
+  );
   const expectedCash = report?.closure.currentExpectedCashAmount ?? 0;
   const expectedCashByCurrency =
     report?.closure.currentExpectedCashAmountByCurrency ??
@@ -231,11 +247,58 @@ export default function CurrentUserDailyReportModal({
       const blob = await fetchCurrentUserDailyReportPdf(business, { date: selectedDate });
       downloadBlob(blob, `mon-rapport-${selectedDate}.pdf`);
       setNotice("Le PDF du rapport a ete telecharge.");
-    } catch (e: any) {
-      setError(e?.message ?? "Impossible d'exporter le PDF.");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Impossible d'exporter le PDF."));
     } finally {
       setExporting(false);
     }
+  }
+
+  // Load current cash session on mount
+  useEffect(() => {
+    if (!business) return;
+    getCurrentCashSession(business)
+      .then((s) => setCashSession(s))
+      .catch(() => { /* ignore */ });
+  }, [business]);
+
+  async function handleOpenSession() {
+    setSessionLoading(true); setError("");
+    try {
+      const s = await openCashSession(business, {
+        openingAmountByCurrency: { HTG: parseMoneyInput(openingInputs.HTG) ?? 0, USD: parseMoneyInput(openingInputs.USD) ?? 0 },
+        openingNote: openingNote.trim() || undefined,
+      });
+      setCashSession(s);
+      setShowSessionForm(null);
+      setNotice("Caisse ouverte.");
+    } catch (e: unknown) { setError(getErrorMessage(e, "Impossible d'ouvrir la session.")); }
+    finally { setSessionLoading(false); }
+  }
+
+  async function handleCloseSession() {
+    if (!cashSession) return;
+    setSessionLoading(true); setError("");
+    try {
+      // Attendu = fonds d'ouverture + cash encaissé (le backend fait aussi ce calcul)
+      const salesHTG = report?.closure.currentExpectedCashAmountByCurrency?.HTG ?? 0;
+      const salesUSD = report?.closure.currentExpectedCashAmountByCurrency?.USD ?? 0;
+      const openHTG = cashSession.openingAmountByCurrency?.HTG ?? 0;
+      const openUSD = cashSession.openingAmountByCurrency?.USD ?? 0;
+      const expectedByCurrency = {
+        HTG: salesHTG + openHTG,
+        USD: salesUSD + openUSD,
+      };
+      const s = await closeCashSession(business, cashSession.id, {
+        closingAmountByCurrency: { HTG: parseMoneyInput(closingInputs.HTG) ?? 0, USD: parseMoneyInput(closingInputs.USD) ?? 0 },
+        expectedAmountByCurrency: expectedByCurrency,
+        closingNote: closingNote.trim() || undefined,
+      });
+      setCashSession(s);
+      setShowSessionForm(null);
+      setNotice("Caisse fermée.");
+    } catch (e: unknown) { setError(getErrorMessage(e, "Impossible de fermer la session.")); }
+    finally { setSessionLoading(false); }
   }
 
   async function handleSaveClosure() {
@@ -261,8 +324,8 @@ export default function CurrentUserDailyReportModal({
       });
       setReport(next);
       setNotice("La remise de caisse a ete enregistree.");
-    } catch (e: any) {
-      setError(e?.message ?? "Impossible d'enregistrer la remise.");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Impossible d'enregistrer la remise."));
     } finally {
       setSaving(false);
     }
@@ -278,7 +341,7 @@ export default function CurrentUserDailyReportModal({
       : "relative z-10 flex max-h-[calc(100dvh-2.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl";
   const contentClassName = variant === "mobile" ? "min-h-0 flex-1 space-y-4 overflow-y-auto p-4" : "min-h-0 flex-1 space-y-4 overflow-y-auto p-5";
 
-  if (!mounted || typeof document === "undefined") {
+  if (typeof document === "undefined") {
     return null;
   }
 
@@ -302,6 +365,111 @@ export default function CurrentUserDailyReportModal({
         <div className={contentClassName}>
           {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div> : null}
           {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</div> : null}
+
+          {/* Session de caisse */}
+          <div className={`rounded-2xl border p-4 ${cashSession?.status === "open" ? "border-amber-200 bg-amber-50" : cashSession?.status === "closed" ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-bold text-slate-800">Session de caisse</p>
+                {cashSession ? (
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {cashSession.status === "open"
+                      ? `Ouverte le ${new Date(cashSession.openedAt).toLocaleString("fr-FR")}`
+                      : `Fermée le ${cashSession.closedAt ? new Date(cashSession.closedAt).toLocaleString("fr-FR") : "—"}`}
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-500 mt-0.5">Aucune session ouverte</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                {(!cashSession || cashSession.status === "closed") && (
+                  <button type="button" onClick={() => setShowSessionForm(showSessionForm === "open" ? null : "open")}
+                    className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600">
+                    Ouvrir caisse
+                  </button>
+                )}
+                {cashSession?.status === "open" && (
+                  <button type="button" onClick={() => setShowSessionForm(showSessionForm === "close" ? null : "close")}
+                    className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                    Fermer caisse
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Formulaire ouverture */}
+            {showSessionForm === "open" && (
+              <div className="mt-4 space-y-3 border-t border-amber-200 pt-3">
+                <p className="text-xs font-semibold text-slate-700">Fonds de départ</p>
+                <div className="flex gap-3">
+                  {(["HTG", "USD"] as const).map((code) => (
+                    <label key={code} className="flex-1 space-y-1 text-xs font-semibold text-slate-600">
+                      {code}
+                      <input type="number" min="0" step="0.01"
+                        value={openingInputs[code]}
+                        onChange={(e) => setOpeningInputs((p) => ({ ...p, [code]: e.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-right" />
+                    </label>
+                  ))}
+                </div>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Note (optionnel)
+                  <input type="text" value={openingNote} onChange={(e) => setOpeningNote(e.target.value)}
+                    placeholder="Ex: Monnaie reçue de la direction"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                </label>
+                <button type="button" onClick={() => void handleOpenSession()} disabled={sessionLoading}
+                  className="w-full rounded-xl bg-amber-500 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-60">
+                  {sessionLoading ? "Ouverture..." : "Confirmer l'ouverture"}
+                </button>
+              </div>
+            )}
+
+            {/* Formulaire fermeture */}
+            {showSessionForm === "close" && cashSession?.status === "open" && (
+              <div className="mt-4 space-y-3 border-t border-emerald-200 pt-3">
+                {/* Récapitulatif attendu */}
+                <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-xs text-slate-700 space-y-1">
+                  <p className="font-semibold text-slate-600">Attendu dans la caisse</p>
+                  {(["HTG", "USD"] as const).map((code) => {
+                    const opening = cashSession.openingAmountByCurrency?.[code] ?? 0;
+                    const sales = report?.closure.currentExpectedCashAmountByCurrency?.[code] ?? 0;
+                    const total = opening + sales;
+                    return (
+                      <div key={code} className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">{code}</span>
+                        <span className="font-mono">
+                          {opening.toFixed(2)} + {sales.toFixed(2)} = <strong>{total.toFixed(2)}</strong>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs font-semibold text-slate-700">Montant compté dans la caisse</p>
+                <div className="flex gap-3">
+                  {(["HTG", "USD"] as const).map((code) => (
+                    <label key={code} className="flex-1 space-y-1 text-xs font-semibold text-slate-600">
+                      {code}
+                      <input type="number" min="0" step="0.01"
+                        value={closingInputs[code]}
+                        onChange={(e) => setClosingInputs((p) => ({ ...p, [code]: e.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-right" />
+                    </label>
+                  ))}
+                </div>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Note (optionnel)
+                  <input type="text" value={closingNote} onChange={(e) => setClosingNote(e.target.value)}
+                    placeholder="Ex: Solde transmis à la direction"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                </label>
+                <button type="button" onClick={() => void handleCloseSession()} disabled={sessionLoading}
+                  className="w-full rounded-xl bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                  {sessionLoading ? "Fermeture..." : "Confirmer la fermeture"}
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">

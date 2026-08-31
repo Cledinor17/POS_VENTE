@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
@@ -82,7 +82,7 @@ export default function HotelOrdersPage() {
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "mobile" | "bank" | "other">("cash");
 
-  async function loadOrders() {
+  const loadOrders = useCallback(async () => {
     if (!business) return;
     setLoading(true);
     setError("");
@@ -101,11 +101,11 @@ export default function HotelOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [business, page, query, statusFilter]);
 
   useEffect(() => {
     void loadOrders();
-  }, [business, page, query, statusFilter]);
+  }, [loadOrders]);
 
   useEffect(() => {
     if (!confirmState) return;
@@ -489,7 +489,9 @@ export default function HotelOrdersPage() {
 
               {confirmState.action === "completed" && !confirmState.order.reservationId ? (
                 <label className="space-y-1 text-sm block">
-                  <span className="font-semibold text-slate-700">Mode de paiement</span>
+                  <span className="font-semibold text-slate-700">
+                    Mode de paiement <span className="text-red-500">*</span>
+                  </span>
                   <select
                     value={paymentMethod}
                     onChange={(event) =>
@@ -497,14 +499,17 @@ export default function HotelOrdersPage() {
                         event.target.value as "cash" | "card" | "mobile" | "bank" | "other"
                       )
                     }
+                    required
                     className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   >
+                    <option value="" disabled>-- Choisir --</option>
                     <option value="cash">Cash</option>
                     <option value="card">Carte</option>
                     <option value="mobile">Mobile money</option>
                     <option value="bank">Banque</option>
                     <option value="other">Autre</option>
                   </select>
+                  <p className="text-xs text-slate-500">Obligatoire pour l&apos;ecriture comptable.</p>
                 </label>
               ) : null}
 

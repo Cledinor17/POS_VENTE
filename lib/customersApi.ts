@@ -30,6 +30,7 @@ export type CustomerItem = {
   identityDocumentUrl: string | null;
   identityDocumentType: string | null;
   identityDocumentNumber: string | null;
+  loyaltyPointsBalance: number;
   createdAt: string | null;
 };
 
@@ -184,6 +185,7 @@ function normalizeCustomer(raw: unknown): CustomerItem {
     identityDocumentUrl: toString(obj.identity_document_url ?? obj.identityDocumentUrl, "") || null,
     identityDocumentType: toString(obj.identity_document_type ?? obj.identityDocumentType, "") || null,
     identityDocumentNumber: toString(obj.identity_document_number ?? obj.identityDocumentNumber, "") || null,
+    loyaltyPointsBalance: toNumber(obj.loyalty_points_balance ?? obj.loyaltyPointsBalance, 0),
     createdAt: toString(obj.created_at ?? obj.createdAt, "") || null,
   };
 }

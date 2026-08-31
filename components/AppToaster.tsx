@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
 import {
   APP_TOAST_EVENT,
@@ -70,24 +70,24 @@ export default function AppToaster() {
   const lastPushedRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
   const idCounterRef = useRef(0);
 
-  function nextToastId(): number {
+  const nextToastId = useCallback((): number => {
     idCounterRef.current += 1;
     if (idCounterRef.current >= Number.MAX_SAFE_INTEGER) {
       idCounterRef.current = 1;
     }
     return idCounterRef.current;
-  }
+  }, []);
 
-  function removeToast(id: number) {
+  const removeToast = useCallback((id: number) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
     const timer = timeoutByIdRef.current[id];
     if (timer) {
       window.clearTimeout(timer);
       delete timeoutByIdRef.current[id];
     }
-  }
+  }, []);
 
-  function pushToast(payload: AppToastPayload) {
+  const pushToast = useCallback((payload: AppToastPayload) => {
     const message = normalizeMessage(payload.message || "");
     if (!message) return;
 
@@ -108,7 +108,7 @@ export default function AppToaster() {
     timeoutByIdRef.current[id] = window.setTimeout(() => {
       removeToast(id);
     }, durationMs);
-  }
+  }, [nextToastId, removeToast]);
 
   useEffect(() => {
     const handleToast = (event: Event) => {
@@ -121,7 +121,7 @@ export default function AppToaster() {
     return () => {
       window.removeEventListener(APP_TOAST_EVENT, handleToast as EventListener);
     };
-  }, []);
+  }, [pushToast]);
 
   useEffect(() => {
     const syncLegacyNotices = () => {
@@ -168,7 +168,7 @@ export default function AppToaster() {
       observer.disconnect();
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, []);
+  }, [pushToast]);
 
   useEffect(() => {
     return () => {
@@ -217,7 +217,7 @@ export default function AppToaster() {
           </section>
         );
       }),
-    [items],
+    [items, removeToast],
   );
 
   if (items.length === 0) return null;

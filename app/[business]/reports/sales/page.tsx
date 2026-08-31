@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
@@ -78,8 +78,11 @@ export default function SalesReportsPage() {
     [businessSettings]
   );
   const reportCurrency = businessSettings?.currency || "USD";
-  const convertDisplayAmount = (amount: number, sourceCurrency?: string | null) =>
-    convertAmount(amount, sourceCurrency || reportCurrency, reportCurrency, exchangeConfig);
+  const convertDisplayAmount = useCallback(
+    (amount: number, sourceCurrency?: string | null) =>
+      convertAmount(amount, sourceCurrency || reportCurrency, reportCurrency, exchangeConfig),
+    [exchangeConfig, reportCurrency]
+  );
 
   const items = useMemo(() => {
     const start = (page - 1) * perPage;
@@ -96,7 +99,7 @@ export default function SalesReportsPage() {
       refunded += convertDisplayAmount(item.refundedTotal, item.currency);
     }
     return { gross, paid, refunded };
-  }, [allItems, exchangeConfig, reportCurrency]);
+  }, [allItems, convertDisplayAmount]);
 
   return (
     <div className="space-y-5">

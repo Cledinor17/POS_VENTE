@@ -37,8 +37,30 @@ export type BusinessSettings = {
   logo_path: string;
   logo_url: string;
   invoice_footer: string;
+  business_type: BusinessType;
+  has_hotel: boolean;
+  has_restaurant: boolean;
+  has_pool: boolean;
+  has_services: boolean;
+  has_moment: boolean;
+  loyalty_enabled: boolean;
+  loyalty_earn_amount: number;
+  loyalty_redeem_value: number;
+  loyalty_redemption_cap_percent: number;
   address: BusinessAddress;
 };
+
+export const SUPPORTED_CURRENCIES: CurrencyOption[] = [
+  { code: "HTG", name: "Gourde haitienne" },
+  { code: "USD", name: "Dollar americain" },
+];
+
+export const BUSINESS_TYPES = [
+  "hotel", "restaurant", "bar_cafe", "retail", "hardware_store", "pharmacy",
+  "supermarket", "salon_beauty", "garage", "real_estate", "clinic", "school",
+  "fashion", "electronics", "professional_services", "other",
+] as const;
+export type BusinessType = (typeof BUSINESS_TYPES)[number];
 
 type BusinessMultipartPayload = {
   name?: string;
@@ -53,6 +75,16 @@ type BusinessMultipartPayload = {
   exchange_rate_value?: number;
   timezone?: string;
   invoice_footer?: string;
+  business_type?: BusinessType;
+  has_hotel?: boolean;
+  has_restaurant?: boolean;
+  has_pool?: boolean;
+  has_services?: boolean;
+  has_moment?: boolean;
+  loyalty_enabled?: boolean;
+  loyalty_earn_amount?: number;
+  loyalty_redeem_value?: number;
+  loyalty_redemption_cap_percent?: number;
   address?: BusinessAddress;
   logoFile?: File | null;
 };
@@ -69,24 +101,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
-}
-
-function normalizeCurrencies(raw: unknown): CurrencyOption[] {
-  if (!raw || typeof raw !== "object") return [];
-  const record = raw as Record<string, unknown>;
-  const data = Array.isArray(record.data) ? record.data : [];
-
-  const items: CurrencyOption[] = [];
-  for (const item of data) {
-    if (!item || typeof item !== "object") continue;
-    const obj = item as Record<string, unknown>;
-    const code = asString(obj.code).trim().toUpperCase();
-    const name = asString(obj.name).trim();
-    if (!code || !name) continue;
-    items.push({ code, name });
-  }
-
-  return items;
 }
 
 function normalizeBusiness(raw: unknown): BusinessSettings {
@@ -111,6 +125,18 @@ function normalizeBusiness(raw: unknown): BusinessSettings {
     logo_path: asString(obj.logo_path),
     logo_url: asString(obj.logo_url),
     invoice_footer: asString(obj.invoice_footer),
+    business_type: (BUSINESS_TYPES as readonly string[]).includes(asString(obj.business_type))
+      ? (obj.business_type as BusinessType)
+      : "hotel",
+    has_hotel: obj.has_hotel !== false,
+    has_restaurant: obj.has_restaurant !== false,
+    has_pool: obj.has_pool !== false,
+    has_services: obj.has_services !== false,
+    has_moment: obj.has_moment !== false,
+    loyalty_enabled: obj.loyalty_enabled === true,
+    loyalty_earn_amount: Number(obj.loyalty_earn_amount ?? 100) || 100,
+    loyalty_redeem_value: Number(obj.loyalty_redeem_value ?? 1) || 1,
+    loyalty_redemption_cap_percent: Number(obj.loyalty_redemption_cap_percent ?? 50) || 50,
     address: {
       line1: asString(addressObj.line1),
       line2: asString(addressObj.line2),
@@ -139,7 +165,20 @@ function buildBusinessFormData(payload: BusinessMultipartPayload): FormData {
     "exchange_rate_value",
     "timezone",
     "invoice_footer",
+    "business_type",
+    "loyalty_earn_amount",
+    "loyalty_redeem_value",
+    "loyalty_redemption_cap_percent",
   ];
+
+  const boolKeys: Array<
+    "has_hotel" | "has_restaurant" | "has_pool" | "has_services" | "has_moment" | "loyalty_enabled"
+  > = ["has_hotel", "has_restaurant", "has_pool", "has_services", "has_moment", "loyalty_enabled"];
+  for (const key of boolKeys) {
+    if (payload[key] !== undefined) {
+      formData.append(key, payload[key] ? "1" : "0");
+    }
+  }
 
   for (const key of scalarKeys) {
     const value = payload[key];
@@ -188,11 +227,6 @@ export async function createBusiness(payload: CreateBusinessInput): Promise<Busi
       });
   const body = asRecord(raw);
   return normalizeBusiness(body.data ?? body);
-}
-
-export async function getOnlineCurrencies(): Promise<CurrencyOption[]> {
-  const raw = await apiFetch<unknown>("/api/currencies");
-  return normalizeCurrencies(raw);
 }
 
 export async function updateBusinessSettings(

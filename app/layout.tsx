@@ -22,15 +22,21 @@
 // }
 import type { Metadata } from "next";
 import "./globals.css";
+import { cookies } from "next/headers";
 import Providers from "./providers";
+import { DEFAULT_LOCALE, isSupportedLocale } from "@/lib/locale";
 
 export const metadata: Metadata = { title: "POS Pro" };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  const raw = cookieStore.get("NEXT_LOCALE")?.value;
+  const locale = isSupportedLocale(raw) ? raw : DEFAULT_LOCALE;
+
   return (
-    <html lang="fr">
+    <html lang={locale}>
       <body className="app-shell-bg">
-        <Providers>{children}</Providers>
+        <Providers locale={locale}>{children}</Providers>
       </body>
     </html>
   );

@@ -3,27 +3,15 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { ArrowRight, Lock, Mail } from "lucide-react";
 import { login } from "../../lib/authApi";
 import { ApiError } from "../../lib/api";
+import { getErrorMessage } from "../../lib/errors";
 import { useAuth } from "../../context/AuthContext";
 
-type ErrorBody = { message?: unknown };
-
-function getLoginErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.body && typeof error.body === "object") {
-      const body = error.body as ErrorBody;
-      if (typeof body.message === "string" && body.message.length > 0) {
-        return body.message;
-      }
-    }
-    return error.message;
-  }
-  return "Echec de la connexion";
-}
-
 export default function LoginForm() {
+  const t = useTranslations("auth.login");
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next");
@@ -42,7 +30,7 @@ export default function LoginForm() {
       await login(email, password);
       const data = await refresh();
       if (!data?.user) {
-        setErr("Connexion etablie, mais impossible de charger le profil (/api/me).");
+        setErr(t("profile_load_failed"));
         return;
       }
 
@@ -67,7 +55,7 @@ export default function LoginForm() {
         }
       }
 
-      setErr(getLoginErrorMessage(error));
+      setErr(getErrorMessage(error, t("generic_error")));
     } finally {
       setLoading(false);
     }
@@ -75,11 +63,9 @@ export default function LoginForm() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-[1.9rem] font-semibold tracking-tight text-[#0f172a]">Bon retour !</h2>
-        <p className="text-sm leading-6 text-slate-400">
-          Entrez vos identifiants pour acceder a votre espace hotelier.
-        </p>
+      <div className="space-y-2 text-center">
+        <h2 className="text-[1.9rem] font-semibold tracking-tight text-[#0f172a]">{t("title")}</h2>
+        <p className="text-sm leading-6 text-slate-400">{t("subtitle")}</p>
       </div>
 
       {err ? (
@@ -96,7 +82,7 @@ export default function LoginForm() {
               type="email"
               required
               className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
-              placeholder="Adresse e-mail"
+              placeholder={t("email_placeholder")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -108,15 +94,18 @@ export default function LoginForm() {
               type="password"
               required
               className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
-              placeholder="Mot de passe"
+              placeholder={t("password_placeholder")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
 
-          <div className="flex items-center justify-end text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <Link href="/forgot-password" className="font-medium text-[#0f172a] hover:text-[#d4af37]">
+              {t("forgot_password_link")}
+            </Link>
             <Link href="/verify-account" className="font-medium text-[#0f172a] hover:text-[#d4af37]">
-              J ai deja un code de validation
+              {t("forgot_code_link")}
             </Link>
           </div>
 
@@ -124,16 +113,22 @@ export default function LoginForm() {
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#0f172a] px-4 py-3.5 text-base font-medium text-white transition hover:bg-[#1e293b] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={loading}
           >
-            <span>{loading ? "Connexion en cours..." : "Se connecter"}</span>
+            <span>{loading ? t("submit_loading") : t("submit")}</span>
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       </form>
 
       <p className="text-sm text-slate-500">
-        Nouveau sur la plateforme ?{" "}
+        {t("no_account")}{" "}
         <Link href="/register" className="font-semibold text-[#0f172a] hover:text-[#d4af37]">
-          Creer un etablissement
+          {t("create_business_link")}
+        </Link>
+      </p>
+
+      <p className="text-center text-xs text-slate-400">
+        <Link href="/faq" className="underline underline-offset-2 hover:text-[#0f172a]">
+          {t("faq_link")}
         </Link>
       </p>
     </div>

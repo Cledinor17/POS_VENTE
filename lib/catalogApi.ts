@@ -22,6 +22,8 @@ export type CatalogProduct = {
   type: ProductType;
   price: number;
   priceCurrency: string;
+  sellingPrice: number;
+  sellingCurrency: string;
   cost: number;
   costCurrency: string;
   stock: number;
@@ -253,6 +255,11 @@ function normalizeProduct(raw: unknown): CatalogProduct {
       0
     ),
     priceCurrency: toString(obj.selling_currency ?? obj.price_currency ?? obj.currency, "HTG"),
+    sellingPrice: toNumber(
+      obj.selling_price ?? obj.price ?? obj.sale_price ?? obj.unit_price,
+      0
+    ),
+    sellingCurrency: toString(obj.selling_currency ?? obj.price_currency ?? obj.currency, "HTG"),
     cost: toNumber(
       obj.cost ?? obj.cost_price ?? obj.purchase_price ?? obj.buying_price,
       0

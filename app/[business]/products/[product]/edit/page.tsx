@@ -1,7 +1,10 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Camera } from "lucide-react";
+import BarcodeScannerModal from "@/components/BarcodeScannerModal";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { toastError, toastSuccess } from "@/lib/toast";
@@ -26,7 +29,9 @@ type ProductFormState = {
   type: ProductType;
   barcode: string;
   price: string;
+  priceCurrency: string;
   cost: string;
+  costCurrency: string;
   stock: string;
   reorderLevel: string;
   unit: string;
@@ -42,7 +47,9 @@ const initialFormState: ProductFormState = {
   type: "product",
   barcode: "",
   price: "",
+  priceCurrency: "HTG",
   cost: "",
+  costCurrency: "HTG",
   stock: "0",
   reorderLevel: "0",
   unit: "piece",
@@ -95,6 +102,7 @@ export default function EditProductPage() {
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [error, setError] = useState("");
   const canEditProducts = hasPermission(currentPermissions, ["products.edit", "supplies.manage"]);
   const currentImageUrl = useMemo(
@@ -147,7 +155,9 @@ export default function EditProductPage() {
           type: product.type,
           barcode: product.barcode,
           price: String(product.price),
+          priceCurrency: product.priceCurrency,
           cost: String(product.cost),
+          costCurrency: product.costCurrency,
           stock: String(product.stock),
           reorderLevel: String(product.reorderLevel),
           unit: product.unit || "piece",
@@ -199,9 +209,9 @@ export default function EditProductPage() {
         type: form.type,
         barcode: form.barcode.trim(),
         price: Number(form.price),
-        priceCurrency: "HTG",
+        priceCurrency: form.priceCurrency,
         cost: Number(form.cost),
-        costCurrency: "HTG",
+        costCurrency: form.costCurrency,
         stock: Number(form.stock),
         reorderLevel: Number(form.reorderLevel),
         unit: form.unit,
@@ -425,11 +435,21 @@ export default function EditProductPage() {
             {" "}
             <Field label="Code barres">
               {" "}
-              <input
-                value={form.barcode}
-                onChange={(event) => setField("barcode", event.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />{" "}
+              <div className="flex gap-2">
+                <input
+                  value={form.barcode}
+                  onChange={(event) => setField("barcode", event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => setScannerOpen(true)}
+                  title="Scanner le code-barres"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Camera className="h-4 w-4" /> Scanner
+                </button>
+              </div>{" "}
             </Field>{" "}
           </div>{" "}
           <div className="md:col-span-2">
@@ -447,10 +467,13 @@ export default function EditProductPage() {
                 />
                 <div className="flex items-center gap-3">
                   <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                    <img
+                    <Image
                       src={displayedImageUrl || DEFAULT_PRODUCT_AVATAR_PATH}
                       alt="Apercu produit"
+                      width={56}
+                      height={56}
                       className="h-full w-full object-cover"
+                      unoptimized
                       onError={() => setImageLoadFailed(true)}
                     />
                   </div>
@@ -501,6 +524,12 @@ export default function EditProductPage() {
           </form>
         </>
       ) : null}{" "}
+      <BarcodeScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDetect={(code) => setField("barcode", code)}
+        title="Scanner le code-barres"
+      />
     </div>
   );
 }

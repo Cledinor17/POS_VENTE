@@ -105,6 +105,25 @@ export type ArAgingResult = {
   };
 };
 
+export type CashFlowMovement = {
+  action: string;
+  label: string;
+  amount: number;
+};
+
+export type CashFlowResult = {
+  currency: string;
+  openingBalance: number;
+  closingBalance: number;
+  inflows: CashFlowMovement[];
+  outflows: CashFlowMovement[];
+  totals: {
+    totalInflows: number;
+    totalOutflows: number;
+    netChange: number;
+  };
+};
+
 function isObject(value: unknown): value is Dict {
   return typeof value === "object" && value !== null;
 }
@@ -286,6 +305,41 @@ export async function getArSummary(
       };
     }),
     totalAr: toNumber(obj.total_ar, 0),
+  };
+}
+
+function normalizeCashFlowMovements(rows: unknown[]): CashFlowMovement[] {
+  return rows.map((row) => {
+    const r = isObject(row) ? row : {};
+    return {
+      action: toString(r.action, ""),
+      label: toString(r.label, ""),
+      amount: toNumber(r.amount, 0),
+    };
+  });
+}
+
+export async function getCashFlow(
+  business: string,
+  params: { from: string; to: string }
+): Promise<CashFlowResult> {
+  const query = qp({ from: params.from, to: params.to });
+  const path = `${basePath(business)}/cash-flow?${query}`;
+  const raw = await apiFetch<unknown>(path);
+  const obj = isObject(raw) ? raw : {};
+  const totalsRaw = isObject(obj.totals) ? obj.totals : {};
+
+  return {
+    currency: toString(obj.currency, "USD"),
+    openingBalance: toNumber(obj.opening_balance, 0),
+    closingBalance: toNumber(obj.closing_balance, 0),
+    inflows: normalizeCashFlowMovements(Array.isArray(obj.inflows) ? obj.inflows : []),
+    outflows: normalizeCashFlowMovements(Array.isArray(obj.outflows) ? obj.outflows : []),
+    totals: {
+      totalInflows: toNumber(totalsRaw.total_inflows, 0),
+      totalOutflows: toNumber(totalsRaw.total_outflows, 0),
+      netChange: toNumber(totalsRaw.net_change, 0),
+    },
   };
 }
 

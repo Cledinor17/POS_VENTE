@@ -1,11 +1,24 @@
 import { apiFetch, getToken, setToken } from "./api";
 import type {
   AuthUser,
+  BusinessSummary,
   LoginResponse,
   MeResponse,
+  PasswordResetRequestResponse,
   RegistrationStartResponse,
   VerificationResponse,
 } from "./types/auth";
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null;
+}
+
+function toBusinessSummary(value: unknown): BusinessSummary | null {
+  if (!isRecord(value) || typeof value.slug !== "string") return null;
+  return value as BusinessSummary;
+}
 
 type LoginApiResponse = Partial<LoginResponse> & {
   access_token?: string;
@@ -72,18 +85,53 @@ export async function resendVerificationCode(email: string): Promise<Registratio
   });
 }
 
+export async function forgotPassword(email: string): Promise<PasswordResetRequestResponse> {
+  return apiFetch<PasswordResetRequestResponse>("/api/auth/forgot-password", {
+    method: "POST",
+    json: { email },
+  });
+}
+
+export async function resetPassword(input: {
+  email: string;
+  code: string;
+  password: string;
+  passwordConfirmation: string;
+}): Promise<AuthUser> {
+  const res = await apiFetch<VerificationResponse>("/api/auth/reset-password", {
+    method: "POST",
+    json: {
+      email: input.email,
+      code: input.code,
+      password: input.password,
+      password_confirmation: input.passwordConfirmation,
+    },
+  });
+
+  if (!res.token || !res.user) {
+    throw new Error("Reponse de reinitialisation invalide.");
+  }
+
+  setToken(res.token);
+  return res.user;
+}
+
 export async function me(): Promise<MeResponse> {
-  const raw = await apiFetch<any>("/api/me");
-  const payload = raw?.data ?? raw;
-  const user = payload?.user ?? payload ?? null;
-  const businesses = Array.isArray(payload?.businesses) ? payload.businesses : [];
+  const raw = await apiFetch<unknown>("/api/me");
+  const root = isRecord(raw) ? raw : {};
+  const payload = isRecord(root.data) ? root.data : root;
+  const userRaw = payload.user ?? payload ?? null;
+  const user = isRecord(userRaw) ? (userRaw as AuthUser) : null;
+  const businesses = Array.isArray(payload.businesses)
+    ? payload.businesses.map(toBusinessSummary).filter((item): item is BusinessSummary => item !== null)
+    : [];
   const activeBusiness =
-    payload?.activeBusiness ??
-    businesses.find((b: any) => b?.pivot?.status === "active") ??
+    toBusinessSummary(payload.activeBusiness) ??
+    businesses.find((business) => business.pivot?.status === "active") ??
     businesses[0] ??
     null;
 
-  const permissions = Array.isArray(payload?.permissions)
+  const permissions = Array.isArray(payload.permissions)
     ? payload.permissions.filter((value: unknown): value is string => typeof value === "string")
     : Array.isArray(activeBusiness?.pivot?.permissions)
       ? activeBusiness.pivot.permissions.filter((value: unknown): value is string => typeof value === "string")
@@ -101,6 +149,13 @@ export async function updatePassword(current_password: string, password: string,
   return apiFetch("/api/me/password", {
     method: "POST",
     json: { current_password, password, password_confirmation },
+  });
+}
+
+export async function updateLocale(locale: string) {
+  return apiFetch<{ message: string; locale: string }>("/api/me/locale", {
+    method: "POST",
+    json: { locale },
   });
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type IdentityDocumentFieldProps = {
   file: File | null;
@@ -32,16 +33,24 @@ export default function IdentityDocumentField({
   const [cameraError, setCameraError] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
 
+  function stopCamera() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }
+
   useEffect(() => {
     if (!isImageFile(file)) {
-      setPreviewUrl("");
-      return undefined;
+      const timeout = window.setTimeout(() => setPreviewUrl(""), 0);
+      return () => window.clearTimeout(timeout);
     }
 
     const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
+    const timeout = window.setTimeout(() => setPreviewUrl(url), 0);
 
     return () => {
+      window.clearTimeout(timeout);
       URL.revokeObjectURL(url);
     };
   }, [file]);
@@ -59,13 +68,6 @@ export default function IdentityDocumentField({
       stopCamera();
     };
   }, []);
-
-  function stopCamera() {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  }
 
   function closeCamera() {
     stopCamera();
@@ -254,13 +256,14 @@ export default function IdentityDocumentField({
         <div className={`rounded-xl border border-slate-200 bg-slate-50 ${compact ? "p-2.5 space-y-1.5" : "p-3 space-y-2"}`}>
           <div className="text-xs font-medium text-slate-700">Fichier choisi: {file.name}</div>
           {previewUrl ? (
-            <div className={`mx-auto ${compact ? "max-w-[180px] sm:max-w-[220px]" : "max-w-[220px] sm:max-w-xs md:max-w-sm"}`}>
-              <img
+            <div className={`relative mx-auto ${compact ? "h-24 max-w-[180px] sm:h-28 sm:max-w-[220px]" : "h-32 max-w-[220px] sm:h-40 sm:max-w-xs md:h-48 md:max-w-sm"}`}>
+              <Image
                 src={previewUrl}
                 alt="Apercu de la piece"
-                className={`w-full rounded-lg bg-white object-contain ${
-                  compact ? "h-24 sm:h-28" : "h-32 sm:h-40 md:h-48"
-                }`}
+                fill
+                sizes={compact ? "(min-width: 640px) 220px, 180px" : "(min-width: 768px) 384px, (min-width: 640px) 320px, 220px"}
+                className="rounded-lg bg-white object-contain"
+                unoptimized
               />
             </div>
           ) : (

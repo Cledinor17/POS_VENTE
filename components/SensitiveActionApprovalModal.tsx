@@ -40,23 +40,20 @@ export default function SensitiveActionApprovalModal({
   onClose: () => void;
   onConfirm: (approval: SensitiveActionApproval) => Promise<void> | void;
 }) {
-  const [mounted, setMounted] = useState(false);
   const [selectedApproverId, setSelectedApproverId] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState("");
 
   useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
-
-  useEffect(() => {
     if (!open) return;
-    setLocalError("");
-    setSelectedApproverId(approvers?.[0]?.id ?? "");
-    setEmail("");
-    setPassword("");
+    const timeout = window.setTimeout(() => {
+      setLocalError("");
+      setSelectedApproverId(approvers?.[0]?.id ?? "");
+      setEmail("");
+      setPassword("");
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [approvers, open]);
 
   useEffect(() => {
@@ -112,7 +109,9 @@ export default function SensitiveActionApprovalModal({
     });
   }
 
-  if (!open || !mounted) return null;
+  const portalRoot = typeof document === "undefined" ? null : document.body;
+
+  if (!open || !portalRoot) return null;
 
   return createPortal(
     <div
@@ -224,6 +223,6 @@ export default function SensitiveActionApprovalModal({
         </div>
       </div>
     </div>,
-    document.body,
+    portalRoot,
   );
 }

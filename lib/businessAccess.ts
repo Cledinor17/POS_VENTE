@@ -12,7 +12,15 @@ export const ROLE_OPTIONS = [
   "staff",
 ] as const;
 
-export type BusinessRole = (typeof ROLE_OPTIONS)[number];
+export type SystemBusinessRole = (typeof ROLE_OPTIONS)[number];
+
+// Any role slug a business can assign: a system role above, or a
+// business-defined custom role (arbitrary slug, not known ahead of time).
+export type BusinessRole = string;
+
+export function isSystemBusinessRole(role: string): role is SystemBusinessRole {
+  return (ROLE_OPTIONS as readonly string[]).includes(role);
+}
 
 export const STATUS_OPTIONS = ["active", "disabled"] as const;
 export type BusinessUserStatus = (typeof STATUS_OPTIONS)[number];
@@ -59,11 +67,17 @@ export const ALL_PERMISSIONS = [
   "users.manage",
   "business.read",
   "business.manage",
+  "restaurant.read",
+  "restaurant.manage",
+  "pool.read",
+  "pool.manage",
+  "services.read",
+  "services.manage",
 ] as const;
 
 export type BusinessPermission = (typeof ALL_PERMISSIONS)[number];
 
-export const ROLE_LABELS: Record<BusinessRole, string> = {
+export const ROLE_LABELS: Record<SystemBusinessRole, string> = {
   owner: "Proprietaire",
   admin: "Administrateur",
   manager: "Manager",
@@ -119,6 +133,12 @@ export const PERMISSION_LABELS: Record<BusinessPermission, string> = {
   "users.manage": "Gerer les utilisateurs",
   "business.read": "Consulter l'entreprise",
   "business.manage": "Modifier l'entreprise",
+  "restaurant.read": "Voir les tables et commandes restaurant",
+  "restaurant.manage": "Gerer les tables et prendre des commandes restaurant",
+  "pool.read": "Voir les entrees piscine",
+  "pool.manage": "Enregistrer entrees et sorties piscine",
+  "services.read": "Voir le catalogue et les reservations de services",
+  "services.manage": "Gerer le catalogue et les reservations (spa, room service...)",
 };
 
 export const PERMISSION_HINTS: Record<BusinessPermission, string> = {
@@ -163,11 +183,17 @@ export const PERMISSION_HINTS: Record<BusinessPermission, string> = {
   "users.manage": "Ajouter ou modifier les utilisateurs et leurs acces.",
   "business.read": "Voir les informations du business.",
   "business.manage": "Modifier les reglages du business.",
+  "restaurant.read": "Consulter les tables et commandes du restaurant.",
+  "restaurant.manage": "Creer, modifier et traiter les commandes restaurant.",
+  "pool.read": "Voir les tickets et entrees piscine.",
+  "pool.manage": "Enregistrer les entrees, sorties et annulations piscine.",
+  "services.read": "Voir le catalogue de services et les reservations.",
+  "services.manage": "Creer, modifier et gerer les reservations de services.",
 };
 
 export const FULL_ACCESS_PERMISSIONS = [...ALL_PERMISSIONS] as BusinessPermission[];
 
-export const DEFAULT_ROLE_PERMISSIONS: Record<BusinessRole, BusinessPermission[]> = {
+export const DEFAULT_ROLE_PERMISSIONS: Record<SystemBusinessRole, BusinessPermission[]> = {
   owner: [...FULL_ACCESS_PERMISSIONS],
   admin: [...FULL_ACCESS_PERMISSIONS],
   manager: [...FULL_ACCESS_PERMISSIONS],
@@ -194,6 +220,12 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<BusinessRole, BusinessPermission[]
     "hotel.orders.read",
     "hotel.orders.manage",
     "customers.read",
+    "restaurant.read",
+    "restaurant.manage",
+    "pool.read",
+    "pool.manage",
+    "services.read",
+    "services.manage",
   ],
   barman: [
     "dashboard.read",
@@ -203,6 +235,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<BusinessRole, BusinessPermission[]
     "hotel.orders.read",
     "hotel.orders.manage",
     "customers.read",
+    "restaurant.read",
+    "restaurant.manage",
+    "pool.read",
+    "pool.manage",
   ],
   barwoman: [
     "dashboard.read",
@@ -212,6 +248,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<BusinessRole, BusinessPermission[]
     "hotel.orders.read",
     "hotel.orders.manage",
     "customers.read",
+    "restaurant.read",
+    "restaurant.manage",
+    "pool.read",
+    "pool.manage",
   ],
   housekeeping: [
     "dashboard.read",
@@ -293,6 +333,18 @@ export const PERMISSION_GROUPS: Array<{
     permissions: ["room_setup.read", "room_setup.manage"],
   },
   {
+    title: "Restaurant",
+    permissions: ["restaurant.read", "restaurant.manage"],
+  },
+  {
+    title: "Piscine",
+    permissions: ["pool.read", "pool.manage"],
+  },
+  {
+    title: "Services",
+    permissions: ["services.read", "services.manage"],
+  },
+  {
     title: "Administration et finance",
     permissions: [
       "expenses.read",
@@ -318,7 +370,13 @@ export function normalizeBusinessPermissions(values: readonly string[] | null | 
 }
 
 export function getDefaultPermissionsForRole(role: BusinessRole): BusinessPermission[] {
-  return [...DEFAULT_ROLE_PERMISSIONS[role]];
+  return isSystemBusinessRole(role) ? [...DEFAULT_ROLE_PERMISSIONS[role]] : [];
+}
+
+export function roleLabel(role: BusinessRole, roles: readonly { slug: string; name: string }[] = []): string {
+  const known = roles.find((item) => item.slug === role);
+  if (known) return known.name;
+  return isSystemBusinessRole(role) ? ROLE_LABELS[role] : role;
 }
 
 export function hasPermission(

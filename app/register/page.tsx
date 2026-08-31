@@ -3,7 +3,7 @@ import RegisterForm from "./RegisterForm";
 
 export default function RegisterPage() {
   return (
-    <AuthPortalShell activeTab="register">
+    <AuthPortalShell>
       <RegisterForm />
     </AuthPortalShell>
   );

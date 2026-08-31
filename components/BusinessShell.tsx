@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useParams, usePathname, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { RequireAuth } from "./RequireAuth";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { logout } from "../lib/authApi";
-import { getCurrentUserDailyReport, type CurrentUserDailyReport } from "../lib/currentUserReportApi";
 import { useAuth } from "../context/AuthContext";
 import CurrentUserDailyReportModal from "./CurrentUserDailyReportModal";
 import { ChevronDown, Menu, ShoppingCart, X } from "lucide-react";
+import { safeGetItem, safeSetItem } from "../lib/safeStorage";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).slice(0, 2);
@@ -17,6 +19,7 @@ function initials(name: string) {
 }
 
 export default function BusinessShell({ children }: { children: React.ReactNode }) {
+  const t = useTranslations("shell");
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ business: string }>();
@@ -71,7 +74,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const saved = window.localStorage.getItem("pos_desktop_sidebar_open");
+    const saved = safeGetItem("pos_desktop_sidebar_open");
     if (saved === "0") {
       setDesktopSidebarOpen(false);
     }
@@ -80,7 +83,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     if (!desktopSidebarReady || typeof window === "undefined") return;
-    window.localStorage.setItem("pos_desktop_sidebar_open", desktopSidebarOpen ? "1" : "0");
+    safeSetItem("pos_desktop_sidebar_open", desktopSidebarOpen ? "1" : "0");
   }, [desktopSidebarReady, desktopSidebarOpen]);
 
   useEffect(() => {
@@ -88,7 +91,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
     const storageKey = `pos_cart_count:${business}`;
 
     const readCartCount = () => {
-      const raw = window.localStorage.getItem(storageKey);
+      const raw = safeGetItem(storageKey);
       const parsed = Number(raw ?? "0");
       const nextCount = Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
       setPosCartCount(nextCount);
@@ -137,11 +140,11 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
             <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
             <div className="absolute left-0 top-0 h-full w-80 app-sidebar-surface shadow-xl">
               <div className="h-14 px-3 flex items-center justify-between">
-                <div className="font-bold text-slate-900">Navigation</div>
+                <div className="font-bold text-slate-900">{t("navigation")}</div>
                 <button
                   onClick={() => setMobileOpen(false)}
                   className="p-2 rounded-xl transition-colors hover:bg-blue-50"
-                  aria-label="Fermer le menu"
+                  aria-label={t("close_menu")}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -154,7 +157,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
                   onClick={handleLogout}
                   className="w-full inline-flex items-center justify-center gap-2 rounded-xl brand-primary-btn py-2.5 font-semibold"
                 >
-                  🚪 Déconnexion
+                  {t("logout_emoji")}
                 </button>
               </div>
             </div>
@@ -168,7 +171,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
             <Topbar
               business={business}
               title={title}
-              userName={user?.name ?? "Utilisateur"}
+              userName={user?.name ?? t("default_user")}
               userEmail={user?.email ?? ""}
               userAvatarUrl={userAvatarUrl}
               showSidebarToggle
@@ -187,16 +190,16 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
               <button
                 onClick={() => setMobileOpen(true)}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white transition-colors hover:border-blue-200 hover:bg-orange-50"
-                aria-label="Ouvrir le menu"
+                aria-label={t("open_menu")}
               >
                 <Menu className="h-5 w-5" />
-                <span className="text-sm font-semibold">Menu</span>
+                <span className="text-sm font-semibold">{t("menu")}</span>
               </button>
 
               <div className="text-right leading-tight">
                 <div className="text-sm font-bold text-slate-900">{title}</div>
                 <div className="text-[11px] text-slate-500">
-                  {user?.name ? `👋 ${user.name}` : "Caisse prête ✅"}
+                  {user?.name ? t("greeting", { name: user.name }) : t("cashier_ready")}
                 </div>
               </div>
 
@@ -205,8 +208,8 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
                   <button
                     onClick={scrollToPosCart}
                     className="relative inline-flex items-center justify-center px-2 py-2 rounded-xl border border-slate-200 bg-white transition-colors hover:border-blue-200 hover:bg-orange-50"
-                    aria-label="Voir le panier"
-                    title="Voir le panier"
+                    aria-label={t("view_cart")}
+                    title={t("view_cart")}
                   >
                     <ShoppingCart className="h-4 w-4 text-slate-700" />
                     <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold inline-flex items-center justify-center">
@@ -219,23 +222,26 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
                   <button
                     onClick={() => setMobileProfileOpen((prev) => !prev)}
                     className="inline-flex items-center gap-2 px-2 py-2 rounded-xl border border-slate-200 bg-white transition-colors hover:border-blue-200 hover:bg-orange-50"
-                    aria-label="Ouvrir le profil"
+                    aria-label={t("open_profile")}
                   >
                     {userAvatarUrl && !mobileAvatarLoadFailed ? (
-                      <img
+                      <Image
                         src={userAvatarUrl}
-                        alt={`Avatar ${user?.name ?? "Utilisateur"}`}
+                        alt={`Avatar ${user?.name ?? t("default_user")}`}
+                        width={28}
+                        height={28}
                         className="h-7 w-7 rounded-full border border-slate-200 bg-white object-cover"
+                        unoptimized
                         onError={() => setMobileAvatarLoadFailed(true)}
                       />
                     ) : (
                       <div className="h-7 w-7 rounded-full bg-gradient-to-br from-[#0d63b8] to-[#f59e0b] text-white flex items-center justify-center text-[11px] font-bold">
-                        {initials(user?.name ?? "Utilisateur")}
+                        {initials(user?.name ?? t("default_user"))}
                       </div>
                     )}
 
                     <span className="max-w-[84px] truncate text-xs font-semibold text-slate-700">
-                      {user?.name ?? "Utilisateur"}
+                      {user?.name ?? t("default_user")}
                     </span>
 
                     <ChevronDown
@@ -249,7 +255,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
                     <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden z-50">
                       <div className="px-3 py-2.5 border-b border-slate-100">
                         <div className="text-sm font-semibold text-slate-900">
-                          {user?.name ?? "Utilisateur"}
+                          {user?.name ?? t("default_user")}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">
                           {user?.email ?? ""}
@@ -264,7 +270,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
                           }}
                           className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-orange-50 text-slate-700 text-sm font-semibold"
                         >
-                          Mon rapport du jour
+                          {t("my_daily_report")}
                         </button>
 
                         <button
@@ -274,7 +280,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
                           }}
                           className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-red-50 text-red-600 text-sm font-semibold"
                         >
-                          Déconnexion
+                          {t("logout")}
                         </button>
                       </div>
                     </div>
@@ -291,192 +297,12 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
         {mobileDailyReportOpen ? (
           <CurrentUserDailyReportModal
             business={business}
-            userName={user?.name ?? "Utilisateur"}
+            userName={user?.name ?? t("default_user")}
             variant="mobile"
             onClose={() => setMobileDailyReportOpen(false)}
           />
         ) : null}
       </div>
     </RequireAuth>
-  );
-}
-
-function formatMoney(amount: number, currency: string) {
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: currency || "USD",
-      maximumFractionDigits: 2,
-    }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency || "USD"}`;
-  }
-}
-
-function formatDateTime(value: string) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function paymentMethodLabel(value: string | null) {
-  switch ((value || "").toLowerCase()) {
-    case "cash":
-      return "Cash";
-    case "card":
-      return "Carte";
-    case "bank":
-      return "Banque";
-    case "mobile":
-    case "moncash":
-      return "Mobile";
-    case "other":
-      return "Autre";
-    default:
-      return value || "-";
-  }
-}
-
-function MobileDailyReportModal({
-  business,
-  userName,
-  onClose,
-}: {
-  business: string;
-  userName: string;
-  onClose: () => void;
-}) {
-  const [report, setReport] = useState<CurrentUserDailyReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      if (!business) return;
-      setLoading(true);
-      setErr("");
-
-      try {
-        const next = await getCurrentUserDailyReport(business);
-        if (!cancelled) setReport(next);
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message ?? "Impossible de charger le rapport du jour.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [business]);
-
-  const currency = report?.currency || "USD";
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3">
-      <div className="max-h-[88vh] w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <div>
-            <div className="font-bold text-slate-900">Mon rapport du jour</div>
-            <div className="text-xs text-slate-500">{userName}</div>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Fermer
-          </button>
-        </div>
-
-        <div className="max-h-[calc(88vh-64px)] space-y-4 overflow-y-auto p-4">
-          {err ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{err}</div> : null}
-
-          {loading ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              Chargement du rapport...
-            </div>
-          ) : report ? (
-            <>
-              <div className="grid gap-3">
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                  <div className="text-xs font-semibold text-emerald-700">Cash a remettre</div>
-                  <div className="mt-1 text-xl font-extrabold text-emerald-900">
-                    {formatMoney(report.summary.cashToSubmit, currency)}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                    <div className="text-xs font-semibold text-slate-500">Ventes du jour</div>
-                    <div className="mt-1 text-lg font-extrabold text-slate-900">
-                      {formatMoney(report.summary.salesTotal, currency)}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                    <div className="text-xs font-semibold text-slate-500">Encaissements du jour</div>
-                    <div className="mt-1 text-lg font-extrabold text-slate-900">
-                      {formatMoney(report.summary.receiptsTotal, currency)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="mb-2 font-bold text-slate-900">Mes ventes du jour</div>
-                <div className="space-y-2">
-                  {report.sales.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500">
-                      Aucune vente enregistree.
-                    </div>
-                  ) : (
-                    report.sales.map((item) => (
-                      <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="font-semibold text-slate-900">{item.label}</div>
-                            <div className="text-xs text-slate-500">
-                              {item.source}
-                              {item.reference ? ` - ${item.reference}` : ""}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-600">{item.counterparty || "-"}</div>
-                            <div className="text-[11px] text-slate-500">{formatDateTime(item.occurredAt)}</div>
-                          </div>
-                          <div className="text-right font-bold text-slate-900">
-                            {formatMoney(item.amount, currency)}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="mb-2 font-bold text-slate-900">Ventilation des encaissements</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(report.paymentMethods).map(([method, amount]) => (
-                    <div key={method} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                      <div className="text-xs font-semibold text-slate-500">{paymentMethodLabel(method)}</div>
-                      <div className="mt-1 font-bold text-slate-900">{formatMoney(amount, currency)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : null}
-        </div>
-      </div>
-    </div>
   );
 }

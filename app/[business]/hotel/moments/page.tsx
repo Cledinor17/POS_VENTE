@@ -1,13 +1,15 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
 import IdentityDocumentField from "@/components/IdentityDocumentField";
+import PhoneField from "@/components/PhoneField";
 import { convertAmount, formatMoney } from "@/lib/currency";
+import { formatPhoneDisplay } from "@/lib/phone";
 import {
   createHotelMoment,
   deleteHotelMoment,
@@ -163,9 +165,11 @@ export default function HotelMomentsPage() {
   const [guestFirstName, setGuestFirstName] = useState("");
   const [guestLastName, setGuestLastName] = useState("");
   const [guestAddress, setGuestAddress] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
   const [guestDocumentNumber, setGuestDocumentNumber] = useState("");
   const [startAt, setStartAt] = useState(() => getCurrentLocalDateTimeInput());
   const [totalAmount, setTotalAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [notes, setNotes] = useState("");
   const [identityDocumentFile, setIdentityDocumentFile] = useState<File | null>(null);
   const [importingIdentity, setImportingIdentity] = useState(false);
@@ -227,7 +231,7 @@ export default function HotelMomentsPage() {
     [businessSettings, selectedRoom]
   );
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     if (!business || permissionsLoading) return;
     if (!canReadMoments) {
       setRooms([]);
@@ -263,11 +267,11 @@ export default function HotelMomentsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [business, canReadMoments, permissionsLoading]);
 
   useEffect(() => {
     void loadData();
-  }, [business, canReadMoments, permissionsLoading]);
+  }, [loadData]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -301,9 +305,11 @@ export default function HotelMomentsPage() {
     setGuestFirstName("");
     setGuestLastName("");
     setGuestAddress("");
+    setGuestPhone("");
     setGuestDocumentNumber("");
     setStartAt(getCurrentLocalDateTimeInput());
     setTotalAmount("");
+    setPaymentMethod("");
     setNotes("");
     setIdentityDocumentFile(null);
     setImportingIdentity(false);
@@ -415,6 +421,10 @@ export default function HotelMomentsPage() {
       setError("Date/heure debut obligatoire.");
       return;
     }
+    if (!paymentMethod) {
+      setError("Mode de paiement obligatoire pour l'ecriture comptable.");
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -425,9 +435,12 @@ export default function HotelMomentsPage() {
         guestFirstName: guestFirstName.trim(),
         guestLastName: guestLastName.trim(),
         guestAddress: guestAddress.trim(),
+        guestPhone: guestPhone.trim(),
         guestDocumentNumber: guestDocumentNumber.trim(),
         startAt: new Date(startAt).toISOString(),
         totalAmount: totalAmount.trim() !== "" ? Number(totalAmount) : undefined,
+        exchangeRate: businessSettings?.usd_to_htg_rate ?? businessSettings?.exchange_rate_value ?? 1,
+        paymentMethod: paymentMethod || undefined,
         notes: notes.trim(),
         identityDocumentFile,
       });
@@ -701,7 +714,7 @@ export default function HotelMomentsPage() {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
                   <div className="font-semibold text-slate-900">Import auto</div>
                   <p className="mt-1 text-xs leading-5 text-slate-600">
-                    L'import lit la piece pour proposer le nom, le prenom, l'adresse et le numero du document. Verifie toujours le resultat avant validation.
+                    L&apos;import lit la piece pour proposer le nom, le prenom, l&apos;adresse et le numero du document. Verifie toujours le resultat avant validation.
                   </p>
                 </div>
               </div>
@@ -729,6 +742,10 @@ export default function HotelMomentsPage() {
                     onChange={(event) => setGuestAddress(event.target.value)}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 focus:border-blue-400 focus:outline-none"
                   />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-semibold text-slate-700">Telephone</span>
+                  <PhoneField value={guestPhone} onChange={setGuestPhone} />
                 </label>
                 <label className="space-y-1 text-sm">
                   <span className="font-semibold text-slate-700">Numero de piece</span>
@@ -777,6 +794,25 @@ export default function HotelMomentsPage() {
                   />
                 </label>
                 <label className="space-y-1 text-sm">
+                  <span className="font-semibold text-slate-700">Mode de paiement <span className="text-red-500">*</span></span>
+                  <select
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value)}
+                    required
+                    className={`w-full rounded-xl border px-3 py-2 focus:border-blue-400 focus:outline-none ${!paymentMethod ? "border-red-300 bg-red-50" : "border-slate-300"}`}
+                  >
+                    <option value="">-- Choisir --</option>
+                    <option value="cash">Cash</option>
+                    <option value="card">Carte bancaire</option>
+                    <option value="bank_transfer">Virement</option>
+                    <option value="mobile">Mobile money</option>
+                    <option value="other">Autre</option>
+                  </select>
+                  {!paymentMethod ? (
+                    <p className="text-xs text-red-600">Obligatoire pour l&apos;ecriture comptable.</p>
+                  ) : null}
+                </label>
+                <label className="space-y-1 text-sm md:col-span-2">
                   <span className="font-semibold text-slate-700">Notes</span>
                   <input
                     value={notes}
@@ -837,6 +873,7 @@ export default function HotelMomentsPage() {
                   <th className="py-2 pr-3">Debut</th>
                   <th className="py-2 pr-3">Fin</th>
                   <th className="py-2 pr-3">Montant</th>
+                  <th className="py-2 pr-3">Paiement</th>
                   <th className="py-2 pr-3">Statut</th>
                   <th className="py-2">Action</th>
                 </tr>
@@ -851,6 +888,9 @@ export default function HotelMomentsPage() {
                           ? `Piece: ${moment.guest_document_number}`
                           : moment.guest_address || "-"}
                       </div>
+                      {moment.guest_phone ? (
+                        <div className="text-xs text-slate-500">{formatPhoneDisplay(moment.guest_phone)}</div>
+                      ) : null}
                     </td>
                     <td className="py-2 pr-3 text-slate-700">
                       {moment.room?.name || "-"} #{moment.room?.room_number || "-"}
@@ -858,6 +898,15 @@ export default function HotelMomentsPage() {
                     <td className="py-2 pr-3 text-slate-700">{toInputDateTime(moment.start_at).replace("T", " ")}</td>
                     <td className="py-2 pr-3 text-slate-700">{toInputDateTime(moment.end_at).replace("T", " ")}</td>
                     <td className="py-2 pr-3 text-slate-700">{formatMoney(moment.total_amount, moment.total_currency)}</td>
+                    <td className="py-2 pr-3 text-slate-700">
+                      {moment.payment_method ? (
+                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                          {moment.payment_method.replace(/_/g, " ")}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
                     <td className="py-2 pr-3">
                       {(() => {
                         const currentStatus = statusDrafts[moment.id] ?? moment.status;

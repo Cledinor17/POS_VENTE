@@ -3,26 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { ArrowRight, Lock, Mail, UserRound } from "lucide-react";
-import { ApiError } from "@/lib/api";
 import { registerAccount } from "@/lib/authApi";
-
-type ErrorBody = { message?: unknown };
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.body && typeof error.body === "object") {
-      const body = error.body as ErrorBody;
-      if (typeof body.message === "string" && body.message.length > 0) return body.message;
-    }
-    return error.message;
-  }
-
-  if (error instanceof Error && error.message.trim().length > 0) return error.message;
-  return "Impossible de creer le compte.";
-}
+import { getErrorMessage } from "@/lib/errors";
 
 export default function RegisterForm() {
+  const t = useTranslations("auth.register");
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -48,7 +35,7 @@ export default function RegisterForm() {
       if (result.debug_code) params.set("debug", result.debug_code);
       router.replace(`/verify-account?${params.toString()}`);
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(getErrorMessage(err, t("generic_error")));
     } finally {
       setLoading(false);
     }
@@ -57,10 +44,8 @@ export default function RegisterForm() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h2 className="text-[1.9rem] font-semibold tracking-tight text-[#0f172a]">Rejoignez-nous</h2>
-        <p className="text-sm leading-6 text-slate-400">
-          Enregistrez votre compte et commencez a gerer votre etablissement.
-        </p>
+        <h2 className="text-[1.9rem] font-semibold tracking-tight text-[#0f172a]">{t("title")}</h2>
+        <p className="text-sm leading-6 text-slate-400">{t("subtitle")}</p>
       </div>
 
       {error ? (
@@ -77,7 +62,7 @@ export default function RegisterForm() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
-              placeholder="Nom complet"
+              placeholder={t("name_placeholder")}
             />
           </div>
 
@@ -89,7 +74,7 @@ export default function RegisterForm() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
-              placeholder="E-mail professionnel"
+              placeholder={t("email_placeholder")}
             />
           </div>
 
@@ -101,7 +86,7 @@ export default function RegisterForm() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
-              placeholder="Creer un mot de passe"
+              placeholder={t("password_placeholder")}
             />
           </div>
 
@@ -113,7 +98,7 @@ export default function RegisterForm() {
               value={passwordConfirmation}
               onChange={(event) => setPasswordConfirmation(event.target.value)}
               className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
-              placeholder="Confirmer le mot de passe"
+              placeholder={t("confirm_placeholder")}
             />
           </div>
 
@@ -122,16 +107,16 @@ export default function RegisterForm() {
             disabled={loading}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#d4af37] px-4 py-3.5 text-base font-medium text-[#0f172a] transition hover:bg-[#c29b25] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span>{loading ? "Creation du compte..." : "Creer mon espace business"}</span>
+            <span>{loading ? t("submit_loading") : t("submit")}</span>
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       </form>
 
       <p className="text-sm text-slate-500">
-        Vous avez deja un compte ?{" "}
+        {t("have_account")}{" "}
         <Link href="/login" className="font-semibold text-[#0f172a] hover:text-[#d4af37]">
-          Se connecter
+          {t("login_link")}
         </Link>
       </p>
     </div>

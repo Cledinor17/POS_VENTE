@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Pencil, Power, PowerOff, Trash2 } from "lucide-react";
+import { Pencil, Power, PowerOff, Trash2, Upload } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { toastError, toastSuccess } from "@/lib/toast";
 import {
@@ -14,6 +14,13 @@ import {
   type CatalogCategory,
   type CatalogProduct,
 } from "@/lib/catalogApi";
+import ImportModal, { type ImportColumnHelp } from "@/components/ImportModal";
+
+const CATEGORY_IMPORT_COLUMNS: ImportColumnHelp[] = [
+  { name: "name", required: true, description: "Nom de la categorie (sert a mettre a jour une categorie existante)." },
+  { name: "description", required: false, description: "Description libre." },
+  { name: "is_active", required: false, description: "1/0 (defaut: 1)." },
+];
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
@@ -31,35 +38,29 @@ export default function CategoriesPage() {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string>("");
   const [error, setError] = useState("");
-  useEffect(() => {
-    let mounted = true;
-    async function loadCategories() {
-      if (!business) return;
-      setLoading(true);
-      setError("");
-      try {
-        const [categoryItems, productItems] = await Promise.all([
-          getCategories(business),
-          getProducts(business),
-        ]);
-        if (!mounted) return;
-        setCategories(categoryItems);
-        setProducts(productItems);
-      } catch (e) {
-        if (mounted) {
-          const message = getErrorMessage(e);
-          setError(message);
-          toastError(message);
-        }
-      } finally {
-        if (mounted) setLoading(false);
-      }
+  const [importOpen, setImportOpen] = useState(false);
+  const loadCategories = useCallback(async () => {
+    if (!business) return;
+    setLoading(true);
+    setError("");
+    try {
+      const [categoryItems, productItems] = await Promise.all([
+        getCategories(business),
+        getProducts(business),
+      ]);
+      setCategories(categoryItems);
+      setProducts(productItems);
+    } catch (e) {
+      const message = getErrorMessage(e);
+      setError(message);
+      toastError(message);
+    } finally {
+      setLoading(false);
     }
-    void loadCategories();
-    return () => {
-      mounted = false;
-    };
   }, [business]);
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
   const categoriesWithCounts = useMemo(() => {
     const byCategoryId = new Map<string, number>();
     const byCategoryName = new Map<string, number>();
@@ -219,13 +220,24 @@ export default function CategoriesPage() {
               Organise ton catalogue par familles de produits.
             </p>{" "}
           </div>{" "}
-          <Link
-            href={business ? `/${business}/products` : "/"}
-            className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
+          <div className="flex items-center gap-3">
             {" "}
-            Retour aux produits{" "}
-          </Link>{" "}
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Upload className="h-4 w-4" />
+              Importer
+            </button>{" "}
+            <Link
+              href={business ? `/${business}/products` : "/"}
+              className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {" "}
+              Retour aux produits{" "}
+            </Link>{" "}
+          </div>{" "}
         </div>{" "}
       </section>{" "}
       {error ? (
@@ -380,6 +392,18 @@ export default function CategoriesPage() {
           )}{" "}
         </div>{" "}
       </section>{" "}
+      {business ? (
+        <ImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          business={business}
+          entityPath="categories"
+          title="Importer des categories"
+          templateFilename="modele_categories.csv"
+          columnsHelp={CATEGORY_IMPORT_COLUMNS}
+          onImported={() => void loadCategories()}
+        />
+      ) : null}
     </div>
   );
 }

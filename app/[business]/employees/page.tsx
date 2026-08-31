@@ -2,7 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { Upload } from "lucide-react";
 import { ApiError } from "@/lib/api";
+import ImportModal, { type ImportColumnHelp } from "@/components/ImportModal";
+import PhoneField from "@/components/PhoneField";
+import { formatPhoneDisplay } from "@/lib/phone";
 import {
   createEmployee,
   createEmployeePayment,
@@ -13,6 +17,25 @@ import {
   type EmployeeItem,
   type EmployeePaymentItem,
 } from "@/lib/employeesApi";
+import {
+  createDeduction,
+  deleteDeduction,
+  listDeductions,
+  type EmployeeDeductionItem,
+} from "@/lib/payrollApi";
+
+const EMPLOYEE_IMPORT_COLUMNS: ImportColumnHelp[] = [
+  { name: "name", required: true, description: "Nom de l'employe." },
+  { name: "email", required: false, description: "Sert a mettre a jour un employe existant." },
+  { name: "phone", required: false, description: "Numero de telephone." },
+  { name: "job_title", required: false, description: "Poste." },
+  { name: "salary_amount", required: false, description: "Montant du salaire (defaut: 0)." },
+  { name: "salary_currency", required: false, description: "Devise du salaire (defaut: devise de l'entreprise)." },
+  { name: "pay_frequency", required: false, description: "Frequence de paie (defaut: monthly)." },
+  { name: "hired_at", required: false, description: "Date d'embauche (AAAA-MM-JJ)." },
+  { name: "is_active", required: false, description: "1/0 (defaut: 1)." },
+  { name: "notes", required: false, description: "Notes libres." },
+];
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -80,6 +103,7 @@ export default function EmployeesPage() {
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"" | "1" | "0">("");
   const [reloadSeq, setReloadSeq] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [editingId, setEditingId] = useState("");
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
@@ -108,6 +132,14 @@ export default function EmployeesPage() {
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const paymentAmountInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [deductionItems, setDeductionItems] = useState<EmployeeDeductionItem[]>([]);
+  const [deductionLoading, setDeductionLoading] = useState(false);
+  const [deductionSaving, setDeductionSaving] = useState(false);
+  const [deductionReloadSeq, setDeductionReloadSeq] = useState(0);
+  const [deductionLabel, setDeductionLabel] = useState("");
+  const [deductionType, setDeductionType] = useState<"fixed" | "percent">("fixed");
+  const [deductionAmount, setDeductionAmount] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -184,6 +216,70 @@ export default function EmployeesPage() {
     };
   }, [businessSlug, selectedEmployeeId, paymentReloadSeq]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadDeductions() {
+      if (!businessSlug || !selectedEmployeeId) {
+        setDeductionItems([]);
+        return;
+      }
+
+      setDeductionLoading(true);
+      try {
+        const res = await listDeductions(businessSlug, selectedEmployeeId);
+        if (!mounted) return;
+        setDeductionItems(res);
+      } catch (e) {
+        if (mounted) setError(getErrorMessage(e));
+      } finally {
+        if (mounted) setDeductionLoading(false);
+      }
+    }
+
+    void loadDeductions();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug, selectedEmployeeId, deductionReloadSeq]);
+
+  async function onAddDeduction(e: FormEvent) {
+    e.preventDefault();
+    if (!businessSlug || !selectedEmployeeId) return;
+    const amount = Number(deductionAmount);
+    if (!deductionLabel.trim() || !Number.isFinite(amount) || amount < 0) return;
+
+    setDeductionSaving(true);
+    setError("");
+    try {
+      await createDeduction(businessSlug, selectedEmployeeId, {
+        label: deductionLabel.trim(),
+        type: deductionType,
+        amount,
+      });
+      setDeductionLabel("");
+      setDeductionAmount("");
+      setDeductionType("fixed");
+      setDeductionReloadSeq((v) => v + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setDeductionSaving(false);
+    }
+  }
+
+  async function onDeleteDeduction(deductionId: string) {
+    if (!businessSlug || !selectedEmployeeId) return;
+    if (!window.confirm("Supprimer cette deduction ?")) return;
+    setError("");
+    try {
+      await deleteDeduction(businessSlug, selectedEmployeeId, deductionId);
+      setDeductionReloadSeq((v) => v + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    }
+  }
+
   const activeCount = useMemo(
     () => items.filter((item) => item.isActive).length,
     [items],
@@ -207,20 +303,39 @@ export default function EmployeesPage() {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         if (paymentConfirmOpen) {
-          closePaymentConfirmModal();
+          setPaymentConfirmOpen(false);
           return;
         }
         if (paymentModalOpen) {
-          closePaymentModal();
+          const defaults = getEmployeePaymentDefaults(selectedEmployee);
+          setPaymentModalOpen(false);
+          setPaymentConfirmOpen(false);
+          setPaymentAmount(defaults.amount);
+          setPaymentMethod("");
+          setPaymentReference("");
+          setPaymentNotes("");
+          setPaymentDate(new Date().toISOString().slice(0, 10));
+          setPaymentCurrency(defaults.currency);
           return;
         }
-        closeEmployeeModal();
+        setEmployeeModalOpen(false);
+        setEditingId("");
+        setName("");
+        setEmail("");
+        setPhone("");
+        setJobTitle("");
+        setSalaryAmount("");
+        setSalaryCurrency("");
+        setPayFrequency("monthly");
+        setHiredAt("");
+        setIsActive(true);
+        setNotes("");
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [employeeModalOpen, paymentModalOpen, paymentConfirmOpen]);
+  }, [employeeModalOpen, paymentModalOpen, paymentConfirmOpen, selectedEmployee]);
 
   useEffect(() => {
     if (!paymentModalOpen) return;
@@ -476,6 +591,14 @@ export default function EmployeesPage() {
             </div>
             <button
               type="button"
+              onClick={() => setImportOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Upload className="h-4 w-4" />
+              Importer
+            </button>
+            <button
+              type="button"
               onClick={openNewEmployeeModal}
               className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white"
             >
@@ -557,7 +680,7 @@ export default function EmployeesPage() {
                         <td className="py-3 pr-3">
                           <div className="font-semibold text-slate-800">{item.name}</div>
                           <div className="text-xs text-slate-500">
-                            {item.email || "-"} | {item.phone || "-"}
+                            {item.email || "-"} | {formatPhoneDisplay(item.phone) || "-"}
                           </div>
                         </td>
                         <td className="py-3 pr-3 text-slate-600">{item.jobTitle || "-"}</td>
@@ -704,6 +827,86 @@ export default function EmployeesPage() {
           )}
       </section>
 
+      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+          <h2 className="font-bold text-slate-900">
+            Deductions
+            {selectedEmployee ? ` - ${selectedEmployee.name}` : ""}
+          </h2>
+
+          {!selectedEmployeeId ? (
+            <div className="py-4 text-center text-slate-500">Selectionnez un employe.</div>
+          ) : (
+            <>
+              <form onSubmit={onAddDeduction} className="flex flex-wrap items-end gap-3">
+                <label className="space-y-0.5 text-xs">
+                  <span className="text-slate-500">Libelle</span>
+                  <input
+                    type="text"
+                    required
+                    value={deductionLabel}
+                    onChange={(e) => setDeductionLabel(e.target.value)}
+                    placeholder="Assurance, avance..."
+                    className="block w-48 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  />
+                </label>
+                <label className="space-y-0.5 text-xs">
+                  <span className="text-slate-500">Type</span>
+                  <select
+                    value={deductionType}
+                    onChange={(e) => setDeductionType(e.target.value === "percent" ? "percent" : "fixed")}
+                    className="block w-32 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  >
+                    <option value="fixed">Montant fixe</option>
+                    <option value="percent">Pourcentage</option>
+                  </select>
+                </label>
+                <label className="space-y-0.5 text-xs">
+                  <span className="text-slate-500">{deductionType === "percent" ? "Taux (%)" : "Montant"}</span>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    step="0.01"
+                    value={deductionAmount}
+                    onChange={(e) => setDeductionAmount(e.target.value)}
+                    className="block w-32 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={deductionSaving}
+                  className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Ajouter
+                </button>
+              </form>
+
+              {deductionLoading ? (
+                <div className="py-4 text-center text-slate-500">Chargement...</div>
+              ) : deductionItems.length === 0 ? (
+                <div className="py-4 text-center text-slate-500">Aucune deduction configuree.</div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {deductionItems.map((d) => (
+                    <li key={d.id} className="flex items-center justify-between py-2 text-sm">
+                      <span className="text-slate-700">
+                        {d.label} — {d.type === "percent" ? `${d.amount}%` : formatMoney(d.amount, selectedEmployee?.salaryCurrency ?? null)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteDeduction(d.id)}
+                        className="text-xs font-semibold text-rose-600 hover:text-rose-800"
+                      >
+                        Retirer
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+      </section>
+
       {employeeModalOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
@@ -747,12 +950,7 @@ export default function EmployeesPage() {
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />
 
-              <input
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                placeholder="Telephone"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
+              <PhoneField value={phone} onChange={setPhone} />
 
               <input
                 value={jobTitle}
@@ -1028,6 +1226,18 @@ export default function EmployeesPage() {
             </div>
           </div>
         </div>
+      ) : null}
+      {businessSlug ? (
+        <ImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          business={businessSlug}
+          entityPath="employees"
+          title="Importer des employes"
+          templateFilename="modele_employes.csv"
+          columnsHelp={EMPLOYEE_IMPORT_COLUMNS}
+          onImported={() => setReloadSeq((n) => n + 1)}
+        />
       ) : null}
     </div>
   );

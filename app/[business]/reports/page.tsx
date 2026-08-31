@@ -31,6 +31,10 @@ export default async function ReportsPage({ params }: ReportsPageProps) {
           <h2 className="font-bold text-slate-900">Bilan & Resultat</h2>
           <p className="text-sm text-slate-500 mt-1">Trial balance, P&L, balance sheet.</p>
         </Link>
+        <Link href={`/${business}/reports/cash-sessions`} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:bg-slate-50">
+          <h2 className="font-bold text-slate-900">Sessions de caisse</h2>
+          <p className="text-sm text-slate-500 mt-1">Historique des ouvertures et fermetures de caisse.</p>
+        </Link>
       </section>
     </div>
   );

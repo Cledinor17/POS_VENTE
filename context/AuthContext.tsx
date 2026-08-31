@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { me } from "../lib/authApi";
 import { ApiError, getToken, setToken } from "../lib/api";
+import { getStoredLocale, isSupportedLocale, setStoredLocale } from "../lib/locale";
 import type { AuthUser, BusinessSummary, MeResponse } from "@/lib/types/auth";
 
 type AuthState = {
@@ -45,6 +46,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setBusinesses(data.businesses ?? []);
       setActiveBusiness(data.activeBusiness ?? null);
       setPermissions(data.permissions ?? []);
+
+      const savedLocale = data.user?.locale;
+      if (isSupportedLocale(savedLocale) && savedLocale !== getStoredLocale()) {
+        setStoredLocale(savedLocale);
+        window.dispatchEvent(new CustomEvent("pos-locale-changed", { detail: savedLocale }));
+      }
+
       return data;
     } catch (e) {
       if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {

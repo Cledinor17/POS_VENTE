@@ -1,32 +1,35 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { usePermissionGuard } from "@/lib/usePermissionGuard";
+import PermissionChecklist from "@/components/PermissionChecklist";
+import LoginActivityModal from "@/components/LoginActivityModal";
 import {
   createBusinessUser,
   listBusinessUsers,
   removeBusinessUser,
   updateBusinessUser,
+  type BusinessRoleOption,
   type BusinessUserItem,
 } from "@/lib/businessUsersApi";
 import {
   ALL_PERMISSIONS,
-  PERMISSION_GROUPS,
-  PERMISSION_HINTS,
-  PERMISSION_LABELS,
-  ROLE_LABELS,
-  ROLE_OPTIONS,
   STATUS_OPTIONS,
   getDefaultPermissionsForRole,
   hasPermission,
   normalizeBusinessPermissions,
+  roleLabel as sharedRoleLabel,
   summarizePermissions,
   type BusinessPermission,
   type BusinessRole,
   type BusinessUserStatus,
 } from "@/lib/businessAccess";
+
+const DEFAULT_ROLE: BusinessRole = "staff";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -34,12 +37,8 @@ function getErrorMessage(error: unknown): string {
   return "Une erreur est survenue.";
 }
 
-function isBusinessRole(value: string): value is BusinessRole {
-  return (ROLE_OPTIONS as readonly string[]).includes(value);
-}
-
 function normalizeRole(value: string): BusinessRole {
-  return isBusinessRole(value) ? value : "staff";
+  return value.trim() !== "" ? value : DEFAULT_ROLE;
 }
 
 function normalizeStatus(value: string): BusinessUserStatus {
@@ -53,116 +52,8 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString("fr-FR");
 }
 
-function roleLabel(role: string): string {
-  return ROLE_LABELS[normalizeRole(role)] ?? role;
-}
-
-function PermissionChecklist({
-  selected,
-  onToggle,
-  allowedPermissions,
-}: {
-  selected: BusinessPermission[];
-  onToggle: (permission: BusinessPermission) => void;
-  allowedPermissions: BusinessPermission[];
-}) {
-  const allowed = useMemo(() => new Set(allowedPermissions), [allowedPermissions]);
-  const active = useMemo(() => new Set(selected), [selected]);
-
-  function permissionTone(permission: BusinessPermission): {
-    badge: string;
-    className: string;
-  } {
-    if (permission.endsWith(".read")) {
-      return {
-        badge: "Lecture",
-        className: "bg-sky-50 text-sky-700 border-sky-200",
-      };
-    }
-
-    if (permission.endsWith(".create")) {
-      return {
-        badge: "Ajout",
-        className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      };
-    }
-
-    if (permission.endsWith(".edit")) {
-      return {
-        badge: "Modification",
-        className: "bg-violet-50 text-violet-700 border-violet-200",
-      };
-    }
-
-    if (
-      permission === "billing.discount" ||
-      permission === "billing.refund" ||
-      permission === "billing.void"
-    ) {
-      return {
-        badge: "Sensible",
-        className: "bg-amber-50 text-amber-700 border-amber-200",
-      };
-    }
-
-    return {
-      badge: "Controle",
-      className: "bg-slate-100 text-slate-700 border-slate-200",
-    };
-  }
-
-  return (
-    <div className="space-y-4">
-      {PERMISSION_GROUPS.map((group) => {
-        const visiblePermissions = group.permissions.filter((permission) => allowed.has(permission));
-        if (visiblePermissions.length === 0) return null;
-
-        return (
-          <div key={group.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="mb-3">
-              <h3 className="text-sm font-semibold text-slate-900">{group.title}</h3>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              {visiblePermissions.map((permission) => (
-                <label
-                  key={permission}
-                  className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3"
-                >
-                  <input
-                    type="checkbox"
-                    checked={active.has(permission)}
-                    onChange={() => onToggle(permission)}
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-slate-800">
-                        {PERMISSION_LABELS[permission]}
-                      </span>
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                          permissionTone(permission).className
-                        }`}
-                      >
-                        {permissionTone(permission).badge}
-                      </span>
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">
-                      {PERMISSION_HINTS[permission]}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function UsersPage() {
+  const { allowed, loading: permLoading } = usePermissionGuard("users.read");
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
   const { businesses, activeBusiness, permissions: fallbackPermissions, refresh } = useAuth();
@@ -177,9 +68,7 @@ export default function UsersPage() {
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [reloadSeq, setReloadSeq] = useState(0);
-  const [availableRoles, setAvailableRoles] = useState<BusinessRole[]>(
-    ROLE_OPTIONS.filter((role) => role !== "owner"),
-  );
+  const [availableRoles, setAvailableRoles] = useState<BusinessRoleOption[]>([]);
   const [availablePermissions, setAvailablePermissions] = useState<BusinessPermission[]>([
     ...ALL_PERMISSIONS,
   ]);
@@ -188,17 +77,30 @@ export default function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<BusinessRole>("receptionist");
+  const [role, setRole] = useState<BusinessRole>(DEFAULT_ROLE);
   const [createPermissions, setCreatePermissions] = useState<BusinessPermission[]>(
-    getDefaultPermissionsForRole("receptionist"),
+    getDefaultPermissionsForRole(DEFAULT_ROLE),
   );
 
   const [accessModalUser, setAccessModalUser] = useState<BusinessUserItem | null>(null);
+  const [loginActivityUser, setLoginActivityUser] = useState<BusinessUserItem | null>(null);
   const [accessPermissions, setAccessPermissions] = useState<BusinessPermission[]>([]);
 
   const [rowRoleById, setRowRoleById] = useState<Record<string, BusinessRole>>({});
   const [rowStatusById, setRowStatusById] = useState<Record<string, BusinessUserStatus>>({});
   const [rowPermissionsById, setRowPermissionsById] = useState<Record<string, BusinessPermission[]>>({});
+
+  const defaultPermissionsFor = useCallback(
+    (role: BusinessRole): BusinessPermission[] => {
+      const found = availableRoles.find((item) => item.slug === role);
+      return found ? [...found.permissions] : getDefaultPermissionsForRole(role);
+    },
+    [availableRoles],
+  );
+
+  function roleLabel(role: BusinessRole): string {
+    return sharedRoleLabel(role, availableRoles);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -214,11 +116,7 @@ export default function UsersPage() {
         setItems(res.items);
         setLastPage(res.lastPage);
         setTotal(res.total);
-        setAvailableRoles(
-          (res.roles.length > 0 ? res.roles : ROLE_OPTIONS)
-            .filter((entry): entry is BusinessRole => isBusinessRole(entry))
-            .filter((entry) => entry !== "owner"),
-        );
+        setAvailableRoles(res.roles);
         setAvailablePermissions(
           normalizeBusinessPermissions(res.permissions.length > 0 ? res.permissions : ALL_PERMISSIONS),
         );
@@ -266,25 +164,31 @@ export default function UsersPage() {
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        closeUserModal();
-        closeAccessModal();
+        setUserModalOpen(false);
+        setName("");
+        setEmail("");
+        setPassword("");
+        setRole(DEFAULT_ROLE);
+        setCreatePermissions(defaultPermissionsFor(DEFAULT_ROLE));
+        setAccessModalUser(null);
+        setAccessPermissions([]);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [userModalOpen, accessModalUser]);
+  }, [userModalOpen, accessModalUser, defaultPermissionsFor]);
 
   const activeCount = useMemo(
     () => items.filter((item) => item.status === "active").length,
     [items],
   );
   const currentBusinessEntry = useMemo(
-    () => businesses.find((item: any) => item?.slug === businessSlug) ?? activeBusiness ?? null,
+    () => businesses.find((item) => item.slug === businessSlug) ?? activeBusiness ?? null,
     [activeBusiness, businesses, businessSlug],
   );
   const currentPermissions = useMemo(() => {
-    const scoped = (currentBusinessEntry as any)?.pivot?.permissions;
+    const scoped = currentBusinessEntry?.pivot?.permissions;
     if (Array.isArray(scoped)) {
       return scoped.filter((value: unknown): value is string => typeof value === "string");
     }
@@ -292,12 +196,12 @@ export default function UsersPage() {
   }, [currentBusinessEntry, fallbackPermissions]);
   const canManageUsers = hasPermission(currentPermissions, "users.manage");
 
-  function resetUserForm(nextRole: BusinessRole = "receptionist") {
+  function resetUserForm(nextRole: BusinessRole = DEFAULT_ROLE) {
     setName("");
     setEmail("");
     setPassword("");
     setRole(nextRole);
-    setCreatePermissions(getDefaultPermissionsForRole(nextRole));
+    setCreatePermissions(defaultPermissionsFor(nextRole));
   }
 
   function closeUserModal() {
@@ -344,7 +248,7 @@ export default function UsersPage() {
     setRowRoleById((prev) => ({ ...prev, [userId]: nextRole }));
     setRowPermissionsById((prev) => ({
       ...prev,
-      [userId]: getDefaultPermissionsForRole(nextRole),
+      [userId]: defaultPermissionsFor(nextRole),
     }));
   }
 
@@ -469,6 +373,8 @@ export default function UsersPage() {
     }
   }
 
+  if (permLoading || !allowed) return null;
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
@@ -551,8 +457,8 @@ export default function UsersPage() {
                           disabled={busy || locked || !canManageUsers}
                         >
                           {availableRoles.map((option) => (
-                            <option key={option} value={option}>
-                              {ROLE_LABELS[option]}
+                            <option key={option.slug} value={option.slug}>
+                              {option.name}
                             </option>
                           ))}
                           {locked ? <option value="owner">Proprietaire</option> : null}
@@ -610,6 +516,15 @@ export default function UsersPage() {
 
                       <td className="py-3">
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setLoginActivityUser(item)}
+                            disabled={busy}
+                            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            title="Connexions"
+                            aria-label="Connexions"
+                          >
+                            <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+                          </button>
                           <button
                             onClick={() => {
                               void handleUpdate(item);
@@ -731,13 +646,13 @@ export default function UsersPage() {
                     onChange={(event) => {
                       const nextRole = normalizeRole(event.target.value);
                       setRole(nextRole);
-                      setCreatePermissions(getDefaultPermissionsForRole(nextRole));
+                      setCreatePermissions(defaultPermissionsFor(nextRole));
                     }}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   >
                     {availableRoles.map((option) => (
-                      <option key={option} value={option}>
-                        {ROLE_LABELS[option]}
+                      <option key={option.slug} value={option.slug}>
+                        {option.name}
                       </option>
                     ))}
                   </select>
@@ -757,11 +672,20 @@ export default function UsersPage() {
 
                   <button
                     type="button"
-                    onClick={() => setCreatePermissions(getDefaultPermissionsForRole(role))}
+                    onClick={() => setCreatePermissions(defaultPermissionsFor(role))}
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-white"
                   >
                     Reinitialiser selon le role
                   </button>
+                </div>
+
+                <div className="text-right">
+                  <Link
+                    href={`/${businessSlug}/roles`}
+                    className="text-xs font-semibold text-indigo-600 hover:underline"
+                  >
+                    + Creer un role personnalise
+                  </Link>
                 </div>
 
                 <PermissionChecklist
@@ -842,7 +766,7 @@ export default function UsersPage() {
                   type="button"
                   onClick={() =>
                     setAccessPermissions(
-                      getDefaultPermissionsForRole(
+                      defaultPermissionsFor(
                         normalizeRole(rowRoleById[accessModalUser.id] || accessModalUser.role),
                       ),
                     )
@@ -882,6 +806,16 @@ export default function UsersPage() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {loginActivityUser && businessSlug ? (
+        <LoginActivityModal
+          mode="user"
+          business={businessSlug}
+          userId={loginActivityUser.id}
+          userName={loginActivityUser.name}
+          onClose={() => setLoginActivityUser(null)}
+        />
       ) : null}
     </div>
   );

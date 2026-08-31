@@ -366,7 +366,7 @@ export default function InventoryPage() {
           </div>
           {loadingBase ? (
             <div className="py-8 text-center text-slate-500">
-              Chargement de l'inventaire...
+              Chargement de l&apos;inventaire...
             </div>
           ) : (
             <div className="overflow-x-auto">

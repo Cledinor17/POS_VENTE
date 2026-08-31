@@ -1,7 +1,10 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Camera } from "lucide-react";
+import BarcodeScannerModal from "@/components/BarcodeScannerModal";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { DEFAULT_PRODUCT_AVATAR_PATH } from "@/lib/productImage";
@@ -14,6 +17,7 @@ import {
   type ProductType,
 } from "@/lib/catalogApi";
 import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
+import { useBusinessDefaults } from "@/lib/useBusinessDefaults";
 type ProductFormState = {
   name: string;
   sku: string;
@@ -79,6 +83,7 @@ export default function NewProductPage() {
   const params = useParams<{ business: string }>();
   const business = params?.business ?? "";
   const { loading: permissionsLoading, permissions: currentPermissions } = useBusinessPermissions(business);
+  const { currency: defaultCurrency } = useBusinessDefaults(business);
   const [form, setForm] = useState<ProductFormState>(initialFormState);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
@@ -87,6 +92,7 @@ export default function NewProductPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const canCreateProducts = hasPermission(currentPermissions, ["products.create", "supplies.manage"]);
 
   useEffect(() => {
@@ -157,9 +163,9 @@ export default function NewProductPage() {
         type: form.type,
         barcode: form.barcode.trim(),
         price: Number(form.price),
-        priceCurrency: "HTG",
+        priceCurrency: defaultCurrency,
         cost: Number(form.cost),
-        costCurrency: "HTG",
+        costCurrency: defaultCurrency,
         stock: Number(form.stock),
         reorderLevel: Number(form.reorderLevel),
         unit: form.unit,
@@ -377,12 +383,22 @@ export default function NewProductPage() {
             {" "}
             <Field label="Code barres">
               {" "}
-              <input
-                value={form.barcode}
-                onChange={(event) => setField("barcode", event.target.value)}
-                placeholder="Optionnel"
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />{" "}
+              <div className="flex gap-2">
+                <input
+                  value={form.barcode}
+                  onChange={(event) => setField("barcode", event.target.value)}
+                  placeholder="Optionnel"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => setScannerOpen(true)}
+                  title="Scanner le code-barres"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Camera className="h-4 w-4" /> Scanner
+                </button>
+              </div>{" "}
             </Field>{" "}
           </div>{" "}
           <div className="md:col-span-2">
@@ -400,10 +416,13 @@ export default function NewProductPage() {
                 />
                 <div className="flex items-center gap-3">
                   <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                    <img
+                    <Image
                       src={imagePreviewUrl || DEFAULT_PRODUCT_AVATAR_PATH}
                       alt="Apercu produit"
+                      width={56}
+                      height={56}
                       className="h-full w-full object-cover"
+                      unoptimized
                     />
                   </div>
                   <div className="text-xs text-slate-500">
@@ -451,6 +470,12 @@ export default function NewProductPage() {
         </div>{" "}
       </form>
       ) : null}{" "}
+      <BarcodeScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDetect={(code) => setField("barcode", code)}
+        title="Scanner le code-barres"
+      />
     </div>
   );
 }

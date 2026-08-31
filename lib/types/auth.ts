@@ -5,6 +5,7 @@ export type AuthUser = {
   email_verified_at?: string | null;
   avatar_path?: string | null;
   avatar_url?: string | null;
+  locale?: string | null;
   [key: string]: unknown;
 };
 
@@ -12,6 +13,13 @@ export type BusinessSummary = {
   id?: number | string;
   slug: string;
   name?: string;
+  role?: string | null;
+  pivot?: {
+    role?: string | null;
+    status?: string | null;
+    permissions?: unknown;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 };
 
@@ -31,6 +39,10 @@ export type VerificationResponse = {
   message: string;
   token: string;
   user: AuthUser;
+};
+
+export type PasswordResetRequestResponse = {
+  message: string;
 };
 
 export type MeResponse = {

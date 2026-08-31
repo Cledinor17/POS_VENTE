@@ -1,11 +1,114 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api";
-import { createBusiness, getOnlineCurrencies, type CurrencyOption } from "@/lib/businessApi";
+import {
+  BUSINESS_TYPES,
+  createBusiness,
+  SUPPORTED_CURRENCIES,
+  type BusinessType,
+} from "@/lib/businessApi";
 import { RequireAuth } from "@/components/RequireAuth";
+import PhoneField from "@/components/PhoneField";
 import { useAuth } from "@/context/AuthContext";
+import { Building2, MapPinned, Sparkles, Wallet } from "lucide-react";
+
+type ModuleFlags = {
+  has_hotel: boolean;
+  has_restaurant: boolean;
+  has_pool: boolean;
+  has_services: boolean;
+  has_moment: boolean;
+};
+
+const NO_MODULES: ModuleFlags = {
+  has_hotel: false, has_restaurant: false, has_pool: false, has_services: false, has_moment: false,
+};
+
+const BUSINESS_TYPE_PRESETS: Record<BusinessType, { label: string; desc: string; flags: ModuleFlags }> = {
+  hotel: {
+    label: "Hotel",
+    desc: "Chambres, reservations, restaurant, piscine, services, moments",
+    flags: { has_hotel: true, has_restaurant: true, has_pool: true, has_services: true, has_moment: true },
+  },
+  restaurant: {
+    label: "Restaurant",
+    desc: "Tables, commandes et POS, sans module hotelier",
+    flags: { ...NO_MODULES, has_restaurant: true },
+  },
+  bar_cafe: {
+    label: "Bar / Cafe",
+    desc: "Tables, commandes et POS, comme un restaurant",
+    flags: { ...NO_MODULES, has_restaurant: true },
+  },
+  retail: {
+    label: "Commerce de detail / Boutique",
+    desc: "POS, stock et comptabilite",
+    flags: NO_MODULES,
+  },
+  hardware_store: {
+    label: "Quincaillerie",
+    desc: "POS, stock et comptabilite",
+    flags: NO_MODULES,
+  },
+  pharmacy: {
+    label: "Pharmacie",
+    desc: "POS, stock et comptabilite",
+    flags: NO_MODULES,
+  },
+  supermarket: {
+    label: "Supermarche / Epicerie",
+    desc: "POS, stock et comptabilite",
+    flags: NO_MODULES,
+  },
+  salon_beauty: {
+    label: "Salon de beaute / Spa",
+    desc: "POS, rendez-vous et prestations (module Services)",
+    flags: { ...NO_MODULES, has_services: true },
+  },
+  garage: {
+    label: "Garage / Mecanique",
+    desc: "POS, stock de pieces et comptabilite",
+    flags: NO_MODULES,
+  },
+  real_estate: {
+    label: "Immobilier",
+    desc: "Facturation, clients et comptabilite",
+    flags: NO_MODULES,
+  },
+  clinic: {
+    label: "Clinique / Centre de sante",
+    desc: "Facturation, clients et comptabilite",
+    flags: NO_MODULES,
+  },
+  school: {
+    label: "Ecole / Centre de formation",
+    desc: "Facturation, clients et comptabilite",
+    flags: NO_MODULES,
+  },
+  fashion: {
+    label: "Boutique de mode / Vetements",
+    desc: "POS, stock et comptabilite",
+    flags: NO_MODULES,
+  },
+  electronics: {
+    label: "Electronique / Informatique",
+    desc: "POS, stock et comptabilite",
+    flags: NO_MODULES,
+  },
+  professional_services: {
+    label: "Services professionnels",
+    desc: "Facturation, clients et comptabilite",
+    flags: NO_MODULES,
+  },
+  other: {
+    label: "Autre",
+    desc: "Tu configureras les modules ensuite dans Parametres",
+    flags: NO_MODULES,
+  },
+};
 
 type FormState = {
   name: string;
@@ -16,6 +119,7 @@ type FormState = {
   website: string;
   taxNumber: string;
   currency: string;
+  exchangeRateValue: string;
   timezone: string;
   invoiceFooter: string;
   line1: string;
@@ -33,7 +137,8 @@ const initialForm: FormState = {
   phone: "",
   website: "",
   taxNumber: "",
-  currency: "USD",
+  currency: "HTG",
+  exchangeRateValue: "",
   timezone: "",
   invoiceFooter: "",
   line1: "",
@@ -56,7 +161,7 @@ export default function BusinessOnboardingPage() {
     ...initialForm,
     timezone: typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Port-au-Prince" : "America/Port-au-Prince",
   }));
-  const [currencies, setCurrencies] = useState<CurrencyOption[]>([]);
+  const [businessType, setBusinessType] = useState<BusinessType>("other");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -79,36 +184,16 @@ export default function BusinessOnboardingPage() {
     return () => URL.revokeObjectURL(objectUrl);
   }, [logoFile]);
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadCurrencies() {
-      try {
-        const items = await getOnlineCurrencies();
-        if (mounted) setCurrencies(items);
-      } catch {
-        if (mounted) setCurrencies([]);
-      }
-    }
-
-    void loadCurrencies();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const currencyOptions = useMemo(() => {
-    if (currencies.length > 0) return currencies;
-    return [
-      { code: "USD", name: "US Dollar" },
-      { code: "HTG", name: "Haitian Gourde" },
-      { code: "EUR", name: "Euro" },
-    ];
-  }, [currencies]);
-
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+
+    const exchangeRateValue = Number(form.exchangeRateValue);
+    if (!form.exchangeRateValue.trim() || !Number.isFinite(exchangeRateValue) || exchangeRateValue <= 0) {
+      setError("Le taux de change est obligatoire (ex: 132.5 pour 1 USD).");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -121,8 +206,12 @@ export default function BusinessOnboardingPage() {
         website: form.website.trim() || undefined,
         tax_number: form.taxNumber.trim() || undefined,
         currency: form.currency.trim() || undefined,
+        exchange_rate_direction: "usd_to_htg",
+        exchange_rate_value: exchangeRateValue,
         timezone: form.timezone.trim() || undefined,
         invoice_footer: form.invoiceFooter.trim() || undefined,
+        business_type: businessType,
+        ...BUSINESS_TYPE_PRESETS[businessType].flags,
         address: {
           line1: form.line1.trim() || undefined,
           city: form.city.trim() || undefined,
@@ -147,29 +236,52 @@ export default function BusinessOnboardingPage() {
       <div className="min-h-[100dvh] bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.12),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#eef4ff_100%)] px-4 py-4 sm:px-6 lg:px-8">
         <div className="grid min-h-[calc(100dvh-2rem)] w-full gap-6 xl:grid-cols-[minmax(320px,0.88fr)_minmax(0,1.12fr)] xl:gap-8">
           <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-gradient-to-br from-[#0b4f88] via-[#0d63b8] to-[#0f7ad8] p-6 text-white shadow-[0_20px_60px_rgba(11,79,136,0.16)] sm:p-8 xl:sticky xl:top-4 xl:flex xl:min-h-[calc(100dvh-2rem)] xl:flex-col xl:p-10">
+            <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(255,255,255,0.14)_1px,_transparent_1px)] bg-[length:20px_20px]" />
             <div className="absolute inset-y-0 right-0 w-40 bg-[radial-gradient(circle,_rgba(255,255,255,0.2),_transparent_68%)] blur-2xl" />
             <div className="absolute -bottom-16 left-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+            <div className="absolute -top-20 right-0 h-56 w-56 rounded-full bg-[#d4af37]/20 blur-3xl" />
 
             <div className="relative flex h-full flex-col">
               <div className="max-w-xl space-y-4">
-                <span className="inline-flex rounded-full bg-white/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/90 ring-1 ring-white/15">
-                  Onboarding business
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/90 ring-1 ring-white/15">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Derniere etape
                 </span>
                 <h1 className="text-3xl font-semibold text-white sm:text-4xl xl:text-5xl">Creez votre business</h1>
                 <p className="max-w-2xl text-sm leading-6 text-slate-100/85 sm:text-base">
-                  Votre compte est maintenant valide. Il ne reste qu a configurer votre entreprise pour entrer dans le systeme.
+                  Votre compte est maintenant valide. Il ne reste plus qu a configurer votre entreprise pour entrer dans le systeme.
                 </p>
               </div>
 
-              <div className="mt-8 grid gap-4 text-sm text-slate-100/90 sm:grid-cols-2 xl:mt-auto xl:grid-cols-1">
-                <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
-                  Nom commercial, identite legale et slug de votre business.
+              <div className="mt-8 space-y-3 xl:mt-auto">
+                <div className="flex items-start gap-3 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition-colors hover:bg-white/[0.14]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
+                    <Building2 className="h-4 w-4 text-white" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Identite</p>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-100/75">Nom commercial, raison sociale et slug de votre business.</p>
+                  </div>
                 </div>
-                <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
-                  Devise, fuseau horaire et informations de contact.
+
+                <div className="flex items-start gap-3 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition-colors hover:bg-white/[0.14]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
+                    <Wallet className="h-4 w-4 text-white" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Finances</p>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-100/75">Devise, fuseau horaire et informations de contact.</p>
+                  </div>
                 </div>
-                <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm sm:col-span-2 xl:col-span-1">
-                  Adresse de base pour la facturation et les operations.
+
+                <div className="flex items-start gap-3 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition-colors hover:bg-white/[0.14]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
+                    <MapPinned className="h-4 w-4 text-white" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Adresse</p>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-100/75">Adresse de base pour la facturation et les operations.</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -181,6 +293,23 @@ export default function BusinessOnboardingPage() {
               ) : null}
 
               <form onSubmit={onSubmit} className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Type d&apos;activite</label>
+                  <p className="mt-0.5 text-xs text-slate-500">Modifiable ensuite dans Parametres.</p>
+                  <select
+                    value={businessType}
+                    onChange={(event) => setBusinessType(event.target.value as BusinessType)}
+                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
+                  >
+                    {BUSINESS_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {BUSINESS_TYPE_PRESETS[type].label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-xs text-slate-500">{BUSINESS_TYPE_PRESETS[businessType].desc}</p>
+                </div>
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <label className="text-sm font-medium text-slate-700">Nom du business</label>
@@ -233,12 +362,10 @@ export default function BusinessOnboardingPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <label className="text-sm font-medium text-slate-700">Telephone</label>
-                    <input
-                      type="text"
+                    <PhoneField
                       value={form.phone}
-                      onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
-                      className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
-                      placeholder="+509 ..."
+                      onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
+                      className="mt-1 w-full"
                     />
                   </div>
 
@@ -262,12 +389,29 @@ export default function BusinessOnboardingPage() {
                       onChange={(event) => setForm((prev) => ({ ...prev, currency: event.target.value }))}
                       className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
                     >
-                      {currencyOptions.map((currency) => (
+                      {SUPPORTED_CURRENCIES.map((currency) => (
                         <option key={currency.code} value={currency.code}>
                           {currency.code} - {currency.name}
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Taux de change (1 USD = ? HTG)</label>
+                    <input
+                      type="number"
+                      min="0.000001"
+                      step="0.01"
+                      required
+                      value={form.exchangeRateValue}
+                      onChange={(event) => setForm((prev) => ({ ...prev, exchangeRateValue: event.target.value }))}
+                      className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
+                      placeholder="Ex: 132.5"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      Modifiable ensuite dans Parametres. Verifiez le taux du jour avant de valider.
+                    </p>
                   </div>
 
                   <div>
@@ -305,15 +449,18 @@ export default function BusinessOnboardingPage() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-slate-700">Logo de l'entreprise</label>
+                  <label className="text-sm font-medium text-slate-700">Logo de l&apos;entreprise</label>
                   <div className="mt-1 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                       <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white text-lg font-semibold text-slate-500 shadow-sm">
                         {logoPreviewUrl ? (
-                          <img
+                          <Image
                             src={logoPreviewUrl}
                             alt="Apercu logo"
+                            width={80}
+                            height={80}
                             className="h-full w-full object-cover"
+                            unoptimized
                           />
                         ) : (
                           <span>{(form.name.trim().slice(0, 1) || "B").toUpperCase()}</span>

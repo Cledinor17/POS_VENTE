@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
@@ -31,7 +31,7 @@ export default function HotelAmenitiesPage() {
   const [icon, setIcon] = useState("");
   const [description, setDescription] = useState("");
 
-  async function loadAmenities() {
+  const loadAmenities = useCallback(async () => {
     if (!business) return;
     setLoading(true);
     setError("");
@@ -43,11 +43,11 @@ export default function HotelAmenitiesPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [business]);
 
   useEffect(() => {
     void loadAmenities();
-  }, [business]);
+  }, [loadAmenities]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

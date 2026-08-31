@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
@@ -135,7 +135,7 @@ export default function HotelFoliosPage() {
   const [orderNote, setOrderNote] = useState("");
   const [orderLines, setOrderLines] = useState<OrderLine[]>([createOrderLine()]);
 
-  async function loadReservations() {
+  const loadReservations = useCallback(async () => {
     if (!business) return;
     setLoadingReservations(true);
     setError("");
@@ -150,9 +150,9 @@ export default function HotelFoliosPage() {
     } finally {
       setLoadingReservations(false);
     }
-  }
+  }, [business]);
 
-  async function loadProducts() {
+  const loadProducts = useCallback(async () => {
     if (!business) return;
     setLoadingProducts(true);
     try {
@@ -164,9 +164,9 @@ export default function HotelFoliosPage() {
     } finally {
       setLoadingProducts(false);
     }
-  }
+  }, [business]);
 
-  async function loadBusinessConfig() {
+  const loadBusinessConfig = useCallback(async () => {
     if (!business) return;
     try {
       const data = await getBusinessSettings(business);
@@ -175,9 +175,9 @@ export default function HotelFoliosPage() {
     } catch (err) {
       setError(getErrorMessage(err));
     }
-  }
+  }, [business]);
 
-  async function loadFolio(reservationId: string) {
+  const loadFolio = useCallback(async (reservationId: string) => {
     if (!business || !reservationId) {
       setFolio(null);
       return;
@@ -193,9 +193,9 @@ export default function HotelFoliosPage() {
     } finally {
       setLoadingFolio(false);
     }
-  }
+  }, [business]);
 
-  async function loadReservationOrders(nextFolio: HotelReservationFolio | null) {
+  const loadReservationOrders = useCallback(async (nextFolio: HotelReservationFolio | null) => {
     if (!business || !nextFolio?.reservation?.room_id) {
       setReservationOrders([]);
       return;
@@ -224,19 +224,19 @@ export default function HotelFoliosPage() {
     } finally {
       setLoadingOrders(false);
     }
-  }
+  }, [business]);
 
   useEffect(() => {
     void loadReservations();
-  }, [business]);
+  }, [loadReservations]);
 
   useEffect(() => {
     void loadProducts();
-  }, [business]);
+  }, [loadProducts]);
 
   useEffect(() => {
     void loadBusinessConfig();
-  }, [business]);
+  }, [loadBusinessConfig]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -249,7 +249,7 @@ export default function HotelFoliosPage() {
 
   useEffect(() => {
     void loadFolio(selectedReservationId);
-  }, [selectedReservationId]);
+  }, [loadFolio, selectedReservationId]);
 
   useEffect(() => {
     setOrderNote("");
@@ -258,7 +258,7 @@ export default function HotelFoliosPage() {
 
   useEffect(() => {
     void loadReservationOrders(folio);
-  }, [business, folio?.reservation?.room_id, folio?.reservation?.customer_id]);
+  }, [folio, loadReservationOrders]);
 
   useEffect(() => {
     if (!folio?.currency) return;
@@ -851,7 +851,7 @@ export default function HotelFoliosPage() {
                 </div>
                 {orderCurrencyState.mixed ? (
                   <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                    Tous les articles d'une meme commande doivent utiliser la meme devise.
+                    Tous les articles d&apos;une meme commande doivent utiliser la meme devise.
                   </div>
                 ) : null}
 

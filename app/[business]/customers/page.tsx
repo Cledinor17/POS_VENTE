@@ -1,9 +1,14 @@
 "use client";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { Upload } from "lucide-react";
 import IdentityDocumentField from "@/components/IdentityDocumentField";
-import { ApiError } from "@/lib/api";
+import ImportModal, { type ImportColumnHelp } from "@/components/ImportModal";
+import PhoneField from "@/components/PhoneField";
 import { hasPermission } from "@/lib/businessAccess";
+import { getErrorMessage } from "@/lib/errors";
+import { formatPhoneDisplay } from "@/lib/phone";
 import {
   createCustomer,
   extractCustomerIdentityDocument,
@@ -13,11 +18,6 @@ import {
   type CustomerItem,
 } from "@/lib/customersApi";
 import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
-function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Une erreur est survenue.";
-}
 
 type CustomerAddressDraft = Record<keyof CustomerAddress, string>;
 
@@ -40,12 +40,28 @@ type CreateCustomerFormState = {
 };
 
 const IDENTITY_DOCUMENT_TYPE_OPTIONS = [
-  { value: "", label: "Type de piece" },
-  { value: "carte_id", label: "Carte ID" },
-  { value: "passport", label: "Passport" },
-  { value: "permis", label: "Permis" },
-  { value: "autre", label: "Autre" },
+  { value: "", labelKey: "identity_type_placeholder" },
+  { value: "carte_id", labelKey: "identity_type_id_card" },
+  { value: "passport", labelKey: "identity_type_passport" },
+  { value: "permis", labelKey: "identity_type_license" },
+  { value: "autre", labelKey: "identity_type_other" },
 ] as const;
+
+const CUSTOMER_IMPORT_COLUMNS: ImportColumnHelp[] = [
+  { name: "name", required: false, description: "Nom du client (au moins un de name/email/phone est requis)." },
+  { name: "company_name", required: false, description: "Nom de l'entreprise." },
+  { name: "email", required: false, description: "Sert a mettre a jour un client existant." },
+  { name: "phone", required: false, description: "Numero de telephone." },
+  { name: "tax_number", required: false, description: "Numero fiscal." },
+  { name: "currency", required: false, description: "Devise du client." },
+  { name: "payment_terms_days", required: false, description: "Delai de paiement en jours." },
+  { name: "credit_limit", required: false, description: "Limite de credit." },
+  { name: "notes", required: false, description: "Notes libres." },
+  { name: "is_active", required: false, description: "1/0 (defaut: 1)." },
+  { name: "billing_line1", required: false, description: "Adresse de facturation." },
+  { name: "billing_city", required: false, description: "Ville de facturation." },
+  { name: "billing_country", required: false, description: "Pays de facturation." },
+];
 
 function createEmptyAddressDraft(): CustomerAddressDraft {
   return {
@@ -115,7 +131,7 @@ function createCustomerFormFromItem(item: CustomerItem): CreateCustomerFormState
   };
 }
 
-function getCustomerDisplayName(item: CustomerItem): string {
+function getCustomerDisplayName(item: CustomerItem, fallback: string): string {
   const candidates = [
     item.name,
     item.companyName,
@@ -130,11 +146,11 @@ function getCustomerDisplayName(item: CustomerItem): string {
     }
   }
 
-  return "Client";
+  return fallback;
 }
 
-function getCustomerInitials(item: CustomerItem): string {
-  const label = getCustomerDisplayName(item);
+function getCustomerInitials(item: CustomerItem, fallback: string): string {
+  const label = getCustomerDisplayName(item, fallback);
   const parts = label
     .split(/\s+/)
     .map((part) => part.trim())
@@ -146,21 +162,9 @@ function getCustomerInitials(item: CustomerItem): string {
 }
 
 const CUSTOMER_FORM_STEPS = [
-  {
-    id: "identity",
-    title: "Identite",
-    description: "Piece d identite et informations principales du client.",
-  },
-  {
-    id: "addresses",
-    title: "Adresses",
-    description: "Facturation et livraison.",
-  },
-  {
-    id: "documents",
-    title: "Gestion",
-    description: "Conditions, notes et parametres du client.",
-  },
+  { id: "identity", titleKey: "step_identity_title", descKey: "step_identity_desc" },
+  { id: "addresses", titleKey: "step_addresses_title", descKey: "step_addresses_desc" },
+  { id: "documents", titleKey: "step_management_title", descKey: "step_management_desc" },
 ] as const;
 
 function composeImportedCustomerName(firstName: string, lastName: string): string {
@@ -168,6 +172,7 @@ function composeImportedCustomerName(firstName: string, lastName: string): strin
 }
 
 export default function CustomersPage() {
+  const t = useTranslations("customers");
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
   const { loading: permissionsLoading, permissions: currentPermissions } = useBusinessPermissions(businessSlug);
@@ -189,6 +194,7 @@ export default function CustomersPage() {
   const [identityImportError, setIdentityImportError] = useState("");
   const [identityImportSuccess, setIdentityImportSuccess] = useState("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [formStep, setFormStep] = useState(0);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const canReadCustomers = hasPermission(currentPermissions, ["customers.read", "customers.manage"]);
@@ -223,7 +229,7 @@ export default function CustomersPage() {
         setLastPage(res.lastPage);
         setTotal(res.total);
       } catch (e) {
-        if (mounted) setError(getErrorMessage(e));
+        if (mounted) setError(getErrorMessage(e, t("generic_error")));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -248,7 +254,14 @@ export default function CustomersPage() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      closeCreateModal();
+      setIsCreateModalOpen(false);
+      setEditingCustomerId(null);
+      setForm(createEmptyCustomerForm());
+      setFormStep(0);
+      setFormError("");
+      setImportingIdentity(false);
+      setIdentityImportError("");
+      setIdentityImportSuccess("");
     };
 
     const previousOverflow = document.body.style.overflow;
@@ -303,7 +316,7 @@ export default function CustomersPage() {
   async function handleIdentityImport() {
     if (!businessSlug) return;
     if (!form.identityDocumentFile) {
-      setIdentityImportError("Ajoute d'abord une piece d'identite.");
+      setIdentityImportError(t("identity_missing"));
       setIdentityImportSuccess("");
       return;
     }
@@ -321,7 +334,7 @@ export default function CustomersPage() {
         extracted.documentNumber.trim() !== "";
 
       if (!hasImportedData) {
-        setIdentityImportError("Aucune information exploitable n'a ete detectee sur cette piece.");
+        setIdentityImportError(t("identity_no_data"));
         return;
       }
 
@@ -341,9 +354,9 @@ export default function CustomersPage() {
         },
       }));
 
-      setIdentityImportSuccess("Informations importees. Verifie les champs avant d'enregistrer.");
+      setIdentityImportSuccess(t("identity_imported"));
     } catch (error) {
-      setIdentityImportError(getErrorMessage(error));
+      setIdentityImportError(getErrorMessage(error, t("generic_error")));
     } finally {
       setImportingIdentity(false);
     }
@@ -378,7 +391,7 @@ export default function CustomersPage() {
     setIsCreateModalOpen(true);
   }
 
-  function validateFormStep(step: number): boolean {
+  function validateFormStep(): boolean {
     return true;
   }
 
@@ -389,16 +402,14 @@ export default function CustomersPage() {
       return;
     }
 
-    for (let current = formStep; current < step; current += 1) {
-      if (!validateFormStep(current)) return;
-    }
+    if (!validateFormStep()) return;
 
     setFormError("");
     setFormStep(step);
   }
 
   function goToNextFormStep() {
-    if (!validateFormStep(formStep)) return;
+    if (!validateFormStep()) return;
     setFormError("");
     setFormStep((prev) => Math.min(prev + 1, CUSTOMER_FORM_STEPS.length - 1));
   }
@@ -412,11 +423,11 @@ export default function CustomersPage() {
     event.preventDefault();
     if (!businessSlug) return;
     if (isEditingCustomer && !canEditCustomers) {
-      setFormError("Tu n'as pas l'autorisation de modifier un client.");
+      setFormError(t("no_edit_permission"));
       return;
     }
     if (!isEditingCustomer && !canCreateCustomers) {
-      setFormError("Tu n'as pas l'autorisation d'ajouter un client.");
+      setFormError(t("no_create_permission"));
       return;
     }
     setSaving(true);
@@ -443,17 +454,17 @@ export default function CustomersPage() {
       if (isEditingCustomer && editingCustomerId) {
         await updateCustomer(businessSlug, editingCustomerId, payload);
         closeCreateModal();
-        setInfo("Client mis a jour avec succes.");
+        setInfo(t("update_success"));
         await refreshCustomers(page);
       } else {
         await createCustomer(businessSlug, payload);
         closeCreateModal();
-        setInfo("Client ajoute avec succes.");
+        setInfo(t("create_success"));
         setPage(1);
         await refreshCustomers(1);
       }
     } catch (e) {
-      setFormError(getErrorMessage(e));
+      setFormError(getErrorMessage(e, t("generic_error")));
     } finally {
       setSaving(false);
     }
@@ -470,7 +481,7 @@ export default function CustomersPage() {
       });
       setItems((prev) => prev.map((row) => (row.id === id ? updated : row)));
     } catch (e) {
-      setError(getErrorMessage(e));
+      setError(getErrorMessage(e, t("generic_error")));
     } finally {
       setBusyId("");
     }
@@ -483,22 +494,30 @@ export default function CustomersPage() {
       <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Clients</h1>
-            <p className="text-slate-500 mt-1">
-              Liste clients reliee au backend.
-            </p>
+            <h1 className="text-2xl font-bold text-slate-900">{t("page_title")}</h1>
+            <p className="text-slate-500 mt-1">{t("page_subtitle")}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="text-sm text-slate-500">
-              {total} client(s) | actifs sur page: {activeCount}
+              {t("count_summary", { total, active: activeCount })}
             </div>
+            {canCreateCustomers ? (
+              <button
+                type="button"
+                onClick={() => setImportOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Upload className="h-4 w-4" />
+                Importer
+              </button>
+            ) : null}
             {canCreateCustomers ? (
               <button
                 type="button"
                 onClick={openCreateModal}
                 className="rounded-xl brand-primary-btn px-4 py-2 text-sm font-semibold text-white"
               >
-                Nouveau client
+                {t("new_customer")}
               </button>
             ) : null}
           </div>
@@ -506,17 +525,17 @@ export default function CustomersPage() {
       </section>
       {!permissionsLoading && !hasCustomerAccess ? (
         <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Ce profil n&apos;a pas encore d&apos;acces au module clients.
+          {t("no_access")}
         </section>
       ) : null}
       {!permissionsLoading && !canReadCustomers && canCreateCustomers ? (
         <section className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          Ce profil peut ajouter des clients, mais ne peut pas consulter la liste complete.
+          {t("create_only_access")}
         </section>
       ) : null}
       {!permissionsLoading && isCustomersReadOnly ? (
         <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          Acces en lecture seule: la consultation reste disponible, mais les actions d&apos;ajout et de modification sont masquees.
+          {t("read_only_access")}
         </section>
       ) : null}
       {error ? (
@@ -545,12 +564,10 @@ export default function CustomersPage() {
             <div className="flex shrink-0 items-start justify-between gap-3">
               <div>
                 <h2 id="customer-modal-title" className="text-lg font-bold text-slate-900">
-                  {isEditingCustomer ? "Modifier client" : "Nouveau client"}
+                  {isEditingCustomer ? t("modal_edit_title") : t("modal_create_title")}
                 </h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  {isEditingCustomer
-                    ? "Modifie le client avec tous ses champs dans un formulaire en 3 etapes."
-                    : "Ajoute le client avec un formulaire en 3 etapes."}
+                  {isEditingCustomer ? t("modal_edit_desc") : t("modal_create_desc")}
                 </p>
               </div>
               <button
@@ -558,7 +575,7 @@ export default function CustomersPage() {
                 onClick={closeCreateModal}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
-                Fermer
+                {t("close")}
               </button>
             </div>
 
@@ -588,10 +605,10 @@ export default function CustomersPage() {
                       }`}
                     >
                       <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 sm:text-xs sm:tracking-[0.2em]">
-                        Etape {index + 1}
+                        {t("step_label", { number: index + 1 })}
                       </div>
-                      <div className="mt-1 text-xs font-bold text-slate-900 sm:text-sm">{step.title}</div>
-                      <div className="mt-1 hidden text-xs text-slate-600 sm:block">{step.description}</div>
+                      <div className="mt-1 text-xs font-bold text-slate-900 sm:text-sm">{t(step.titleKey)}</div>
+                      <div className="mt-1 hidden text-xs text-slate-600 sm:block">{t(step.descKey)}</div>
                     </button>
                   );
                 })}
@@ -599,10 +616,10 @@ export default function CustomersPage() {
 
               <div className="hidden shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 sm:block">
                 <div className="text-sm font-semibold text-slate-900">
-                  {CUSTOMER_FORM_STEPS[formStep]?.title}
+                  {CUSTOMER_FORM_STEPS[formStep] ? t(CUSTOMER_FORM_STEPS[formStep].titleKey) : null}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
-                  {CUSTOMER_FORM_STEPS[formStep]?.description}
+                  {CUSTOMER_FORM_STEPS[formStep] ? t(CUSTOMER_FORM_STEPS[formStep].descKey) : null}
                 </div>
               </div>
 
@@ -619,10 +636,8 @@ export default function CustomersPage() {
                         <div className="rounded-xl border border-slate-200 p-3 space-y-3 sm:p-4">
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                             <div className="space-y-1">
-                              <h3 className="text-sm font-semibold text-slate-900">Piece d'identite</h3>
-                              <p className="text-xs text-slate-500">
-                                Televerse ou prends une photo de la piece, puis importe automatiquement les champs compatibles.
-                              </p>
+                              <h3 className="text-sm font-semibold text-slate-900">{t("identity_section_title")}</h3>
+                              <p className="text-xs text-slate-500">{t("identity_section_desc")}</p>
                             </div>
                             <button
                               type="button"
@@ -630,7 +645,7 @@ export default function CustomersPage() {
                               disabled={importingIdentity || !form.identityDocumentFile}
                               className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {importingIdentity ? "Import en cours..." : "Importer les informations"}
+                              {importingIdentity ? t("import_in_progress") : t("import_button")}
                             </button>
                           </div>
 
@@ -654,14 +669,14 @@ export default function CustomersPage() {
                               >
                                 {IDENTITY_DOCUMENT_TYPE_OPTIONS.map((option) => (
                                   <option key={option.value || "empty"} value={option.value}>
-                                    {option.label}
+                                    {t(option.labelKey)}
                                   </option>
                                 ))}
                               </select>
                               <input
                                 value={form.identityDocumentNumber}
                                 onChange={(event) => updateFormField("identityDocumentNumber", event.target.value)}
-                                placeholder="Numero de piece"
+                                placeholder={t("identity_number_placeholder")}
                                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                               />
                               {isEditingCustomer && editingCustomer?.identityDocumentUrl && !form.identityDocumentFile ? (
@@ -671,7 +686,7 @@ export default function CustomersPage() {
                                   rel="noreferrer"
                                   className="inline-flex w-fit rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 sm:col-span-2"
                                 >
-                                  Voir la piece actuelle
+                                  {t("view_current_document")}
                                 </a>
                               ) : null}
                             </div>
@@ -679,8 +694,8 @@ export default function CustomersPage() {
                             <IdentityDocumentField
                               file={form.identityDocumentFile}
                               onFileChange={handleIdentityDocumentChange}
-                              title="Document"
-                              description="Ajoute une image ou un PDF, puis utilise le bouton d'import pour pre-remplir le formulaire."
+                              title={t("document_field_title")}
+                              description={t("document_field_desc")}
                               className="h-fit"
                               compact
                             />
@@ -692,37 +707,36 @@ export default function CustomersPage() {
                             value={form.code}
                             readOnly
                             disabled
-                            placeholder={isEditingCustomer ? "Code client" : "Code genere automatiquement"}
+                            placeholder={isEditingCustomer ? t("code_placeholder_edit") : t("code_placeholder_new")}
                             className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-slate-500 outline-none"
                           />
                           <input
                             value={form.companyName}
                             onChange={(event) => updateFormField("companyName", event.target.value)}
-                            placeholder="Entreprise"
+                            placeholder={t("company_placeholder")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                           <input
                             value={form.name}
                             onChange={(event) => updateFormField("name", event.target.value)}
-                            placeholder="Nom (optionnel)"
+                            placeholder={t("name_placeholder")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
                           />
                           <input
                             value={form.email}
                             onChange={(event) => updateFormField("email", event.target.value)}
-                            placeholder="Email"
+                            placeholder={t("email_placeholder")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
                           />
-                          <input
+                          <PhoneField
                             value={form.phone}
-                            onChange={(event) => updateFormField("phone", event.target.value)}
-                            placeholder="Telephone"
-                            className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                            onChange={(value) => updateFormField("phone", value)}
+                            placeholder={t("phone_placeholder")}
                           />
                           <input
                             value={form.taxNumber}
                             onChange={(event) => updateFormField("taxNumber", event.target.value)}
-                            placeholder="NIF / NINU"
+                            placeholder={t("tax_number_placeholder")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                         </div>
@@ -732,84 +746,84 @@ export default function CustomersPage() {
                   <div className="min-h-0 overflow-y-auto px-1" style={{ width: `${100 / CUSTOMER_FORM_STEPS.length}%` }}>
                     <div className="grid gap-3 md:grid-cols-2 sm:gap-4">
                       <div className="rounded-xl border border-slate-200 p-3 space-y-2.5 sm:p-4 sm:space-y-3">
-                        <h3 className="text-sm font-semibold text-slate-900">Adresse de facturation</h3>
+                        <h3 className="text-sm font-semibold text-slate-900">{t("billing_address_title")}</h3>
                         <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
                           <input
                             value={form.billingAddress.line1}
                             onChange={(event) => updateFormAddress("billingAddress", "line1", event.target.value)}
-                            placeholder="Ligne 1"
+                            placeholder={t("address_line1")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
                           />
                           <input
                             value={form.billingAddress.line2}
                             onChange={(event) => updateFormAddress("billingAddress", "line2", event.target.value)}
-                            placeholder="Ligne 2"
+                            placeholder={t("address_line2")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
                           />
                           <input
                             value={form.billingAddress.city}
                             onChange={(event) => updateFormAddress("billingAddress", "city", event.target.value)}
-                            placeholder="Ville"
+                            placeholder={t("address_city")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                           <input
                             value={form.billingAddress.state}
                             onChange={(event) => updateFormAddress("billingAddress", "state", event.target.value)}
-                            placeholder="Etat / Departement"
+                            placeholder={t("address_state")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                           <input
                             value={form.billingAddress.zip}
                             onChange={(event) => updateFormAddress("billingAddress", "zip", event.target.value)}
-                            placeholder="Code postal"
+                            placeholder={t("address_zip")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                           <input
                             value={form.billingAddress.country}
                             onChange={(event) => updateFormAddress("billingAddress", "country", event.target.value)}
-                            placeholder="Pays"
+                            placeholder={t("address_country")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                         </div>
                       </div>
 
                       <div className="rounded-xl border border-slate-200 p-3 space-y-2.5 sm:p-4 sm:space-y-3">
-                        <h3 className="text-sm font-semibold text-slate-900">Adresse de livraison</h3>
+                        <h3 className="text-sm font-semibold text-slate-900">{t("shipping_address_title")}</h3>
                         <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
                           <input
                             value={form.shippingAddress.line1}
                             onChange={(event) => updateFormAddress("shippingAddress", "line1", event.target.value)}
-                            placeholder="Ligne 1"
+                            placeholder={t("address_line1")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
                           />
                           <input
                             value={form.shippingAddress.line2}
                             onChange={(event) => updateFormAddress("shippingAddress", "line2", event.target.value)}
-                            placeholder="Ligne 2"
+                            placeholder={t("address_line2")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
                           />
                           <input
                             value={form.shippingAddress.city}
                             onChange={(event) => updateFormAddress("shippingAddress", "city", event.target.value)}
-                            placeholder="Ville"
+                            placeholder={t("address_city")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                           <input
                             value={form.shippingAddress.state}
                             onChange={(event) => updateFormAddress("shippingAddress", "state", event.target.value)}
-                            placeholder="Etat / Departement"
+                            placeholder={t("address_state")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                           <input
                             value={form.shippingAddress.zip}
                             onChange={(event) => updateFormAddress("shippingAddress", "zip", event.target.value)}
-                            placeholder="Code postal"
+                            placeholder={t("address_zip")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                           <input
                             value={form.shippingAddress.country}
                             onChange={(event) => updateFormAddress("shippingAddress", "country", event.target.value)}
-                            placeholder="Pays"
+                            placeholder={t("address_country")}
                             className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                           />
                         </div>
@@ -822,7 +836,7 @@ export default function CustomersPage() {
                       <input
                         value={form.currency}
                         onChange={(event) => updateFormField("currency", event.target.value)}
-                        placeholder="Devise"
+                        placeholder={t("currency_placeholder")}
                         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                       />
                       <input
@@ -830,7 +844,7 @@ export default function CustomersPage() {
                         min="0"
                         value={form.paymentTermsDays}
                         onChange={(event) => updateFormField("paymentTermsDays", event.target.value)}
-                        placeholder="Delai paiement (jours)"
+                        placeholder={t("payment_terms_placeholder")}
                         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                       />
                       <input
@@ -839,14 +853,14 @@ export default function CustomersPage() {
                         step="0.01"
                         value={form.creditLimit}
                         onChange={(event) => updateFormField("creditLimit", event.target.value)}
-                        placeholder="Limite credit"
+                        placeholder={t("credit_limit_placeholder")}
                         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                       />
                       <div />
                       <textarea
                         value={form.notes}
                         onChange={(event) => updateFormField("notes", event.target.value)}
-                        placeholder="Notes"
+                        placeholder={t("notes_placeholder")}
                         rows={4}
                         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 sm:col-span-2"
                       />
@@ -862,7 +876,7 @@ export default function CustomersPage() {
                 onClick={closeCreateModal}
                 className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
-                Annuler
+                {t("cancel")}
               </button>
               <div className="flex flex-wrap justify-end gap-2">
                 {formStep > 0 ? (
@@ -871,7 +885,7 @@ export default function CustomersPage() {
                     onClick={goToPreviousFormStep}
                     className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                   >
-                    Precedent
+                    {t("previous")}
                   </button>
                 ) : null}
                 {!isLastFormStep ? (
@@ -880,7 +894,7 @@ export default function CustomersPage() {
                     onClick={goToNextFormStep}
                     className="rounded-xl brand-primary-btn px-4 py-2 text-sm font-semibold text-white"
                   >
-                    Suivant
+                    {t("next")}
                   </button>
                 ) : (
                   <button
@@ -890,11 +904,11 @@ export default function CustomersPage() {
                   >
                     {saving
                       ? isEditingCustomer
-                        ? "Mise a jour..."
-                        : "Ajout..."
+                        ? t("saving_update")
+                        : t("saving_create")
                       : isEditingCustomer
-                        ? "Mettre a jour"
-                        : "Ajouter"}
+                        ? t("submit_update")
+                        : t("submit_create")}
                   </button>
                 )}
               </div>
@@ -906,7 +920,7 @@ export default function CustomersPage() {
       <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
         {!canReadCustomers ? (
           <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-600">
-            La liste des clients n&apos;est pas visible avec ce profil.
+            {t("list_hidden")}
           </div>
         ) : null}
         {canReadCustomers ? (
@@ -915,7 +929,7 @@ export default function CustomersPage() {
             <input
               value={queryInput}
               onChange={(event) => setQueryInput(event.target.value)}
-              placeholder="Rechercher (nom, email, phone...)"
+              placeholder={t("search_placeholder")}
               className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />
             <select
@@ -926,8 +940,8 @@ export default function CustomersPage() {
               }}
               className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
-              <option value="">Tous</option> <option value="1">Actifs</option>
-              <option value="0">Inactifs</option>
+              <option value="">{t("filter_all")}</option> <option value="1">{t("filter_active")}</option>
+              <option value="0">{t("filter_inactive")}</option>
             </select>
             <button
               onClick={() => {
@@ -936,26 +950,27 @@ export default function CustomersPage() {
               }}
               className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
-              Filtrer
+              {t("filter_button")}
             </button>
           </div>
           {loading ? (
             <div className="py-8 text-center text-slate-500">
-              Chargement des clients...
+              {t("loading")}
             </div>
           ) : items.length === 0 ? (
             <div className="py-8 text-center text-slate-500">
-              Aucun client trouve.
+              {t("empty")}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] text-sm">
                 <thead>
                   <tr className="text-left text-slate-500 border-b">
-                    <th className="py-3 pr-3 font-semibold">Client</th>
-                    <th className="py-3 pr-3 font-semibold">Contact</th>
-                    <th className="py-3 pr-3 font-semibold">Statut</th>
-                    <th className="py-3 font-semibold">Actions</th>
+                    <th className="py-3 pr-3 font-semibold">{t("table_customer")}</th>
+                    <th className="py-3 pr-3 font-semibold">{t("table_contact")}</th>
+                    <th className="py-3 pr-3 font-semibold">{t("table_points")}</th>
+                    <th className="py-3 pr-3 font-semibold">{t("table_status")}</th>
+                    <th className="py-3 font-semibold">{t("table_actions")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -966,11 +981,11 @@ export default function CustomersPage() {
                         <td className="py-3 pr-3">
                           <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0d63b8] to-[#f59e0b] text-sm font-bold text-white">
-                              {getCustomerInitials(item)}
+                              {getCustomerInitials(item, t("default_customer_name"))}
                             </div>
                             <div>
                               <div className="font-semibold text-slate-800">
-                                {getCustomerDisplayName(item)}
+                                {getCustomerDisplayName(item, t("default_customer_name"))}
                               </div>
                               <div className="text-xs text-slate-500">
                                 {item.companyName || item.code || "-"}
@@ -980,8 +995,9 @@ export default function CustomersPage() {
                         </td>
                         <td className="py-3 pr-3 text-slate-600">
                           <div>{item.email || "-"}</div>
-                          <div className="text-xs">{item.phone || "-"}</div>
+                          <div className="text-xs">{formatPhoneDisplay(item.phone) || "-"}</div>
                         </td>
+                        <td className="py-3 pr-3 text-slate-600">{item.loyaltyPointsBalance}</td>
                         <td className="py-3 pr-3">
                           <span
                             className={
@@ -990,7 +1006,7 @@ export default function CustomersPage() {
                                 : "inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"
                             }
                           >
-                            {item.isActive ? "Actif" : "Inactif"}
+                            {item.isActive ? t("status_active") : t("status_inactive")}
                           </span>
                         </td>
                         <td className="py-3">
@@ -1002,8 +1018,8 @@ export default function CustomersPage() {
                                     openEditModal(item);
                                   }}
                                   disabled={busy}
-                                  title="Modifier"
-                                  aria-label="Modifier"
+                                  title={t("edit_action")}
+                                  aria-label={t("edit_action")}
                                   className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                                 >
                                   <i
@@ -1016,9 +1032,9 @@ export default function CustomersPage() {
                                     void handleToggle(item);
                                   }}
                                   disabled={busy}
-                                  title={item.isActive ? "Desactiver" : "Activer"}
+                                  title={item.isActive ? t("deactivate_action") : t("activate_action")}
                                   aria-label={
-                                    item.isActive ? "Desactiver" : "Activer"
+                                    item.isActive ? t("deactivate_action") : t("activate_action")
                                   }
                                   className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                                 >
@@ -1033,7 +1049,7 @@ export default function CustomersPage() {
                                 </button>
                               </>
                             ) : (
-                              <span className="text-xs text-slate-400">Lecture seule</span>
+                              <span className="text-xs text-slate-400">{t("read_only_label")}</span>
                             )}
                           </div>
                         </td>
@@ -1046,7 +1062,7 @@ export default function CustomersPage() {
           )}
           <div className="flex items-center justify-between">
             <div className="text-xs text-slate-500">
-              Page {page}/{Math.max(1, lastPage)}
+              {t("page_indicator", { page, lastPage: Math.max(1, lastPage) })}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -1054,20 +1070,32 @@ export default function CustomersPage() {
                 disabled={page <= 1 || loading}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
-                Precedent
+                {t("previous")}
               </button>
               <button
                 onClick={() => setPage((prev) => Math.min(lastPage, prev + 1))}
                 disabled={page >= lastPage || loading}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
-                Suivant
+                {t("next")}
               </button>
             </div>
           </div>
           </>
         ) : null}
       </section>
+      {businessSlug ? (
+        <ImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          business={businessSlug}
+          entityPath="customers"
+          title="Importer des clients"
+          templateFilename="modele_clients.csv"
+          columnsHelp={CUSTOMER_IMPORT_COLUMNS}
+          onImported={() => void refreshCustomers(page)}
+        />
+      ) : null}
     </div>
   );
 }

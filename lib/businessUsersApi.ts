@@ -14,13 +14,20 @@ export type BusinessUserItem = {
   hasCustomPermissions: boolean;
 };
 
+export type BusinessRoleOption = {
+  slug: string;
+  name: string;
+  isCustom: boolean;
+  permissions: BusinessPermission[];
+};
+
 export type BusinessUserListResult = {
   items: BusinessUserItem[];
   currentPage: number;
   perPage: number;
   total: number;
   lastPage: number;
-  roles: string[];
+  roles: BusinessRoleOption[];
   permissions: BusinessPermission[];
 };
 
@@ -115,6 +122,21 @@ function getMeta(raw: unknown, itemCount: number) {
   };
 }
 
+function normalizeRoleOption(raw: unknown): BusinessRoleOption | null {
+  const obj = isObject(raw) ? raw : {};
+  const slug = toString(obj.slug, "");
+  if (!slug) return null;
+
+  return {
+    slug,
+    name: toString(obj.name, slug),
+    isCustom: Boolean(obj.is_custom ?? obj.isCustom),
+    permissions: Array.isArray(obj.permissions)
+      ? obj.permissions.filter((value): value is BusinessPermission => typeof value === "string")
+      : [],
+  };
+}
+
 function normalizeBusinessUser(raw: unknown): BusinessUserItem {
   const obj = isObject(raw) ? raw : {};
   return {
@@ -152,7 +174,7 @@ export async function listBusinessUsers(
     total: meta.total,
     lastPage: meta.lastPage,
     roles: isObject(raw) && Array.isArray(raw.roles)
-      ? raw.roles.filter((value): value is string => typeof value === "string")
+      ? raw.roles.map(normalizeRoleOption).filter((value): value is BusinessRoleOption => value !== null)
       : [],
     permissions: isObject(raw) && Array.isArray(raw.permissions)
       ? raw.permissions.filter((value): value is BusinessPermission => typeof value === "string")

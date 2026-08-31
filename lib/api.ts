@@ -1,3 +1,6 @@
+import { getStoredLocale } from "./locale";
+import { safeGetItem, safeRemoveItem, safeSetItem } from "./safeStorage";
+
 export class ApiError<TBody = unknown> extends Error {
   status: number;
   body: TBody;
@@ -50,15 +53,19 @@ function getErrorMessage(body: unknown, status: number): string {
   return `API Error ${status}`;
 }
 
+// Falls back to an in-memory token when localStorage is unavailable (Safari
+// Private Browsing, strict cookie settings, ...), so the session still works
+// for the current tab even though it won't survive a page reload.
+let memoryToken: string | null = null;
+
 export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("pos_token");
+  return safeGetItem("pos_token") ?? memoryToken;
 }
 
 export function setToken(token: string | null) {
-  if (typeof window === "undefined") return;
-  if (!token) localStorage.removeItem("pos_token");
-  else localStorage.setItem("pos_token", token);
+  memoryToken = token;
+  if (!token) safeRemoveItem("pos_token");
+  else safeSetItem("pos_token", token);
 }
 
 type FetchOptions = RequestInit & { json?: unknown; token?: string | null };
@@ -69,6 +76,7 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
 
   const headers: HeadersInit = {
     Accept: "application/json",
+    "X-Locale": getStoredLocale(),
     ...(options.json ? { "Content-Type": "application/json" } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
@@ -94,6 +102,7 @@ export async function apiFetchBlob(path: string, options: FetchOptions = {}): Pr
 
   const headers: HeadersInit = {
     Accept: "*/*",
+    "X-Locale": getStoredLocale(),
     ...(options.json ? { "Content-Type": "application/json" } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),

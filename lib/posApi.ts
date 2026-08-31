@@ -11,6 +11,8 @@ export type PosCartItem = {
   taxRate: number;
   imagePath: string | null;
   currency?: string;
+  discountType?: "percent" | "fixed" | null;
+  discountValue?: number;
 };
 
 export type PosParkedCart = {
@@ -34,6 +36,8 @@ export type PosCheckoutLine = {
   type: "product" | "service";
   name?: string;
   sku?: string;
+  discountType?: "percent" | "fixed" | null;
+  discountValue?: number;
 };
 
 export type PosApprovalPayload = {
@@ -51,6 +55,9 @@ export type PosCheckoutInput = {
   total: number;
   discountType?: "percent" | "fixed" | null;
   discountValue?: number;
+  redeemPoints?: number;
+  couponCode?: string | null;
+  idempotencyKey?: string;
   paymentMethod: string;
   paymentCurrency?: string;
   paymentAmount?: number;
@@ -75,6 +82,11 @@ export type PosCheckoutResult = {
   paymentDateLabel: string | null;
   receiptQrPayload: string | null;
   receiptQrCodeDataUri: string | null;
+  loyaltyPointsEarned: number;
+  loyaltyPointsRedeemed: number;
+  loyaltyPointsBalanceAfter: number | null;
+  couponCode: string | null;
+  couponDiscountAmount: number;
 };
 
 export type PosSaleHistoryItem = {
@@ -272,6 +284,13 @@ function normalizeParkedItem(raw: unknown): PosCartItem {
     stock: toNumber(obj.stock ?? obj.stock_quantity, 0),
     taxRate: toNumber(obj.tax_rate ?? obj.taxRate, 0),
     imagePath: toString(obj.image_path ?? obj.imagePath, "") || null,
+    discountType:
+      obj.discount_type === "percent" || obj.discount_type === "fixed"
+        ? obj.discount_type
+        : obj.discountType === "percent" || obj.discountType === "fixed"
+          ? obj.discountType
+          : null,
+    discountValue: toNumber(obj.discount_value ?? obj.discountValue, 0),
   };
 }
 
@@ -311,6 +330,14 @@ function normalizeCheckoutResult(raw: unknown): PosCheckoutResult {
     paymentDateLabel: toString(obj.payment_date_label ?? obj.paymentDateLabel, "") || null,
     receiptQrPayload: toString(obj.receipt_qr_payload ?? obj.receiptQrPayload, "") || null,
     receiptQrCodeDataUri: toString(obj.receipt_qr_code_data_uri ?? obj.receiptQrCodeDataUri, "") || null,
+    loyaltyPointsEarned: toNumber(obj.loyalty_points_earned ?? obj.loyaltyPointsEarned, 0),
+    loyaltyPointsRedeemed: toNumber(obj.loyalty_points_redeemed ?? obj.loyaltyPointsRedeemed, 0),
+    loyaltyPointsBalanceAfter:
+      obj.loyalty_points_balance_after != null || obj.loyaltyPointsBalanceAfter != null
+        ? toNumber(obj.loyalty_points_balance_after ?? obj.loyaltyPointsBalanceAfter, 0)
+        : null,
+    couponCode: toString(obj.coupon_code ?? obj.couponCode, "") || null,
+    couponDiscountAmount: toNumber(obj.coupon_discount_amount ?? obj.couponDiscountAmount, 0),
   };
 }
 
@@ -488,6 +515,8 @@ export async function createPosParkedCart(
       type: item.type,
       stock_quantity: item.stock,
       image_path: item.imagePath,
+      discount_type: item.discountType ?? null,
+      discount_value: item.discountValue ?? null,
     })),
   };
 
@@ -519,6 +548,9 @@ export async function checkoutPosSale(
     grand_total: input.total,
     discount_type: input.discountType ?? null,
     discount_value: input.discountValue ?? null,
+    redeem_points: input.redeemPoints ?? null,
+    coupon_code: input.couponCode ?? null,
+    idempotency_key: input.idempotencyKey ?? null,
     payment_method: input.paymentMethod,
     payment_currency: input.paymentCurrency ?? "HTG",
     cash_received: input.cashReceived ?? null,
@@ -545,6 +577,8 @@ export async function checkoutPosSale(
       type: item.type,
       name: item.name,
       sku: item.sku,
+      discount_type: item.discountType ?? null,
+      discount_value: item.discountValue ?? null,
     })),
   };
 

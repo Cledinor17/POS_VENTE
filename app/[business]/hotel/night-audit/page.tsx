@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
@@ -31,7 +31,7 @@ export default function HotelNightAuditPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     if (!business) return;
     setLoading(true);
     setError("");
@@ -44,11 +44,11 @@ export default function HotelNightAuditPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [business, date]);
 
   useEffect(() => {
     void loadData();
-  }, [business, date]);
+  }, [loadData]);
 
   const paymentRows = useMemo(() => {
     if (!report) return [];

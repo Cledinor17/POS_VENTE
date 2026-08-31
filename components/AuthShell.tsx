@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { BedDouble, Building2, CreditCard, ShieldCheck } from "lucide-react";
+import { Building2, CreditCard, ShieldCheck, ShoppingCart } from "lucide-react";
 
 type FeatureCard = {
   icon: LucideIcon;
@@ -24,14 +24,14 @@ type AuthShellProps = {
 
 const FEATURE_CARDS: FeatureCard[] = [
   {
-    icon: BedDouble,
-    title: "Reservations et sejours",
-    text: "Suivi hotel, moments, housekeeping et night audit dans un seul systeme.",
+    icon: ShoppingCart,
+    title: "Point de vente",
+    text: "Caisse, stock et ventes suivis en temps reel, quel que soit votre secteur d'activite.",
   },
   {
     icon: CreditCard,
     title: "Facturation centralisee",
-    text: "Bar, piscine, commandes hotel et paiements relies au bon business.",
+    text: "Factures, paiements et encaissements relies automatiquement au bon business.",
   },
   {
     icon: Building2,
@@ -41,7 +41,7 @@ const FEATURE_CARDS: FeatureCard[] = [
   {
     icon: ShieldCheck,
     title: "Trace utilisateur",
-    text: "Les operations restent reliees a l utilisateur connecte.",
+    text: "Les operations restent reliees a l'utilisateur connecte.",
   },
 ];
 
@@ -60,6 +60,11 @@ export default function AuthShell({
   return (
     <div className="min-h-[100dvh] bg-[radial-gradient(circle_at_top_left,_rgba(11,79,136,0.18),_transparent_38%),radial-gradient(circle_at_bottom_right,_rgba(245,158,11,0.16),_transparent_34%),linear-gradient(180deg,_#f8fafc_0%,_#eef4ff_100%)] p-3 sm:p-4 md:p-8">
       <div className="mx-auto grid min-h-[calc(100dvh-1.5rem)] max-w-7xl items-stretch gap-4 sm:gap-6 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="flex flex-col items-center gap-1 text-center lg:hidden">
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#0b4f88]">{eyebrow}</span>
+          <h1 className="text-2xl font-semibold text-[#0f172a]">{title}</h1>
+        </div>
+
         <section
           className={`flex items-start justify-center lg:items-center ${formFirst ? "lg:order-1" : "lg:order-2"}`}
         >
@@ -70,7 +75,7 @@ export default function AuthShell({
         </section>
 
         <section
-          className={`relative overflow-hidden rounded-[1.6rem] border border-white/60 bg-gradient-to-br from-[#0b4f88] via-[#0d63b8] to-[#f59e0b] p-5 text-white shadow-[0_30px_80px_rgba(11,79,136,0.18)] sm:rounded-[2rem] sm:p-6 md:p-8 lg:p-10 ${formFirst ? "lg:order-2" : "lg:order-1"}`}
+          className={`relative hidden overflow-hidden rounded-[1.6rem] border border-white/60 bg-gradient-to-br from-[#0b4f88] via-[#0d63b8] to-[#f59e0b] p-5 text-white shadow-[0_30px_80px_rgba(11,79,136,0.18)] sm:rounded-[2rem] sm:p-6 md:p-8 lg:block lg:p-10 ${formFirst ? "lg:order-2" : "lg:order-1"}`}
         >
           <div className="absolute -left-16 top-6 h-32 w-32 rounded-full bg-white/10 blur-2xl sm:top-10 sm:h-40 sm:w-40" />
           <div className="absolute right-0 top-1/3 h-32 w-32 rounded-full bg-orange-200/20 blur-3xl sm:h-48 sm:w-48" />

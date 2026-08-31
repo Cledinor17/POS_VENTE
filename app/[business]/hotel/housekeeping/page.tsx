@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
@@ -127,7 +127,7 @@ export default function HotelHousekeepingPage() {
     });
   }, [employees, taskType]);
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     if (!business) return;
     setLoading(true);
     setError("");
@@ -152,11 +152,11 @@ export default function HotelHousekeepingPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [business, dateFilter]);
 
   useEffect(() => {
     void loadData();
-  }, [business, dateFilter]);
+  }, [loadData]);
 
   useEffect(() => {
     if (!assignedEmployeeId) return;

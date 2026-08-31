@@ -1,9 +1,11 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
   Banknote,
+  Camera,
   CheckCircle2,
   CreditCard,
   Info,
@@ -15,9 +17,14 @@ import {
   Printer,
   Search,
   Smartphone,
+  Star,
+  Tag,
   Trash2,
+  UserRound,
   Wallet,
+  X,
 } from "lucide-react";
+import BarcodeScannerModal from "@/components/BarcodeScannerModal";
 import SensitiveActionApprovalModal, {
   type SensitiveActionApproval,
 } from "@/components/SensitiveActionApprovalModal";
@@ -25,6 +32,8 @@ import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
 import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
 import { hasPermission } from "@/lib/businessAccess";
+import { listCustomers, type CustomerItem } from "@/lib/customersApi";
+import { validateCoupon } from "@/lib/couponsApi";
 import {
   listBusinessApprovers,
   type BusinessApproverAbility,
@@ -43,9 +52,23 @@ import {
   getPosPaymentMethods,
   listPosParkedCarts,
   type PosApprovalPayload,
+  type PosCheckoutInput,
+  type PosCheckoutResult,
   type PosParkedCart as PosParkedCartApi,
   type PosPaymentMethodConfig,
 } from "@/lib/posApi";
+import {
+  listPrinters,
+  openCashDrawer,
+  printReceiptOnPrinter,
+  type PrinterItem,
+} from "@/lib/printersApi";
+import { printRawEscposViaQz } from "@/lib/qzPrint";
+import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
+import { enqueuePendingSale, getCachedProducts, listPendingSales, setCachedProducts } from "@/lib/offlineDb";
+import { syncPendingSales } from "@/lib/offlineSync";
+import { useOnlineStatus } from "@/lib/useOnlineStatus";
+import { getCurrentCashSession, openCashSession, type CashSession } from "@/lib/cashSessionApi";
 
 type CartItem = {
   productId: string;
@@ -58,7 +81,20 @@ type CartItem = {
   stock: number;
   taxRate: number;
   imagePath: string | null;
+  discountType?: "percent" | "fixed" | null;
+  discountValue?: number;
 };
+
+function computeItemDiscount(
+  lineGross: number,
+  discountType: "percent" | "fixed" | null | undefined,
+  discountValue: number | undefined,
+): number {
+  const value = discountValue ?? 0;
+  if (!discountType || value <= 0 || lineGross <= 0) return 0;
+  const amount = discountType === "percent" ? (lineGross * value) / 100 : value;
+  return Math.min(lineGross, Math.max(0, amount));
+}
 type ParkedCart = {
   id: string;
   note: string;
@@ -77,6 +113,7 @@ type PaymentMethod = {
   icon: React.ComponentType<{ className?: string }>;
 };
 type CompletedSale = {
+  saleId: string;
   receiptNo: string;
   createdAt: string;
   businessName: string;
@@ -129,6 +166,17 @@ function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Une erreur est survenue.";
+}
+function generateClientId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `off-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+function formatCacheTimestamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("fr-FR");
 }
 function getStringField(
   source: unknown,
@@ -185,7 +233,7 @@ function parsePaymentMethodIds(raw: string | null): PaymentMethodId[] {
 function getConfiguredPaymentMethods(business: string): PaymentMethod[] {
   if (typeof window === "undefined") return DEFAULT_PAYMENT_METHODS;
   const ids = parsePaymentMethodIds(
-    localStorage.getItem(`pos_payment_methods:${business}`),
+    safeGetItem(`pos_payment_methods:${business}`),
   );
   if (ids.length === 0) return DEFAULT_PAYMENT_METHODS;
   const lookup = new Map(
@@ -266,7 +314,8 @@ function fromApiParkedCart(cart: PosParkedCartApi): ParkedCart {
 function buildReceiptHtml(sale: CompletedSale): string {
   const linesHtml = sale.items
     .map((item) => {
-      const lineTotal = item.qty * item.price;
+      const lineGross = item.qty * item.price;
+      const lineTotal = lineGross - computeItemDiscount(lineGross, item.discountType, item.discountValue);
       return `<tr><td><div class="item-name">${escapeHtml(item.name)}</div>${item.sku ? `<div class="item-meta">${escapeHtml(item.sku)}</div>` : ""}</td><td style="text-align:right">${escapeHtml(String(item.qty))} x ${escapeHtml(formatMoney(item.price, sale.saleCurrency))}</td><td style="text-align:right">${escapeHtml(formatMoney(lineTotal, sale.saleCurrency))}</td></tr>`;
     })
     .join("");
@@ -338,19 +387,70 @@ export default function PosPage() {
   const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [discountType, setDiscountType] = useState<"none" | DiscountType>("none");
   const [discountValueInput, setDiscountValueInput] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(null);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerResults, setCustomerResults] = useState<CustomerItem[]>([]);
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
+  const [redeemPointsInput, setRedeemPointsInput] = useState("");
+  const [discountEditorProductId, setDiscountEditorProductId] = useState<string | null>(null);
+  const [couponCodeInput, setCouponCodeInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountAmount: number } | null>(null);
+  const [couponValidating, setCouponValidating] = useState(false);
+  const [couponError, setCouponError] = useState("");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [lastSale, setLastSale] = useState<CompletedSale | null>(null);
+  const [defaultPrinter, setDefaultPrinter] = useState<PrinterItem | null>(null);
+  const [openingDrawer, setOpeningDrawer] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [approvalDialog, setApprovalDialog] = useState<ApprovalDialogState | null>(null);
   const [approvalApprovers, setApprovalApprovers] = useState<BusinessApproverItem[]>([]);
   const [approvalApproversLoading, setApprovalApproversLoading] = useState(false);
+  const [offlineCatalogAt, setOfflineCatalogAt] = useState<string | null>(null);
+  const [pendingSalesCount, setPendingSalesCount] = useState(0);
+  const [syncingSales, setSyncingSales] = useState(false);
+  const isOnline = useOnlineStatus();
+  const [cashSession, setCashSession] = useState<CashSession | null>(null);
+  const [cashSessionLoading, setCashSessionLoading] = useState(true);
+  const [showOpenRegisterForm, setShowOpenRegisterForm] = useState(false);
+  const [openingAmounts, setOpeningAmounts] = useState<{ HTG: string; USD: string }>({ HTG: "0.00", USD: "0.00" });
+  const [openingNoteInput, setOpeningNoteInput] = useState("");
+  const [openingRegister, setOpeningRegister] = useState(false);
+  const registerOpen = cashSession?.status === "open";
   const queryInputRef = useRef<HTMLInputElement | null>(null);
-  function pushNotice(message: string, tone: NoticeTone = "info") {
+  const pushNotice = useCallback((message: string, tone: NoticeTone = "info") => {
     setNotice({ id: Date.now(), tone, message });
-  }
-  function pushError(message: string) {
+  }, []);
+  const pushError = useCallback((message: string) => {
     setError(message);
     setNotice({ id: Date.now(), tone: "error", message });
-  }
+  }, []);
+  useEffect(() => {
+    if (!businessSlug) return;
+    const query = customerQuery.trim();
+    if (query.length < 2) {
+      setCustomerResults([]);
+      return;
+    }
+    let cancelled = false;
+    setCustomerSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      void listCustomers(businessSlug, { q: query, perPage: 8 })
+        .then((res) => {
+          if (!cancelled) setCustomerResults(res.items);
+        })
+        .catch(() => {
+          if (!cancelled) setCustomerResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setCustomerSearchLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [businessSlug, customerQuery]);
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => {
@@ -385,7 +485,7 @@ export default function PosPage() {
     return () => {
       cancelled = true;
     };
-  }, [approvalDialog, businessSlug]);
+  }, [approvalDialog, businessSlug, pushError]);
   useEffect(() => {
     let mounted = true;
     async function loadProducts() {
@@ -394,14 +494,81 @@ export default function PosPage() {
       setError("");
       try {
         const data = await getProducts(businessSlug);
-        if (mounted) setProducts(data);
+        if (mounted) {
+          setProducts(data);
+          setOfflineCatalogAt(null);
+        }
+        void setCachedProducts(businessSlug, data);
       } catch (e) {
-        if (mounted) pushError(getErrorMessage(e));
+        const cached = await getCachedProducts(businessSlug);
+        if (cached && mounted) {
+          setProducts(cached.products);
+          setOfflineCatalogAt(cached.cachedAt);
+        } else if (mounted) {
+          pushError(getErrorMessage(e));
+        }
       } finally {
         if (mounted) setLoadingProducts(false);
       }
     }
     void loadProducts();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug, pushError]);
+  useEffect(() => {
+    if (isOnline) return;
+    setSelectedCustomer(null);
+    setCustomerQuery("");
+    setCustomerDropdownOpen(false);
+    setRedeemPointsInput("");
+    setAppliedCoupon(null);
+    setCouponCodeInput("");
+    setCouponError("");
+  }, [isOnline]);
+  useEffect(() => {
+    if (!businessSlug) return;
+    let mounted = true;
+    function refreshPendingCount() {
+      void listPendingSales(businessSlug).then((items) => {
+        if (mounted) setPendingSalesCount(items.length);
+      });
+    }
+    refreshPendingCount();
+    async function runSync() {
+      setSyncingSales(true);
+      try {
+        await syncPendingSales(businessSlug);
+      } finally {
+        if (mounted) setSyncingSales(false);
+        refreshPendingCount();
+      }
+    }
+    if (isOnline) void runSync();
+    function handleOnline() {
+      void runSync();
+    }
+    window.addEventListener("online", handleOnline);
+    return () => {
+      mounted = false;
+      window.removeEventListener("online", handleOnline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessSlug]);
+  useEffect(() => {
+    if (!businessSlug) return;
+    let mounted = true;
+    setCashSessionLoading(true);
+    getCurrentCashSession(businessSlug)
+      .then((session) => {
+        if (mounted) setCashSession(session);
+      })
+      .catch(() => {
+        if (mounted) setCashSession(null);
+      })
+      .finally(() => {
+        if (mounted) setCashSessionLoading(false);
+      });
     return () => {
       mounted = false;
     };
@@ -418,6 +585,23 @@ export default function PosPage() {
       }
     }
     void loadBusinessConfig();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug, pushError]);
+  useEffect(() => {
+    let mounted = true;
+    async function loadDefaultPrinter() {
+      if (!businessSlug) return;
+      try {
+        const items = await listPrinters(businessSlug);
+        if (!mounted) return;
+        setDefaultPrinter(items.find((item) => item.isDefault) ?? items[0] ?? null);
+      } catch {
+        // Aucune imprimante configuree : la caisse retombe sur l'impression navigateur.
+      }
+    }
+    void loadDefaultPrinter();
     return () => {
       mounted = false;
     };
@@ -451,7 +635,7 @@ export default function PosPage() {
     return () => {
       mounted = false;
     };
-  }, [businessSlug]);
+  }, [businessSlug, pushError]);
   useEffect(() => {
     let mounted = true;
     async function loadParkedCarts() {
@@ -469,7 +653,7 @@ export default function PosPage() {
       }
       if (!mounted) return;
       setUseRemoteParked(false);
-      const raw = localStorage.getItem(`pos_parked_carts:${businessSlug}`);
+      const raw = safeGetItem(`pos_parked_carts:${businessSlug}`);
       if (!raw) {
         setParkedCarts([]);
         return;
@@ -485,20 +669,20 @@ export default function PosPage() {
     return () => {
       mounted = false;
     };
-  }, [businessSlug]);
+  }, [businessSlug, pushError]);
   function saveLocalParked(next: ParkedCart[]) {
     setParkedCarts(next);
-    localStorage.setItem(
+    safeSetItem(
       `pos_parked_carts:${businessSlug}`,
       JSON.stringify(next),
     );
   }
-  function getSaleUnitPrice(product: CatalogProduct): number {
+  const getSaleUnitPrice = useCallback((product: CatalogProduct): number => {
     return convertAmount(product.price, product.priceCurrency, saleCurrency, {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
       exchangeRateValue: businessSettings?.exchange_rate_value,
     });
-  }
+  }, [businessSettings, saleCurrency]);
   const categories = useMemo(() => {
     const values = Array.from(
       new Set(products.map((item) => item.category).filter(Boolean)),
@@ -553,8 +737,24 @@ export default function PosPage() {
     () => filteredProducts.filter((item) => !hiddenProductIds[String(item.id)]),
     [filteredProducts, hiddenProductIds],
   );
+  const itemDiscountTotal = useMemo(
+    () =>
+      cart.reduce(
+        (sum, item) =>
+          sum + computeItemDiscount(item.qty * item.price, item.discountType, item.discountValue),
+        0,
+      ),
+    [cart],
+  );
   const subtotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.qty * item.price, 0),
+    () =>
+      cart.reduce(
+        (sum, item) =>
+          sum +
+          (item.qty * item.price -
+            computeItemDiscount(item.qty * item.price, item.discountType, item.discountValue)),
+        0,
+      ),
     [cart],
   );
   const discountValue = safeNumber(discountValueInput);
@@ -573,7 +773,8 @@ export default function PosPage() {
       ),
     [cart],
   );
-  const grandTotal = subtotal - discountAmount + taxTotal;
+  const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
+  const grandTotal = Math.max(0, subtotal - discountAmount - couponDiscountAmount) + taxTotal;
   const itemCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.qty, 0),
     [cart],
@@ -582,20 +783,35 @@ export default function PosPage() {
   useEffect(() => {
     if (!businessSlug || typeof window === "undefined") return;
     const storageKey = `pos_cart_count:${businessSlug}`;
-    localStorage.setItem(storageKey, String(itemCount));
+    safeSetItem(storageKey, String(itemCount));
     window.dispatchEvent(
       new CustomEvent("pos-cart-count-changed", {
         detail: { business: businessSlug, count: itemCount },
       }),
     );
   }, [businessSlug, itemCount]);
+  const loyaltyEnabled = Boolean(businessSettings?.loyalty_enabled);
+  const loyaltyRedeemValue = businessSettings?.loyalty_redeem_value || 1;
+  const loyaltyCapPercent = businessSettings?.loyalty_redemption_cap_percent ?? 50;
+  const maxRedeemablePoints = useMemo(() => {
+    if (!loyaltyEnabled || !selectedCustomer) return 0;
+    const capAmount = (grandTotal * loyaltyCapPercent) / 100;
+    const capPoints = Math.floor(capAmount / loyaltyRedeemValue);
+    return Math.max(0, Math.min(selectedCustomer.loyaltyPointsBalance, capPoints));
+  }, [grandTotal, loyaltyCapPercent, loyaltyEnabled, loyaltyRedeemValue, selectedCustomer]);
+  const redeemPoints = Math.min(
+    Math.max(0, Math.trunc(safeNumber(redeemPointsInput))),
+    maxRedeemablePoints,
+  );
+  const pointsDiscountAmount = redeemPoints * loyaltyRedeemValue;
+  const remainingAfterPoints = Math.max(0, grandTotal - pointsDiscountAmount);
   const amountDueInPaymentCurrency = useMemo(
     () =>
-      convertAmount(grandTotal, saleCurrency, paymentCurrency, {
+      convertAmount(remainingAfterPoints, saleCurrency, paymentCurrency, {
         exchangeRateDirection: businessSettings?.exchange_rate_direction,
         exchangeRateValue: businessSettings?.exchange_rate_value,
       }),
-    [businessSettings, grandTotal, paymentCurrency, saleCurrency],
+    [businessSettings, remainingAfterPoints, paymentCurrency, saleCurrency],
   );
   const cashReceived = safeNumber(cashReceivedInput);
   const cashDelta = cashReceived - amountDueInPaymentCurrency;
@@ -617,7 +833,7 @@ export default function PosPage() {
     const nextQty = Math.min(maxQty, Math.max(1, normalized));
     setProductQtyById((prev) => ({ ...prev, [productId]: nextQty }));
   }
-  function addToCart(product: CatalogProduct, requestedQty = 1) {
+  const addToCart = useCallback((product: CatalogProduct, requestedQty = 1) => {
     const qtyToAdd = Math.max(1, Math.trunc(requestedQty || 1));
     if (!product.active || product.status === "archived") {
       pushError("Produit inactif: impossible a vendre.");
@@ -672,8 +888,8 @@ export default function PosPage() {
         "success",
       );
     }
-  }
-  function tryAddScannedProduct(rawCode: string): boolean {
+  }, [getSaleUnitPrice, pushError, pushNotice, saleCurrency]);
+  const tryAddScannedProduct = useCallback((rawCode: string): boolean => {
     const normalized = rawCode.trim().toLowerCase();
     if (!normalized) return false;
 
@@ -687,7 +903,12 @@ export default function PosPage() {
       queryInputRef.current?.select();
     }, 0);
     return true;
-  }
+  }, [addToCart, barcodeLookup]);
+  const handleCameraScan = useCallback((code: string) => {
+    if (!tryAddScannedProduct(code)) {
+      pushError(`Produit introuvable pour le code ${code}.`);
+    }
+  }, [pushError, tryAddScannedProduct]);
   useEffect(() => {
     const normalized = query.trim();
     if (normalized.length < 4) return;
@@ -697,7 +918,7 @@ export default function PosPage() {
     }, 120);
 
     return () => window.clearTimeout(timer);
-  }, [query, barcodeLookup]);
+  }, [query, tryAddScannedProduct]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       queryInputRef.current?.focus();
@@ -726,11 +947,23 @@ export default function PosPage() {
     if (current) pushNotice(`${current.name} retire du panier.`, "info");
     setCart((prev) => prev.filter((item) => item.productId !== productId));
   }
+  function setLineDiscount(
+    productId: string,
+    discountType: "percent" | "fixed" | null,
+    discountValue: number,
+  ) {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.productId === productId ? { ...item, discountType, discountValue } : item,
+      ),
+    );
+  }
   function clearCurrentCart() {
     setCart([]);
     setCashReceivedInput("");
     setDiscountType("none");
     setDiscountValueInput("");
+    setDiscountEditorProductId(null);
     setError("");
   }
   async function parkCurrentCart() {
@@ -805,6 +1038,115 @@ export default function PosPage() {
       pushError(getErrorMessage(e));
     }
   }
+  async function printSaleReceipt(sale: CompletedSale) {
+    if (!defaultPrinter || !businessSlug) {
+      printReceipt(sale);
+      return;
+    }
+    try {
+      const result = await printReceiptOnPrinter(businessSlug, defaultPrinter.id, sale.saleId);
+      if (result.printed) {
+        pushNotice(`Ticket envoye a l'imprimante "${defaultPrinter.name}".`, "success");
+        return;
+      }
+      if (!result.qzPrinterName) {
+        throw new Error("Imprimante QZ non configuree.");
+      }
+      await printRawEscposViaQz(result.qzPrinterName, result.data);
+      pushNotice(`Ticket envoye a l'imprimante "${defaultPrinter.name}" via QZ Tray.`, "success");
+    } catch (e) {
+      pushNotice(
+        `Impression thermique impossible (${getErrorMessage(e)}), aperçu navigateur ouvert.`,
+        "warning",
+      );
+      printReceipt(sale);
+    }
+  }
+  async function handleOpenDrawer() {
+    if (!defaultPrinter || !businessSlug) return;
+    setOpeningDrawer(true);
+    try {
+      const result = await openCashDrawer(businessSlug, defaultPrinter.id);
+      if (result.opened) {
+        pushNotice("Tiroir-caisse ouvert.", "success");
+        return;
+      }
+      if (!result.qzPrinterName) {
+        throw new Error("Imprimante QZ non configuree.");
+      }
+      await printRawEscposViaQz(result.qzPrinterName, result.data);
+      pushNotice("Tiroir-caisse ouvert via QZ Tray.", "success");
+    } catch (e) {
+      pushError(getErrorMessage(e));
+    } finally {
+      setOpeningDrawer(false);
+    }
+  }
+  async function handleManualSync() {
+    if (!businessSlug || syncingSales) return;
+    setSyncingSales(true);
+    try {
+      await syncPendingSales(businessSlug);
+      const remaining = await listPendingSales(businessSlug);
+      setPendingSalesCount(remaining.length);
+      if (remaining.length === 0) {
+        pushNotice("Ventes hors-ligne synchronisees.", "success");
+      } else {
+        pushNotice(`${remaining.length} vente(s) hors-ligne restent a synchroniser.`, "warning");
+      }
+    } finally {
+      setSyncingSales(false);
+    }
+  }
+  async function handleOpenRegister() {
+    if (!businessSlug || openingRegister) return;
+    setOpeningRegister(true);
+    try {
+      const session = await openCashSession(businessSlug, {
+        openingAmountByCurrency: {
+          HTG: safeNumber(openingAmounts.HTG),
+          USD: safeNumber(openingAmounts.USD),
+        },
+        openingNote: openingNoteInput.trim() || undefined,
+      });
+      setCashSession(session);
+      setShowOpenRegisterForm(false);
+      setOpeningNoteInput("");
+      pushNotice("Caisse ouverte.", "success");
+    } catch (e) {
+      pushError(getErrorMessage(e));
+    } finally {
+      setOpeningRegister(false);
+    }
+  }
+  async function handleApplyCoupon() {
+    const code = couponCodeInput.trim();
+    if (!businessSlug || !code) return;
+    setCouponValidating(true);
+    setCouponError("");
+    try {
+      const result = await validateCoupon(businessSlug, {
+        code,
+        subtotal,
+        customerId: selectedCustomer?.id,
+      });
+      if (result.valid) {
+        setAppliedCoupon({ code: result.coupon.code, discountAmount: result.discountAmount });
+        setCouponCodeInput("");
+        pushNotice(`Code promo ${result.coupon.code} applique.`, "success");
+      } else {
+        setCouponError(result.message);
+      }
+    } catch (e) {
+      setCouponError(getErrorMessage(e));
+    } finally {
+      setCouponValidating(false);
+    }
+  }
+  function handleRemoveCoupon() {
+    setAppliedCoupon(null);
+    setCouponError("");
+  }
   async function runCheckoutSale(approval?: PosApprovalPayload): Promise<boolean> {
     if (cart.length === 0) {
       pushError("Ajoute des produits avant de passer a la caisse.");
@@ -816,30 +1158,37 @@ export default function PosPage() {
     }
     setCheckoutLoading(true);
     setError("");
-    try {
-      const backendResult = await checkoutPosSale(businessSlug, {
-        cashierId: user?.id ?? undefined,
-        subtotal,
-        tax: taxTotal,
-        total: grandTotal,
-        discountType: discountType === "none" ? null : discountType,
-        discountValue: discountType === "none" ? 0 : discountValue,
-        paymentMethod,
-        paymentCurrency,
-        paymentAmount: amountDueInPaymentCurrency,
-        cashReceived: paymentMethod === "cash" ? cashReceived : amountDueInPaymentCurrency,
-        changeAmount: paymentMethod === "cash" ? cashChange : 0,
-        approval,
-        items: cart.map((item) => ({
-          productId: item.productId,
-          qty: item.qty,
-          unitPrice: item.price,
-          taxRate: item.taxRate,
-          type: item.type,
-          name: item.name,
-          sku: item.sku,
-        })),
-      });
+    const idempotencyKey = generateClientId();
+    const checkoutInput: PosCheckoutInput = {
+      cashierId: user?.id ?? undefined,
+      customerId: selectedCustomer?.id ?? undefined,
+      subtotal,
+      tax: taxTotal,
+      total: grandTotal,
+      discountType: discountType === "none" ? null : discountType,
+      discountValue: discountType === "none" ? 0 : discountValue,
+      redeemPoints: redeemPoints > 0 ? redeemPoints : undefined,
+      couponCode: appliedCoupon?.code ?? undefined,
+      idempotencyKey,
+      paymentMethod,
+      paymentCurrency,
+      paymentAmount: amountDueInPaymentCurrency,
+      cashReceived: paymentMethod === "cash" ? cashReceived : amountDueInPaymentCurrency,
+      changeAmount: paymentMethod === "cash" ? cashChange : 0,
+      approval,
+      items: cart.map((item) => ({
+        productId: item.productId,
+        qty: item.qty,
+        unitPrice: item.price,
+        taxRate: item.taxRate,
+        type: item.type,
+        name: item.name,
+        sku: item.sku,
+        discountType: item.discountType ?? null,
+        discountValue: item.discountValue ?? 0,
+      })),
+    };
+    function finishSale(backendResult: PosCheckoutResult | null, offline: boolean): CompletedSale {
       const businessName =
         backendResult?.businessName ||
         businessSettings?.legal_name ||
@@ -861,7 +1210,10 @@ export default function PosPage() {
         "Caissier",
       );
       const sale: CompletedSale = {
-        receiptNo: backendResult?.receiptNo ?? `TKT-${Date.now()}`,
+        saleId: backendResult?.saleId ?? "",
+        receiptNo: offline
+          ? `OFFLINE-${idempotencyKey.slice(0, 8)}`
+          : (backendResult?.receiptNo ?? `TKT-${Date.now()}`),
         createdAt: backendResult?.createdAt ?? new Date().toISOString(),
         businessName,
         businessAddress,
@@ -890,11 +1242,11 @@ export default function PosPage() {
         change: paymentMethod === "cash" ? cashChange : 0,
       };
       const storageKey = `pos_sales:${businessSlug}`;
-      const existingRaw = localStorage.getItem(storageKey);
+      const existingRaw = safeGetItem(storageKey);
       const existing = existingRaw
         ? (JSON.parse(existingRaw) as CompletedSale[])
         : [];
-      localStorage.setItem(storageKey, JSON.stringify([sale, ...existing]));
+      safeSetItem(storageKey, JSON.stringify([sale, ...existing]));
       setProducts((prev) =>
         prev.map((product) => {
           const line = cart.find(
@@ -906,10 +1258,51 @@ export default function PosPage() {
       );
       setLastSale(sale);
       clearCurrentCart();
-      pushNotice(`Vente terminee. Ticket ${sale.receiptNo}.`, "success");
-      printReceipt(sale);
+      if (offline) {
+        pushNotice(`Vente enregistree hors-ligne. Ticket provisoire ${sale.receiptNo}.`, "warning");
+      } else {
+        pushNotice(`Vente terminee. Ticket ${sale.receiptNo}.`, "success");
+        if (backendResult && backendResult.loyaltyPointsEarned > 0) {
+          pushNotice(
+            `${backendResult.loyaltyPointsEarned} points gagnes. Nouveau solde: ${backendResult.loyaltyPointsBalanceAfter ?? "?"}.`,
+            "info",
+          );
+        }
+      }
+      setSelectedCustomer(null);
+      setCustomerQuery("");
+      setRedeemPointsInput("");
+      setAppliedCoupon(null);
+      setCouponCodeInput("");
+      setCouponError("");
+      void printSaleReceipt(sale);
+      return sale;
+    }
+    try {
+      const backendResult = await checkoutPosSale(businessSlug, checkoutInput);
+      finishSale(backendResult, false);
       return true;
     } catch (e) {
+      if (!(e instanceof ApiError)) {
+        try {
+          await enqueuePendingSale({
+            id: idempotencyKey,
+            business: businessSlug,
+            payload: checkoutInput,
+            status: "pending",
+            error: null,
+            createdAt: new Date().toISOString(),
+            totalDisplay: grandTotal,
+            currencyDisplay: saleCurrency,
+          });
+          finishSale(null, true);
+          setPendingSalesCount((count) => count + 1);
+          return true;
+        } catch (queueError) {
+          pushError(getErrorMessage(queueError));
+          return false;
+        }
+      }
       pushError(getErrorMessage(e));
       return false;
     } finally {
@@ -918,7 +1311,7 @@ export default function PosPage() {
   }
 
   async function checkoutSale() {
-    if (discountAmount > 0 && !canApplyDiscount) {
+    if ((discountAmount > 0 || itemDiscountTotal > 0) && !canApplyDiscount) {
       setApprovalDialog({
         title: "Validation manager requise",
         description:
@@ -950,18 +1343,110 @@ export default function PosPage() {
                 {getStringField(user, ["name"], "Utilisateur")}
               </span>{" "}
             </p>{" "}
+            {!isOnline ? (
+              <p className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Mode hors-ligne
+                {offlineCatalogAt ? ` - catalogue du ${formatCacheTimestamp(offlineCatalogAt)}` : ""}
+              </p>
+            ) : null}
           </div>{" "}
-          {lastSale ? (
-            <button
-              onClick={() => printReceipt(lastSale)}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              {" "}
-              <Printer className="h-4 w-4" /> Reimprimer dernier ticket{" "}
-            </button>
-          ) : null}{" "}
+          <div className="flex items-center gap-2">
+            {pendingSalesCount > 0 ? (
+              <button
+                onClick={() => void handleManualSync()}
+                disabled={syncingSales || !isOnline}
+                className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+              >
+                {" "}
+                {syncingSales
+                  ? "Synchronisation..."
+                  : `${pendingSalesCount} vente(s) en attente - Synchroniser maintenant`}{" "}
+              </button>
+            ) : null}
+            {defaultPrinter?.cashDrawerEnabled ? (
+              <button
+                onClick={handleOpenDrawer}
+                disabled={openingDrawer}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                {" "}
+                <Wallet className="h-4 w-4" />{" "}
+                {openingDrawer ? "Ouverture..." : "Ouvrir le tiroir"}{" "}
+              </button>
+            ) : null}
+            {lastSale ? (
+              <button
+                onClick={() => printSaleReceipt(lastSale)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                {" "}
+                <Printer className="h-4 w-4" /> Reimprimer dernier ticket{" "}
+              </button>
+            ) : null}{" "}
+          </div>{" "}
         </div>{" "}
       </section>{" "}
+      {!cashSessionLoading && !registerOpen ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-amber-900">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-bold">La caisse est fermee</p>
+                <p className="text-sm">Ouvrez la caisse pour pouvoir enregistrer une vente.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowOpenRegisterForm((prev) => !prev)}
+              className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
+            >
+              {showOpenRegisterForm ? "Annuler" : "Ouvrir la caisse"}
+            </button>
+          </div>
+          {showOpenRegisterForm ? (
+            <div className="mt-4 space-y-3 border-t border-amber-200 pt-3">
+              <p className="text-xs font-semibold text-amber-900">Fonds de depart</p>
+              <div className="flex gap-3">
+                {(["HTG", "USD"] as const).map((code) => (
+                  <label key={code} className="flex-1 space-y-1 text-xs font-semibold text-amber-900">
+                    {code}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={openingAmounts[code]}
+                      onChange={(event) =>
+                        setOpeningAmounts((prev) => ({ ...prev, [code]: event.target.value }))
+                      }
+                      className="mt-1 w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-right"
+                    />
+                  </label>
+                ))}
+              </div>
+              <label className="block text-xs font-semibold text-amber-900">
+                Note (optionnel)
+                <input
+                  type="text"
+                  value={openingNoteInput}
+                  onChange={(event) => setOpeningNoteInput(event.target.value)}
+                  placeholder="Ex: monnaie recue de la direction"
+                  className="mt-1 w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void handleOpenRegister()}
+                disabled={openingRegister}
+                className="w-full rounded-xl bg-amber-500 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-60"
+              >
+                {openingRegister ? "Ouverture..." : "Confirmer l'ouverture"}
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       {notice ? (
         <div className="pointer-events-none fixed right-4 top-20 z-[70] w-[min(92vw,360px)]">
           <section
@@ -1010,8 +1495,17 @@ export default function PosPage() {
                   }
                 }}
                 placeholder="Scanner ou rechercher un produit (nom, SKU, code-barres, categorie)"
-                className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-xl border border-slate-300 pl-9 pr-11 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />{" "}
+              <button
+                type="button"
+                onClick={() => setScannerOpen(true)}
+                title="Scanner avec la camera"
+                aria-label="Scanner avec la camera"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+              >
+                <Camera className="h-4 w-4" />
+              </button>
             </div>{" "}
             <select
               value={categoryFilter}
@@ -1077,11 +1571,14 @@ export default function PosPage() {
                             </p>{" "}
                           </div>
                           <div className="w-full flex items-center justify-center">
-                          <div className="flex w-full min-h-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-xs font-bold text-slate-500 sm:min-h-28">
-                            <img
+                          <div className="relative flex w-full min-h-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-xs font-bold text-slate-500 sm:min-h-28">
+                            <Image
                               src={imageSrc}
                               alt={product.name}
+                              fill
+                              sizes="(min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw"
                               className="h-full w-full object-cover"
+                              unoptimized
                               onError={() => {
                                 setBrokenImages((prev) => ({
                                   ...prev,
@@ -1180,6 +1677,10 @@ export default function PosPage() {
                   const imageSrc = brokenImages[item.productId]
                     ? DEFAULT_PRODUCT_AVATAR_PATH
                     : resolveProductImageUrl(item.imagePath);
+                  const lineGross = item.qty * item.price;
+                  const lineDiscount = computeItemDiscount(lineGross, item.discountType, item.discountValue);
+                  const lineNet = lineGross - lineDiscount;
+                  const discountEditorOpen = discountEditorProductId === item.productId;
 
                   return (
                   <div
@@ -1190,11 +1691,14 @@ export default function PosPage() {
                     <div className="flex items-start justify-between gap-3">
                       {" "}
                       <div className="min-w-0 flex items-center gap-2">
-                        <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                          <img
+                        <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                          <Image
                             src={imageSrc}
                             alt={item.name}
+                            fill
+                            sizes="36px"
                             className="h-full w-full object-cover"
+                            unoptimized
                             onError={() => {
                               setBrokenImages((prev) => ({
                                 ...prev,
@@ -1213,15 +1717,61 @@ export default function PosPage() {
                           </div>{" "}
                         </div>
                       </div>{" "}
-                      <button
-                        onClick={() => removeLine(item.productId)}
-                        className="text-rose-600 hover:text-rose-700"
-                        title="Retirer"
-                      >
-                        {" "}
-                        <Trash2 className="h-4 w-4" />{" "}
-                      </button>{" "}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() =>
+                            setDiscountEditorProductId(discountEditorOpen ? null : item.productId)
+                          }
+                          className={`hover:text-indigo-700 ${lineDiscount > 0 ? "text-indigo-600" : "text-slate-400"}`}
+                          title="Remise sur cet article"
+                        >
+                          <Tag className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => removeLine(item.productId)}
+                          className="text-rose-600 hover:text-rose-700"
+                          title="Retirer"
+                        >
+                          {" "}
+                          <Trash2 className="h-4 w-4" />{" "}
+                        </button>{" "}
+                      </div>
                     </div>{" "}
+                    {discountEditorOpen ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2">
+                        <select
+                          value={item.discountType ?? "none"}
+                          onChange={(event) => {
+                            const nextType =
+                              event.target.value === "percent" || event.target.value === "fixed"
+                                ? event.target.value
+                                : null;
+                            setLineDiscount(item.productId, nextType, item.discountValue ?? 0);
+                          }}
+                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                        >
+                          <option value="none">Aucune remise</option>
+                          <option value="percent">%</option>
+                          <option value="fixed">{saleCurrency}</option>
+                        </select>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          disabled={!item.discountType}
+                          value={item.discountValue ? String(item.discountValue) : ""}
+                          onChange={(event) =>
+                            setLineDiscount(
+                              item.productId,
+                              item.discountType ?? null,
+                              safeNumber(event.target.value),
+                            )
+                          }
+                          placeholder="0"
+                          className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-xs disabled:bg-slate-100"
+                        />
+                      </div>
+                    ) : null}
                     <div className="flex items-center justify-between">
                       {" "}
                       <div className="inline-flex items-center gap-1">
@@ -1248,8 +1798,15 @@ export default function PosPage() {
                           <Plus className="h-3.5 w-3.5" />{" "}
                         </button>{" "}
                       </div>{" "}
-                      <div className="text-sm font-bold text-slate-900">
-                        {formatMoney(item.qty * item.price, saleCurrency)}
+                      <div className="text-right">
+                        {lineDiscount > 0 ? (
+                          <div className="text-xs text-slate-400 line-through">
+                            {formatMoney(lineGross, saleCurrency)}
+                          </div>
+                        ) : null}
+                        <div className="text-sm font-bold text-slate-900">
+                          {formatMoney(lineNet, saleCurrency)}
+                        </div>
                       </div>{" "}
                     </div>{" "}
                   </div>
@@ -1264,6 +1821,13 @@ export default function PosPage() {
                 <span>Sous-total</span>{" "}
                 <span>{formatMoney(subtotal, saleCurrency)}</span>{" "}
               </div>{" "}
+              {itemDiscountTotal > 0 ? (
+                <div className="flex justify-between text-emerald-700">
+                  {" "}
+                  <span>Remise articles</span>{" "}
+                  <span>- {formatMoney(itemDiscountTotal, saleCurrency)}</span>{" "}
+                </div>
+              ) : null}{" "}
               <div className="flex justify-between text-slate-600">
                 {" "}
                 <span>Taxes</span> <span>{formatMoney(taxTotal, saleCurrency)}</span>{" "}
@@ -1272,6 +1836,13 @@ export default function PosPage() {
                 <div className="flex justify-between text-emerald-700">
                   {" "}
                   <span>Rabais</span> <span>- {formatMoney(discountAmount, saleCurrency)}</span>{" "}
+                </div>
+              ) : null}{" "}
+              {couponDiscountAmount > 0 ? (
+                <div className="flex justify-between text-emerald-700">
+                  {" "}
+                  <span>Code promo ({appliedCoupon?.code})</span>{" "}
+                  <span>- {formatMoney(couponDiscountAmount, saleCurrency)}</span>{" "}
                 </div>
               ) : null}{" "}
               <div className="flex justify-between text-lg font-bold text-slate-900 pt-1">
@@ -1283,6 +1854,102 @@ export default function PosPage() {
           <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
             {" "}
             <div className="font-bold text-slate-900">Paiement</div>{" "}
+            <div className="space-y-1.5 relative">
+              <label className="text-sm font-medium text-slate-700">Client</label>
+              {!isOnline ? (
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                  <UserRound className="h-4 w-4 shrink-0 text-slate-300" />
+                  Indisponible hors-ligne (client comptoir)
+                </div>
+              ) : selectedCustomer ? (
+                <div className="flex items-center justify-between rounded-xl border border-slate-300 px-3 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="truncate text-sm font-semibold text-slate-800">
+                      {selectedCustomer.name}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCustomer(null);
+                      setRedeemPointsInput("");
+                    }}
+                    className="text-slate-400 hover:text-slate-600"
+                    aria-label="Retirer le client"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <UserRound className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={customerQuery}
+                    onChange={(event) => {
+                      setCustomerQuery(event.target.value);
+                      setCustomerDropdownOpen(true);
+                    }}
+                    onFocus={() => setCustomerDropdownOpen(true)}
+                    onBlur={() => window.setTimeout(() => setCustomerDropdownOpen(false), 150)}
+                    placeholder="Rechercher un client (optionnel - client comptoir par defaut)"
+                    className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                  {customerDropdownOpen && customerQuery.trim().length >= 2 ? (
+                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                      {customerSearchLoading ? (
+                        <div className="px-3 py-2.5 text-sm text-slate-500">Recherche...</div>
+                      ) : customerResults.length === 0 ? (
+                        <div className="px-3 py-2.5 text-sm text-slate-500">Aucun client trouve.</div>
+                      ) : (
+                        customerResults.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustomer(item);
+                              setCustomerDropdownOpen(false);
+                              setCustomerQuery("");
+                            }}
+                            className="block w-full px-3 py-2.5 text-left text-sm hover:bg-slate-50"
+                          >
+                            <div className="font-semibold text-slate-800">{item.name}</div>
+                            {item.phone ? <div className="text-xs text-slate-500">{item.phone}</div> : null}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>{" "}
+            {loyaltyEnabled && selectedCustomer && isOnline ? (
+              <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-sm text-amber-900">
+                  <Star className="h-4 w-4" />
+                  <span>
+                    {selectedCustomer.loyaltyPointsBalance} points disponibles (~
+                    {formatMoney(selectedCustomer.loyaltyPointsBalance * loyaltyRedeemValue, saleCurrency)})
+                  </span>
+                </div>
+                {maxRedeemablePoints > 0 ? (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-amber-900">
+                      Points a utiliser (max {maxRedeemablePoints})
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max={maxRedeemablePoints}
+                      step="1"
+                      value={redeemPointsInput}
+                      onChange={(event) => setRedeemPointsInput(event.target.value)}
+                      className="w-full rounded-xl border border-amber-200 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}{" "}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700">Rabais</label>
@@ -1325,6 +1992,52 @@ export default function PosPage() {
               </div>
             ) : null}
             <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Code promo</label>
+              {!isOnline ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                  Indisponible hors-ligne
+                </div>
+              ) : appliedCoupon ? (
+                <div className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
+                  <span className="text-sm font-semibold text-indigo-800">
+                    {appliedCoupon.code} (- {formatMoney(appliedCoupon.discountAmount, saleCurrency)})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    className="text-indigo-600 hover:text-indigo-800"
+                    aria-label="Retirer le code promo"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    value={couponCodeInput}
+                    onChange={(event) => setCouponCodeInput(event.target.value.toUpperCase())}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleApplyCoupon();
+                      }
+                    }}
+                    placeholder="Code promo"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleApplyCoupon()}
+                    disabled={couponValidating || !couponCodeInput.trim()}
+                    className="shrink-0 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {couponValidating ? "..." : "Appliquer"}
+                  </button>
+                </div>
+              )}
+              {couponError ? <div className="text-xs text-rose-600">{couponError}</div> : null}
+            </div>
+            <div className="space-y-1">
               <label className="text-sm font-medium text-slate-700">
                 Devise de paiement
               </label>
@@ -1341,26 +2054,33 @@ export default function PosPage() {
             </div>{" "}
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900">
               <div>Total facture: {formatMoney(grandTotal, saleCurrency)}</div>
+              {couponDiscountAmount > 0 ? (
+                <div className="mt-1">
+                  Code promo: - {formatMoney(couponDiscountAmount, saleCurrency)}
+                </div>
+              ) : null}
+              {pointsDiscountAmount > 0 ? (
+                <div className="mt-1">
+                  Points utilises: - {formatMoney(pointsDiscountAmount, saleCurrency)}
+                </div>
+              ) : null}
               <div className="mt-1">
                 A encaisser: {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
               </div>
             </div>{" "}
-            <div className="grid grid-cols-2 gap-2">
-              {" "}
-              {paymentMethods.map((method) => {
-                const Icon = method.icon;
-                const selected = paymentMethod === method.id;
-                return (
-                  <button
-                    key={method.id}
-                    onClick={() => setPaymentMethod(method.id)}
-                    className={`rounded-xl border px-3 py-2 text-sm font-semibold inline-flex items-center gap-2 justify-center ${selected ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}
-                  >
-                    {" "}
-                    <Icon className="h-4 w-4" /> {method.label}{" "}
-                  </button>
-                );
-              })}{" "}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Moyen de paiement</label>
+              <select
+                value={paymentMethod}
+                onChange={(event) => setPaymentMethod(event.target.value as PaymentMethodId)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              >
+                {paymentMethods.map((method) => (
+                  <option key={method.id} value={method.id}>
+                    {method.label}
+                  </option>
+                ))}
+              </select>
             </div>{" "}
             {paymentMethod === "cash" ? (
               <div className="space-y-2 pt-1">
@@ -1394,11 +2114,16 @@ export default function PosPage() {
                 {paymentMethods.find((method) => method.id === paymentMethod)?.label || paymentMethod}.
               </div>
             )}{" "}
+            {!cashSessionLoading && !registerOpen ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                Caisse fermee - ouvrez-la ci-dessus pour pouvoir encaisser.
+              </div>
+            ) : null}
             <button
               onClick={() => {
                 void checkoutSale();
               }}
-              disabled={checkoutLoading || cart.length === 0}
+              disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
               className="w-full rounded-xl brand-primary-btn text-white py-3 font-bold disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {" "}
@@ -1503,6 +2228,13 @@ export default function PosPage() {
             setApprovalApprovers([]);
           }
         }}
+      />
+      <BarcodeScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDetect={handleCameraScan}
+        continuous
+        title="Scanner un produit"
       />
     </div>
   );

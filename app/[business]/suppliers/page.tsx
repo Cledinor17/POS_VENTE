@@ -1,18 +1,34 @@
 "use client";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { Upload } from "lucide-react";
 import { ApiError } from "@/lib/api";
+import ImportModal, { type ImportColumnHelp } from "@/components/ImportModal";
+import PhoneField from "@/components/PhoneField";
+import { formatPhoneDisplay } from "@/lib/phone";
 import {
   createSupplier,
   listSuppliers,
   updateSupplier,
   type SupplierItem,
 } from "@/lib/suppliersApi";
+import { SUPPORTED_CURRENCIES } from "@/lib/businessApi";
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Une erreur est survenue.";
 }
+const SUPPLIER_IMPORT_COLUMNS: ImportColumnHelp[] = [
+  { name: "department", required: false, description: "Departement (defaut: General)." },
+  { name: "name", required: true, description: "Nom du fournisseur." },
+  { name: "contact_person", required: false, description: "Personne a contacter." },
+  { name: "email", required: false, description: "Sert a mettre a jour un fournisseur existant." },
+  { name: "phone", required: false, description: "Numero de telephone." },
+  { name: "address", required: false, description: "Adresse." },
+  { name: "currency", required: false, description: "Devise." },
+  { name: "balance", required: false, description: "Solde initial (applique uniquement a la creation)." },
+];
+
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
@@ -37,6 +53,7 @@ export default function SuppliersPage() {
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [reloadSeq, setReloadSeq] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
   const [name, setName] = useState("");
   const [contactPerson, setContactPerson] = useState("");
   const [email, setEmail] = useState("");
@@ -44,6 +61,7 @@ export default function SuppliersPage() {
   const [address, setAddress] = useState("");
   const [department, setDepartment] = useState("General");
   const [balance, setBalance] = useState("");
+  const [currency, setCurrency] = useState("HTG");
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -75,7 +93,7 @@ export default function SuppliersPage() {
     () => items.reduce((sum, item) => sum + item.balance, 0),
     [items],
   );
-  function resetForm() {
+  const resetForm = useCallback(() => {
     setEditingId("");
     setName("");
     setContactPerson("");
@@ -84,19 +102,20 @@ export default function SuppliersPage() {
     setAddress("");
     setDepartment("General");
     setBalance("");
-  }
+    setCurrency("HTG");
+  }, []);
   function openCreateModal() {
     resetForm();
     setFormError("");
     setInfo("");
     setIsFormOpen(true);
   }
-  function closeFormModal() {
+  const closeFormModal = useCallback(() => {
     if (saving) return;
     setIsFormOpen(false);
     setFormError("");
     resetForm();
-  }
+  }, [resetForm, saving]);
   useEffect(() => {
     if (!isFormOpen) return;
     function handleKeyDown(event: KeyboardEvent) {
@@ -108,7 +127,7 @@ export default function SuppliersPage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isFormOpen, saving]);
+  }, [closeFormModal, isFormOpen, saving]);
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!businessSlug) return;
@@ -134,6 +153,7 @@ export default function SuppliersPage() {
           address: address.trim() || undefined,
           department: department.trim() || "General",
           balance: parsedBalance,
+          currency,
         });
         setItems((prev) =>
           prev.map((row) => (row.id === editingId ? updated : row)),
@@ -148,6 +168,7 @@ export default function SuppliersPage() {
           address: address.trim() || undefined,
           department: department.trim() || "General",
           balance: parsedBalance,
+          currency,
         });
         setInfo("Fournisseur ajoute.");
         setPage(1);
@@ -172,6 +193,7 @@ export default function SuppliersPage() {
     setAddress(item.address ?? "");
     setDepartment(item.department || "General");
     setBalance(String(item.balance));
+    setCurrency(item.currency || "HTG");
     setFormError("");
     setInfo("");
     setIsFormOpen(true);
@@ -216,13 +238,23 @@ export default function SuppliersPage() {
           <div className="text-sm text-slate-600">
             Ajoutez et modifiez les fournisseurs depuis une modale.
           </div>
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white"
-          >
-            Nouveau fournisseur
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Upload className="h-4 w-4" />
+              Importer
+            </button>
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Nouveau fournisseur
+            </button>
+          </div>
         </div>
         <div className="space-y-4">
           {" "}
@@ -267,6 +299,7 @@ export default function SuppliersPage() {
                     <th className="py-3 pr-3 font-semibold">Departement</th>
                     <th className="py-3 pr-3 font-semibold">Business</th>
                     <th className="py-3 pr-3 font-semibold">Solde</th>
+                    <th className="py-3 pr-3 font-semibold">Devise</th>
                     <th className="py-3 font-semibold">Actions</th>
                   </tr>
                 </thead>
@@ -283,7 +316,7 @@ export default function SuppliersPage() {
                         {item.email || "-"}
                       </td>
                       <td className="py-3 pr-3 text-slate-600">
-                        {item.phone || "-"}
+                        {formatPhoneDisplay(item.phone) || "-"}
                       </td>
                       <td className="py-3 pr-3 text-slate-600">
                         {item.address || "-"}
@@ -299,6 +332,9 @@ export default function SuppliersPage() {
                       </td>
                       <td className="py-3 pr-3 text-slate-800 font-semibold">
                         {formatMoney(item.balance)}
+                      </td>
+                      <td className="py-3 pr-3 text-slate-600">
+                        {item.currency}
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-2">
@@ -399,12 +435,7 @@ export default function SuppliersPage() {
                 placeholder="Email"
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />
-              <input
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                placeholder="Telephone"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
+              <PhoneField value={phone} onChange={setPhone} />
               <input
                 value={address}
                 onChange={(event) => setAddress(event.target.value)}
@@ -417,15 +448,28 @@ export default function SuppliersPage() {
                 placeholder="Departement"
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={balance}
-                onChange={(event) => setBalance(event.target.value)}
-                placeholder="Solde"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={balance}
+                  onChange={(event) => setBalance(event.target.value)}
+                  placeholder="Solde"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                <select
+                  value={currency}
+                  onChange={(event) => setCurrency(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                >
+                  {SUPPORTED_CURRENCIES.map((item) => (
+                    <option key={item.code} value={item.code}>
+                      {item.code} - {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <button
                   type="submit"
@@ -452,6 +496,18 @@ export default function SuppliersPage() {
             </form>
           </div>
         </div>
+      ) : null}
+      {businessSlug ? (
+        <ImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          business={businessSlug}
+          entityPath="suppliers"
+          title="Importer des fournisseurs"
+          templateFilename="modele_fournisseurs.csv"
+          columnsHelp={SUPPLIER_IMPORT_COLUMNS}
+          onImported={() => setReloadSeq((n) => n + 1)}
+        />
       ) : null}
     </div>
   );

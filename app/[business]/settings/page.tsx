@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ShieldCheck, Landmark, SlidersHorizontal, Building2 } from "lucide-react";
+import { ShieldCheck, Landmark, SlidersHorizontal, Building2, Printer, Tag } from "lucide-react";
 
 type SettingItem = {
   title: string;
@@ -29,6 +29,18 @@ const items: SettingItem[] = [
     description: "Ouvre ou cloture les periodes pour verrouiller les ecritures.",
     href: (business) => `/${business}/accounting/periods`,
     icon: Landmark,
+  },
+  {
+    title: "Imprimantes",
+    description: "Configure les imprimantes de tickets et le tiroir-caisse.",
+    href: (business) => `/${business}/printers`,
+    icon: Printer,
+  },
+  {
+    title: "Codes promo",
+    description: "Cree des codes de remise a saisir a la caisse.",
+    href: (business) => `/${business}/coupons`,
+    icon: Tag,
   },
   {
     title: "Modele de parametrage",

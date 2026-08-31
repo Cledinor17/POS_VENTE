@@ -1,6 +1,7 @@
 "use client";
 import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { usePermissionGuard } from "@/lib/usePermissionGuard";
 import { ApiError } from "@/lib/api";
 import {
   closeAccountingPeriod,
@@ -15,6 +16,7 @@ function getErrorMessage(error: unknown): string {
   return "Une erreur est survenue.";
 }
 export default function AccountingPeriodsPage() {
+  const { allowed, loading: permLoading } = usePermissionGuard("accounting.read");
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
   const [items, setItems] = useState<AccountingPeriodItem[]>([]);
@@ -132,6 +134,9 @@ export default function AccountingPeriodsPage() {
       setBusyId("");
     }
   }
+
+  if (permLoading || !allowed) return null;
+
   return (
     <div className="space-y-5">
       {" "}

@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Ban, Pencil, Power, PowerOff, Trash2 } from "lucide-react";
+import { Ban, Pencil, Power, PowerOff, Trash2, Upload } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import {
@@ -20,6 +21,22 @@ import {
 } from "@/lib/catalogApi";
 import { formatMoney } from "@/lib/currency";
 import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
+import ImportModal, { type ImportColumnHelp } from "@/components/ImportModal";
+
+const PRODUCT_IMPORT_COLUMNS: ImportColumnHelp[] = [
+  { name: "sku", required: true, description: "Reference unique du produit (sert a mettre a jour un produit existant)." },
+  { name: "name", required: true, description: "Nom du produit." },
+  { name: "category_name", required: false, description: "Doit correspondre a une categorie existante (sinon erreur)." },
+  { name: "type", required: false, description: "product ou service (defaut: product)." },
+  { name: "cost_price", required: true, description: "Cout d'achat (obligatoire a la creation)." },
+  { name: "cost_currency", required: false, description: "HTG ou USD (defaut: HTG)." },
+  { name: "selling_price", required: true, description: "Prix de vente." },
+  { name: "selling_currency", required: false, description: "HTG ou USD (defaut: HTG)." },
+  { name: "track_inventory", required: false, description: "1/0 (defaut: 1)." },
+  { name: "stock_quantity", required: true, description: "Stock initial (obligatoire a la creation)." },
+  { name: "alert_quantity", required: false, description: "Seuil d'alerte de stock faible (defaut: 5)." },
+  { name: "is_active", required: false, description: "1/0 (defaut: 1)." },
+];
 function statusClass(status: ProductStatus) {
   if (status === "active")
     return "bg-emerald-50 text-emerald-700 border-emerald-200";
@@ -75,32 +92,28 @@ export default function ProductsPage() {
   const canSeeCategories = hasPermission(currentPermissions, ["supplies.read", "supplies.manage"]);
   const hasProductAccess = canReadCatalog || canCreateProducts || canEditProducts || canManageSupplies;
   const isProductsReadOnly = canReadCatalog && !canCreateProducts && !canEditProducts && !canManageSupplies;
-  useEffect(() => {
-    let mounted = true;
-    async function loadProducts() {
-      if (!business || permissionsLoading) return;
-      if (!canReadCatalog) {
-        if (!mounted) return;
-        setAllProducts([]);
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setError("");
-      try {
-        const items = await getProducts(business);
-        if (mounted) setAllProducts(items);
-      } catch (e) {
-        if (mounted) setError(getErrorMessage(e));
-      } finally {
-        if (mounted) setLoading(false);
-      }
+  const [importOpen, setImportOpen] = useState(false);
+  const loadProducts = useCallback(async () => {
+    if (!business || permissionsLoading) return;
+    if (!canReadCatalog) {
+      setAllProducts([]);
+      setLoading(false);
+      return;
     }
-    void loadProducts();
-    return () => {
-      mounted = false;
-    };
+    setLoading(true);
+    setError("");
+    try {
+      const items = await getProducts(business);
+      setAllProducts(items);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
   }, [business, canReadCatalog, permissionsLoading]);
+  useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
   async function onDelete(item: CatalogProduct) {
     if (!business || !canManageSupplies) return;
     if (item.soldCount > 0) {
@@ -189,6 +202,16 @@ export default function ProductsPage() {
               </Link>
             ) : null}
             {canCreateProducts ? (
+              <button
+                type="button"
+                onClick={() => setImportOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Upload className="h-4 w-4" />
+                Importer
+              </button>
+            ) : null}
+            {canCreateProducts ? (
               <Link
                 href={business ? `/${business}/products/new` : "/"}
                 className="inline-flex items-center rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white "
@@ -199,6 +222,18 @@ export default function ProductsPage() {
           </div>
         </div>
       </section>
+      {business ? (
+        <ImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          business={business}
+          entityPath="products"
+          title="Importer des produits"
+          templateFilename="modele_produits.csv"
+          columnsHelp={PRODUCT_IMPORT_COLUMNS}
+          onImported={() => void loadProducts()}
+        />
+      ) : null}
       {!permissionsLoading && !hasProductAccess ? (
         <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Ce profil n&apos;a pas encore d&apos;acces au catalogue produits.
@@ -294,10 +329,13 @@ export default function ProductsPage() {
                       <td className="py-3 pr-3">
                         <div className="flex items-center gap-3">
                           <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                            <img
+                            <Image
                               src={imageSrc}
                               alt={item.name}
+                              width={44}
+                              height={44}
                               className="h-full w-full object-cover"
+                              unoptimized
                               onError={() => {
                                 setBrokenImages((prev) => ({
                                   ...prev,

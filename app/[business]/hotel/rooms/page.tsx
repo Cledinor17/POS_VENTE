@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -100,7 +101,7 @@ export default function HotelRoomsPage() {
     };
   }, [imagePreviewUrls]);
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     if (!business) return;
     setLoading(true);
     setError("");
@@ -137,11 +138,11 @@ export default function HotelRoomsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [business]);
 
   useEffect(() => {
     void loadData();
-  }, [business]);
+  }, [loadData]);
 
   const occupiedCount = useMemo(() => rooms.filter((room) => room.status === "occupied").length, [rooms]);
 
@@ -402,10 +403,13 @@ export default function HotelRoomsPage() {
                       </td>
                       <td className="py-2 pr-3">
                         {previewUrl ? (
-                          <img
+                          <Image
                             src={previewUrl}
                             alt={`Apercu ${room.name}`}
+                            width={64}
+                            height={48}
                             className="h-12 w-16 rounded-md border border-slate-200 object-cover"
+                            unoptimized
                           />
                         ) : (
                           <div className="inline-flex h-12 w-16 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500">
@@ -698,10 +702,13 @@ export default function HotelRoomsPage() {
                         />
                         {preview ? (
                           <>
-                            <img
+                            <Image
                               src={preview}
                               alt={`Preview ${index + 1}`}
+                              fill
+                              sizes="(min-width: 640px) 33vw, 100vw"
                               className="h-full w-full object-cover"
+                              unoptimized
                             />
                             <button
                               type="button"
@@ -838,14 +845,17 @@ export default function HotelRoomsPage() {
 
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
               {detailActiveImageUrl ? (
-                <img
+                <Image
                   src={detailActiveImageUrl}
                   alt={`Chambre ${detailRoom.name}`}
+                  width={960}
+                  height={288}
                   className="h-72 w-full rounded-lg object-cover"
+                  unoptimized
                 />
               ) : (
                 <div className="h-72 w-full rounded-lg bg-slate-100 flex items-center justify-center text-sm text-slate-500">
-                  Pas d'image
+                  Pas d&apos;image
                 </div>
               )}
               <div className="mt-2 flex items-center justify-between">

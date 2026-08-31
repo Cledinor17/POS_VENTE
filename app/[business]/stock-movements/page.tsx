@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowDown, ArrowUp, Download, RefreshCcw } from "lucide-react";
@@ -89,7 +89,7 @@ export default function StockMovementsPage() {
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
 
-  async function loadMovements() {
+  const loadMovements = useCallback(async () => {
     if (!businessSlug) return;
     setLoading(true);
     setError("");
@@ -112,11 +112,11 @@ export default function StockMovementsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [businessSlug, dateFrom, dateTo, direction, page, query]);
 
   useEffect(() => {
     void loadMovements();
-  }, [businessSlug, page, query, direction, dateFrom, dateTo]);
+  }, [loadMovements]);
 
   const totals = useMemo(() => {
     return movements.reduce(

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { usePermissionGuard } from "@/lib/usePermissionGuard";
 import { ApiError } from "@/lib/api";
 import { exportAuditLogsExcel, exportAuditLogsPdf, listAuditLogs, type AuditLogItem } from "@/lib/adminApi";
 
@@ -30,6 +31,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 }
 
 export default function AuditPage() {
+  const { allowed, loading: permLoading } = usePermissionGuard("audit.read");
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
 
@@ -113,11 +115,13 @@ export default function AuditPage() {
     }
   }
 
+  if (permLoading || !allowed) return null;
+
   return (
     <div className="space-y-5">
       <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
         <h1 className="text-xl font-bold text-slate-900">Audit & securite</h1>
-        <p className="text-sm text-slate-500 mt-1">Journaux d'audit backend (`audit/logs`).</p>
+        <p className="text-sm text-slate-500 mt-1">Journaux d&apos;audit backend (`audit/logs`).</p>
       </section>
 
       {error ? (
