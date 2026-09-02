@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import BranchSwitcher from "./BranchSwitcher";
 import { RequireAuth } from "./RequireAuth";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { logout } from "../lib/authApi";
 import { useAuth } from "../context/AuthContext";
+import { useBranch } from "../context/BranchContext";
 import CurrentUserDailyReportModal from "./CurrentUserDailyReportModal";
 import { ChevronDown, Menu, ShoppingCart, X } from "lucide-react";
 import { safeGetItem, safeSetItem } from "../lib/safeStorage";
@@ -26,6 +28,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
   const business = params?.business || "";
 
   const { user, clear } = useAuth();
+  const { branches } = useBranch();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
   const [mobileAvatarLoadFailed, setMobileAvatarLoadFailed] = useState(false);
@@ -35,6 +38,10 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
   const [mobileDailyReportOpen, setMobileDailyReportOpen] = useState(false);
 
   const title = useMemo(() => (business ? business.toUpperCase() : "POS"), [business]);
+  const hasMultipleBranches = useMemo(
+    () => branches.filter((item) => item.isActive).length > 1,
+    [branches],
+  );
   const isPosRoute = useMemo(
     () => Boolean(pathname && business && pathname.startsWith(`/${business}/pos`)),
     [business, pathname],
@@ -186,7 +193,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
 
           {/* Topbar mobile */}
           <header className="md:hidden sticky top-0 z-40 app-topbar-surface">
-            <div className="h-14 px-3 flex items-center justify-between">
+            <div className="h-14 px-3 flex items-center justify-between gap-2">
               <button
                 onClick={() => setMobileOpen(true)}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white transition-colors hover:border-blue-200 hover:bg-orange-50"
@@ -288,6 +295,12 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
                 </div>
               </div>
             </div>
+
+            {hasMultipleBranches ? (
+              <div className="border-t border-slate-100 px-3 py-2">
+                <BranchSwitcher />
+              </div>
+            ) : null}
           </header>
 
           {/* Page */}

@@ -9,6 +9,7 @@ import { useAppLocale } from "../context/LocaleContext";
 import { updatePassword, updateAvatar } from "../lib/authApi";
 import { getErrorMessage } from "../lib/errors";
 import type { Locale } from "../lib/locale";
+import BranchSwitcher from "./BranchSwitcher";
 import CurrentUserDailyReportModal from "./CurrentUserDailyReportModal";
 import LoginActivityModal from "./LoginActivityModal";
 import NotificationBell from "./NotificationBell";
@@ -105,6 +106,8 @@ export default function Topbar({
         <div className="text-xs text-slate-500">{t("business_label")}</div>
         <div className="font-extrabold text-slate-900">{title}</div>
       </div>
+
+      <BranchSwitcher />
 
       {/* Search */}
       <form onSubmit={onSearchSubmit} className="flex-1">

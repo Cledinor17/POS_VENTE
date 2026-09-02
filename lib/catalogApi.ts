@@ -35,6 +35,7 @@ export type CatalogProduct = {
   soldCount: number;
   active: boolean;
   status: ProductStatus;
+  branchIds: string[];
 };
 
 export type CreateCategoryInput = {
@@ -64,6 +65,10 @@ export type CreateProductInput = {
   status: ProductStatus;
   description?: string;
   imageFile?: File | null;
+  // Which branches sell this product. Omit both to keep the server's
+  // default (the active branch on create, unchanged on update).
+  branchIds?: string[];
+  allBranches?: boolean;
 };
 
 export type UpdateProductInput = Partial<CreateProductInput> & {
@@ -280,6 +285,9 @@ function normalizeProduct(raw: unknown): CatalogProduct {
     soldCount,
     active,
     status,
+    branchIds: Array.isArray(obj.branch_ids)
+      ? obj.branch_ids.map((value) => toString(value, "")).filter((value) => value !== "")
+      : [],
   };
 }
 
@@ -352,6 +360,11 @@ function productPayload(input: CreateProductInput | UpdateProductInput): Dict {
   if (input.reorderLevel !== undefined) payload.reorder_level = input.reorderLevel;
   if (input.taxRate !== undefined) payload.tax_rate = input.taxRate;
   if (input.status !== undefined) payload.status = input.status;
+  if (input.allBranches) {
+    payload.all_branches = true;
+  } else if (Array.isArray(input.branchIds)) {
+    payload.branch_ids = input.branchIds.map(Number).filter((value) => Number.isFinite(value));
+  }
 
   return payload;
 }
@@ -363,6 +376,15 @@ function payloadToFormData(payload: Dict): FormData {
     if (value === undefined || value === null) continue;
     if (typeof value === "boolean") {
       formData.append(key, value ? "1" : "0");
+      continue;
+    }
+    // String(array) would send "1,2" as a single scalar, which PHP reads as
+    // a string rather than the array the validator expects.
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item === undefined || item === null) continue;
+        formData.append(`${key}[]`, String(item));
+      }
       continue;
     }
     formData.append(key, String(value));

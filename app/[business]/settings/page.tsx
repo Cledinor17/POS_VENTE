@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ShieldCheck, Landmark, SlidersHorizontal, Building2, Printer, Tag } from "lucide-react";
+import { ShieldCheck, Landmark, SlidersHorizontal, Building2, Printer, Tag, Store } from "lucide-react";
 
 type SettingItem = {
   title: string;
@@ -17,6 +17,12 @@ const items: SettingItem[] = [
     description: "Modifier les informations de ton business actif.",
     href: (business) => `/${business}/business`,
     icon: Building2,
+  },
+  {
+    title: "Succursales",
+    description: "Gere les points de vente et entrepots, chacun avec son propre stock.",
+    href: (business) => `/${business}/settings/branches`,
+    icon: Store,
   },
   {
     title: "Audit et securite",

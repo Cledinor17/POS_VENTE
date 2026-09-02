@@ -68,17 +68,55 @@ export function setToken(token: string | null) {
   else safeSetItem("pos_token", token);
 }
 
+// The currently active branch, sent as X-Branch-Id on every request so the
+// backend's SetBranch middleware knows which branch to scope stock/cash/
+// sales to. BranchContext is the sole writer (it owns validating the
+// selection against the live branch list); this is just the live pointer
+// apiFetch reads, same pattern as the token above — a plain module needs it
+// outside of React.
+let memoryBranchId: string | null = null;
+
+export function getBranchId(): string | null {
+  return memoryBranchId;
+}
+
+export function setBranchId(branchId: string | null) {
+  memoryBranchId = branchId;
+}
+
+export function branchStorageKey(business: string): string {
+  return `pos_branch:${business}`;
+}
+
+// BranchContext's own fetch-and-validate round trip only resolves after
+// mount, which would otherwise leave a window on every page load where
+// requests go out with no branch header (silently defaulting to Main
+// server-side). Falling back to the last business-scoped choice straight
+// from storage — synchronously, no context needed — closes that window for
+// returning visitors; BranchContext overwrites the in-memory pointer once
+// it has confirmed the stored id is still a branch they can access.
+function resolveBranchId(path: string): string | null {
+  if (memoryBranchId) return memoryBranchId;
+
+  const match = path.match(/\/api\/app\/([^/?]+)/);
+  if (!match) return null;
+
+  return safeGetItem(branchStorageKey(decodeURIComponent(match[1])));
+}
+
 type FetchOptions = RequestInit & { json?: unknown; token?: string | null };
 
 export async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
   const token = options.token ?? getToken();
+  const branchId = resolveBranchId(path);
 
   const headers: HeadersInit = {
     Accept: "application/json",
     "X-Locale": getStoredLocale(),
     ...(options.json ? { "Content-Type": "application/json" } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(branchId ? { "X-Branch-Id": branchId } : {}),
     ...(options.headers || {}),
   };
 
@@ -99,11 +137,13 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
 export async function apiFetchBlob(path: string, options: FetchOptions = {}): Promise<Blob> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
   const token = options.token ?? getToken();
+  const branchId = resolveBranchId(path);
 
   const headers: HeadersInit = {
     Accept: "*/*",
     "X-Locale": getStoredLocale(),
     ...(options.json ? { "Content-Type": "application/json" } : {}),
+    ...(branchId ? { "X-Branch-Id": branchId } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };

@@ -5,6 +5,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Camera } from "lucide-react";
 import BarcodeScannerModal from "@/components/BarcodeScannerModal";
+import BranchAssignmentPicker from "@/components/BranchAssignmentPicker";
+import { useBranch } from "@/context/BranchContext";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { DEFAULT_PRODUCT_AVATAR_PATH } from "@/lib/productImage";
@@ -95,6 +97,14 @@ export default function NewProductPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const canCreateProducts = hasPermission(currentPermissions, ["products.create", "supplies.manage"]);
 
+  // Defaults to the branch being worked from — the same branch the opening
+  // quantity below will be booked against.
+  const { currentBranch } = useBranch();
+  const [branchIds, setBranchIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (currentBranch) setBranchIds((prev) => (prev.length > 0 ? prev : [currentBranch.id]));
+  }, [currentBranch]);
+
   useEffect(() => {
     if (!imageFile) {
       setImagePreviewUrl("");
@@ -173,6 +183,7 @@ export default function NewProductPage() {
         status: form.status,
         description: form.description.trim(),
         imageFile,
+        branchIds,
       });
       setSuccess("Produit enregistre avec succes.");
       toastSuccess("Produit enregistre avec succes.");
@@ -379,6 +390,9 @@ export default function NewProductPage() {
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />{" "}
           </Field>{" "}
+          <div className="md:col-span-2">
+            <BranchAssignmentPicker selected={branchIds} onChange={setBranchIds} disabled={saving} />
+          </div>{" "}
           <div className="md:col-span-2">
             {" "}
             <Field label="Code barres">

@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Camera } from "lucide-react";
 import BarcodeScannerModal from "@/components/BarcodeScannerModal";
+import BranchAssignmentPicker from "@/components/BranchAssignmentPicker";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { toastError, toastSuccess } from "@/lib/toast";
@@ -103,6 +104,7 @@ export default function EditProductPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [branchIds, setBranchIds] = useState<string[]>([]);
   const [error, setError] = useState("");
   const canEditProducts = hasPermission(currentPermissions, ["products.edit", "supplies.manage"]);
   const currentImageUrl = useMemo(
@@ -143,6 +145,7 @@ export default function EditProductPage() {
         setCategories(categoryItems);
         setCurrentImagePath(product.imagePath ?? null);
         setImageFile(null);
+        setBranchIds(product.branchIds);
         setForm({
           name: product.name,
           sku: product.sku,
@@ -221,6 +224,7 @@ export default function EditProductPage() {
         isActive: form.active,
         description: form.description.trim(),
         imageFile,
+        branchIds,
       });
       toastSuccess("Produit modifie avec succes.");
       router.push(`/${business}/products`);
@@ -431,6 +435,9 @@ export default function EditProductPage() {
               <option value="1">Oui</option> <option value="0">Non</option>{" "}
             </select>{" "}
           </Field>{" "}
+          <div className="md:col-span-2">
+            <BranchAssignmentPicker selected={branchIds} onChange={setBranchIds} disabled={saving} />
+          </div>{" "}
           <div className="md:col-span-2">
             {" "}
             <Field label="Code barres">

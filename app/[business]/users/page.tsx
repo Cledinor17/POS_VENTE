@@ -16,6 +16,7 @@ import {
   type BusinessRoleOption,
   type BusinessUserItem,
 } from "@/lib/businessUsersApi";
+import { listMyBranches, type MyBranchItem } from "@/lib/branchesApi";
 import {
   ALL_PERMISSIONS,
   STATUS_OPTIONS,
@@ -85,6 +86,9 @@ export default function UsersPage() {
   const [accessModalUser, setAccessModalUser] = useState<BusinessUserItem | null>(null);
   const [loginActivityUser, setLoginActivityUser] = useState<BusinessUserItem | null>(null);
   const [accessPermissions, setAccessPermissions] = useState<BusinessPermission[]>([]);
+  const [branches, setBranches] = useState<MyBranchItem[]>([]);
+  const [accessBranchIds, setAccessBranchIds] = useState<string[]>([]);
+  const [createBranchIds, setCreateBranchIds] = useState<string[]>([]);
 
   const [rowRoleById, setRowRoleById] = useState<Record<string, BusinessRole>>({});
   const [rowStatusById, setRowStatusById] = useState<Record<string, BusinessUserStatus>>({});
@@ -132,6 +136,25 @@ export default function UsersPage() {
       mounted = false;
     };
   }, [businessSlug, page, reloadSeq]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadBranches() {
+      if (!businessSlug) return;
+      try {
+        const list = await listMyBranches(businessSlug);
+        if (mounted) setBranches(list.filter((item) => item.isActive));
+      } catch {
+        if (mounted) setBranches([]);
+      }
+    }
+
+    void loadBranches();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug]);
 
   useEffect(() => {
     setRowRoleById((prev) => {
@@ -202,6 +225,7 @@ export default function UsersPage() {
     setPassword("");
     setRole(nextRole);
     setCreatePermissions(defaultPermissionsFor(nextRole));
+    setCreateBranchIds(branches.filter((item) => item.isMain).map((item) => item.id));
   }
 
   function closeUserModal() {
@@ -220,6 +244,7 @@ export default function UsersPage() {
   function closeAccessModal() {
     setAccessModalUser(null);
     setAccessPermissions([]);
+    setAccessBranchIds([]);
   }
 
   function openAccessModal(item: BusinessUserItem) {
@@ -228,6 +253,13 @@ export default function UsersPage() {
     setAccessModalUser(item);
     setAccessPermissions(
       normalizeBusinessPermissions(rowPermissionsById[item.id] ?? item.permissions),
+    );
+    setAccessBranchIds([...item.branchIds]);
+  }
+
+  function toggleBranch(branchId: string, setter: (updater: (prev: string[]) => string[]) => void) {
+    setter((prev) =>
+      prev.includes(branchId) ? prev.filter((item) => item !== branchId) : [...prev, branchId],
     );
   }
 
@@ -277,6 +309,7 @@ export default function UsersPage() {
         password: password.trim() || undefined,
         role,
         permissions: normalizeBusinessPermissions(createPermissions),
+        branchIds: createBranchIds,
       });
 
       closeUserModal();
@@ -337,6 +370,7 @@ export default function UsersPage() {
         role: nextRole,
         status: nextStatus,
         permissions: nextPermissions,
+        branchIds: accessBranchIds,
       });
       await refresh();
       setRowPermissionsById((prev) => ({
@@ -688,6 +722,38 @@ export default function UsersPage() {
                   </Link>
                 </div>
 
+                {branches.length > 1 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-sm font-semibold text-slate-900">Succursales autorisees</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      La personne ne pourra travailler que dans les succursales cochees. Les roles
+                      administratifs (proprietaire, gerant...) ont acces a toutes les succursales.
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {branches.map((branch) => {
+                        const checked = createBranchIds.includes(branch.id);
+                        return (
+                          <label
+                            key={branch.id}
+                            className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                              checked
+                                ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleBranch(branch.id, setCreateBranchIds)}
+                            />
+                            {branch.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
                 <PermissionChecklist
                   selected={createPermissions}
                   onToggle={toggleCreatePermission}
@@ -776,6 +842,38 @@ export default function UsersPage() {
                   Reinitialiser selon le role
                 </button>
               </div>
+
+              {branches.length > 1 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-sm font-semibold text-slate-900">Succursales autorisees</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    La personne ne pourra travailler que dans les succursales cochees. Les roles
+                    administratifs (proprietaire, gerant...) ont acces a toutes les succursales.
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {branches.map((branch) => {
+                      const checked = accessBranchIds.includes(branch.id);
+                      return (
+                        <label
+                          key={branch.id}
+                          className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                            checked
+                              ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleBranch(branch.id, setAccessBranchIds)}
+                          />
+                          {branch.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               <PermissionChecklist
                 selected={accessPermissions}

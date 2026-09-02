@@ -12,6 +12,7 @@ export type BusinessUserItem = {
   createdAt: string | null;
   permissions: BusinessPermission[];
   hasCustomPermissions: boolean;
+  branchIds: string[];
 };
 
 export type BusinessRoleOption = {
@@ -54,12 +55,14 @@ export type CreateBusinessUserInput = {
   password?: string;
   role: BusinessRole;
   permissions?: BusinessPermission[];
+  branchIds?: string[];
 };
 
 export type UpdateBusinessUserInput = {
   role: BusinessRole;
   status?: BusinessUserStatus;
   permissions?: BusinessPermission[];
+  branchIds?: string[];
 };
 
 function isObject(value: unknown): value is Dict {
@@ -71,6 +74,11 @@ function toString(value: unknown, fallback = ""): string {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   if (typeof value === "bigint") return value.toString();
   return fallback;
+}
+
+function toStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => toString(item, "")).filter((item) => item !== "");
 }
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -150,6 +158,7 @@ function normalizeBusinessUser(raw: unknown): BusinessUserItem {
       ? obj.permissions.filter((value): value is BusinessPermission => typeof value === "string")
       : [],
     hasCustomPermissions: Boolean(obj.has_custom_permissions ?? obj.hasCustomPermissions),
+    branchIds: toStringList(obj.branch_ids ?? obj.branchIds),
   };
 }
 
@@ -194,6 +203,7 @@ export async function createBusinessUser(
       password: input.password ?? null,
       role: input.role,
       permissions: input.permissions ?? null,
+      ...(input.branchIds ? { branch_ids: input.branchIds.map(Number) } : {}),
     },
   });
 }
@@ -209,6 +219,7 @@ export async function updateBusinessUser(
       role: input.role,
       status: input.status ?? null,
       permissions: input.permissions ?? null,
+      ...(input.branchIds ? { branch_ids: input.branchIds.map(Number) } : {}),
     },
   });
 }

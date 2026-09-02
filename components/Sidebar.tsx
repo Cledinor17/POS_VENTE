@@ -9,6 +9,8 @@ import { useAuth } from "../context/AuthContext";
 import { useParams, usePathname } from "next/navigation";
 import { hasPermission, type BusinessPermission } from "../lib/businessAccess";
 import {
+  ArrowLeftRight,
+  DatabaseBackup,
   LayoutDashboard,
   ShoppingCart,
   Receipt,
@@ -332,7 +334,9 @@ export default function Sidebar() {
 
   const businessAdmin: NavItem[] = [
     { labelKey: "my_business", href: (b) => `/${b}/business`, icon: Building2, permissions: "business.read" },
+    { labelKey: "branches", href: (b) => `/${b}/settings/branches`, icon: Store, permissions: "business.read" },
     { labelKey: "general_settings", href: (b) => `/${b}/settings`, icon: Settings, permissions: "business.read" },
+    { labelKey: "data_backup", href: (b) => `/${b}/settings/backup`, icon: DatabaseBackup, permissions: "business.manage" },
     { labelKey: "audit_security", href: (b) => `/${b}/audit`, icon: ShieldCheck, permissions: "audit.read" },
   ];
 
@@ -401,6 +405,7 @@ export default function Sidebar() {
     { labelKey: "product_catalog", href: (b) => `/${b}/products`, icon: Package, permissions: "supplies.read" },
     { labelKey: "categories", href: (b) => `/${b}/categories`, icon: Tags, permissions: "supplies.read" },
     { labelKey: "inventory", href: (b) => `/${b}/inventory`, icon: Warehouse, permissions: "inventory.read" },
+    { labelKey: "stock_transfers", href: (b) => `/${b}/inventory/transfers`, icon: ArrowLeftRight, permissions: "inventory.read" },
     { labelKey: "suppliers", href: (b) => `/${b}/suppliers`, icon: Truck, permissions: "supplies.read" },
     { labelKey: "purchase_orders", href: (b) => `/${b}/purchase-orders`, icon: ClipboardList, permissions: "supplies.read" },
   ];
