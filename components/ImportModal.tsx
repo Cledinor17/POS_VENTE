@@ -26,6 +26,15 @@ function getErrorMessage(error: unknown): string {
   return "Une erreur est survenue.";
 }
 
+function importResultText(result: ImportResult): string {
+  const parts = [`${result.created} cree(s)`, `${result.updated} mis a jour`];
+  if (result.errorsCount > 0) {
+    parts.push(`${result.errorsCount} ligne(s) en erreur`);
+  }
+
+  return `${parts.join(", ")}.`;
+}
+
 export default function ImportModal({
   open,
   onClose,
@@ -167,8 +176,12 @@ export default function ImportModal({
                     : "border-amber-200 bg-amber-50 text-amber-800"
                 }`}
               >
-                {result.created} cree(s), {result.updated} mis a jour
-                {result.errors.length > 0 ? `, ${result.errors.length} ligne(s) en erreur` : ""}.
+                {importResultText(result)}
+                {result.errorsTruncated ? (
+                  <span className="mt-1 block text-xs">
+                    Les {result.errors.length} premieres erreurs sont affichees.
+                  </span>
+                ) : null}
               </div>
               {result.errors.length > 0 ? (
                 <ul className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
