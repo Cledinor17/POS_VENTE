@@ -52,7 +52,7 @@ export default function BackupPage() {
     setInfo("");
     try {
       const filename = await downloadBackup(businessSlug);
-      setInfo(`Archive telechargee : ${filename}`);
+      setInfo(`Classeur telecharge : ${filename}`);
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -92,8 +92,9 @@ export default function BackupPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Sauvegarde des donnees</h1>
             <p className="mt-1 max-w-2xl text-slate-500">
-              Telecharge une archive ZIP contenant toutes les donnees de cette entreprise, un
-              fichier par table, ouvrable dans Excel. Garde-la ailleurs que sur le serveur.
+              Telecharge un classeur Excel contenant toutes les donnees de cette entreprise, un
+              onglet par table, avec un sommaire. Les en-tetes sont figes et filtrables, pret pour
+              l&apos;analyse et les tableaux croises.
             </p>
           </div>
           <button
@@ -103,15 +104,16 @@ export default function BackupPage() {
             className="inline-flex shrink-0 items-center gap-2 rounded-xl brand-primary-btn px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Download className="h-4 w-4" />
-            {downloading ? "Preparation..." : "Telecharger la sauvegarde"}
+            {downloading ? "Preparation..." : "Telecharger le classeur Excel"}
           </button>
         </div>
 
         <div className="mt-4 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
           <span>
-            L&apos;archive ne contient que les donnees de cette entreprise. Les mots de passe et
-            jetons de connexion en sont volontairement exclus.
+            Le classeur ne contient que les donnees de cette entreprise. Les mots de passe et
+            jetons de connexion en sont volontairement exclus. Les tables vides n&apos;ont pas
+            d&apos;onglet, mais restent listees dans le sommaire.
           </span>
         </div>
       </section>
@@ -161,22 +163,22 @@ export default function BackupPage() {
               <span className="text-lg font-bold text-slate-900">{summary.totalRows}</span>
               <span>ligne(s) au total, reparties sur</span>
               <span className="font-semibold text-slate-900">{filled.length}</span>
-              <span>fichier(s) contenant des donnees</span>
-              <span className="text-slate-400">({summary.tables.length} fichiers au total)</span>
+              <span>onglet(s) contenant des donnees</span>
+              <span className="text-slate-400">({summary.tables.length} tables au total)</span>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[420px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-slate-500">
-                    <th className="py-2 pr-3 font-semibold">Fichier</th>
+                    <th className="py-2 pr-3 font-semibold">Onglet</th>
                     <th className="py-2 font-semibold">Lignes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filled.map((row) => (
                     <tr key={row.table} className="border-b last:border-0">
-                      <td className="py-2 pr-3 font-medium text-slate-800">{row.table}.csv</td>
+                      <td className="py-2 pr-3 font-medium text-slate-800">{row.table}</td>
                       <td className="py-2 text-slate-600">{row.rows}</td>
                     </tr>
                   ))}

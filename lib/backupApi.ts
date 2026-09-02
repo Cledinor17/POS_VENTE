@@ -64,9 +64,9 @@ function stamp(): string {
   return new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 }
 
-/** Human-readable archive: one CSV per table, no secrets. */
+/** Readable workbook: one sheet per table, no secrets. */
 export async function downloadBackup(business: string): Promise<string> {
-  return download(`${basePath(business)}/download`, `sauvegarde-${business}-${stamp()}.zip`);
+  return download(`${basePath(business)}/download`, `donnees-${business}-${stamp()}.xlsx`);
 }
 
 /**
