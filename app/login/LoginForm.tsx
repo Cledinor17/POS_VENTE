@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -62,66 +63,74 @@ export default function LoginForm() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2 text-center">
-        <h2 className="text-[1.9rem] font-semibold tracking-tight text-[#0f172a]">{t("title")}</h2>
-        <p className="text-sm leading-6 text-slate-400">{t("subtitle")}</p>
+    <div className="space-y-7">
+      <div className="space-y-3 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-[0_14px_35px_rgba(15,23,42,0.12)] sm:h-20 sm:w-20 sm:rounded-3xl">
+          <Image src="/logo.png" alt="FC Manager" width={72} height={72} className="h-12 w-12 object-contain sm:h-14 sm:w-14" />
+        </div>
+        <div className="mx-auto h-1 w-12 rounded-full bg-[#d4af37]" />
+        <h2 className="text-[1.65rem] font-semibold tracking-tight text-[#0f172a] sm:text-[2rem]">{t("title")}</h2>
+        <p className="mx-auto max-w-sm text-sm leading-6 text-slate-500">{t("subtitle")}</p>
       </div>
 
       {err ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 shadow-sm">
           {err}
         </div>
       ) : null}
 
       <form onSubmit={onSubmit} className="space-y-5">
         <div className="space-y-4">
-          <div className="relative">
-            <Mail className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+          <div className="group relative">
+            <span className="pointer-events-none absolute left-2.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition group-focus-within:text-[#d4af37] group-focus-within:ring-[#d4af37]/40 sm:left-3">
+              <Mail className="h-4 w-4" />
+            </span>
             <input
               type="email"
               required
-              className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
+              className="h-14 w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pl-14 pr-4 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/15 sm:pl-16"
               placeholder={t("email_placeholder")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
 
-          <div className="relative">
-            <Lock className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+          <div className="group relative">
+            <span className="pointer-events-none absolute left-2.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition group-focus-within:text-[#d4af37] group-focus-within:ring-[#d4af37]/40 sm:left-3">
+              <Lock className="h-4 w-4" />
+            </span>
             <input
               type="password"
               required
-              className="w-full rounded-xl border border-transparent bg-[#f1f5f9] py-3.5 pl-12 pr-4 text-slate-700 outline-none transition focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/10"
+              className="h-14 w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pl-14 pr-4 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#d4af37] focus:bg-white focus:ring-4 focus:ring-[#d4af37]/15 sm:pl-16"
               placeholder={t("password_placeholder")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <Link href="/forgot-password" className="font-medium text-[#0f172a] hover:text-[#d4af37]">
+          <div className="flex flex-col items-start gap-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <Link href="/forgot-password" className="font-medium text-slate-600 transition hover:text-[#d4af37]">
               {t("forgot_password_link")}
             </Link>
-            <Link href="/verify-account" className="font-medium text-[#0f172a] hover:text-[#d4af37]">
+            <Link href="/verify-account" className="font-medium text-slate-600 transition hover:text-[#d4af37]">
               {t("forgot_code_link")}
             </Link>
           </div>
 
           <button
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#0f172a] px-4 py-3.5 text-base font-medium text-white transition hover:bg-[#1e293b] disabled:cursor-not-allowed disabled:opacity-50"
+            className="group inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#0f172a] px-4 text-base font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.24)] transition hover:-translate-y-0.5 hover:bg-[#1e293b] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none"
             disabled={loading}
           >
             <span>{loading ? t("submit_loading") : t("submit")}</span>
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
           </button>
         </div>
       </form>
 
-      <p className="text-sm text-slate-500">
+      <p className="text-center text-sm text-slate-500">
         {t("no_account")}{" "}
-        <Link href="/register" className="font-semibold text-[#0f172a] hover:text-[#d4af37]">
+        <Link href="/register" className="font-semibold text-[#0f172a] transition hover:text-[#d4af37]">
           {t("create_business_link")}
         </Link>
       </p>
