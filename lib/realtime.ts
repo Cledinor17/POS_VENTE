@@ -46,7 +46,10 @@ async function loadEcho(): Promise<EchoInstance | null> {
             socketId: string,
             callback: (error: Error | null, data: { auth: string } | null) => void
           ) => {
-            fetch(`${API_BASE}/broadcasting/auth`, {
+            // /api prefix: Broadcast::routes() is registered from
+            // routes/api.php so it inherits that group's auth:sanctum
+            // guard, which also puts it behind the api prefix.
+            fetch(`${API_BASE}/api/broadcasting/auth`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -73,6 +76,16 @@ async function loadEcho(): Promise<EchoInstance | null> {
   return echoPromise;
 }
 
+// How many live listeners each channel has.
+//
+// Without this the channel never stayed subscribed at all. Subscribing is
+// async, React StrictMode mounts an effect twice (mount, cleanup, mount),
+// and both mounts share the cached Echo instance — so the *first* mount's
+// cleanup ran echo.leave() on the channel the *second* mount had just
+// subscribed to, leaving Pusher connected with zero channels. Leaving only
+// once the last listener is gone makes the teardown order irrelevant.
+const listenerCounts = new Map<string, number>();
+
 export async function subscribeToUserNotifications(
   userId: string | number,
   onEvent: (data: { notification_id: number }) => void
@@ -81,9 +94,26 @@ export async function subscribeToUserNotifications(
   if (!echo) return () => {};
 
   const channelName = `notifications.${userId}`;
+  listenerCounts.set(channelName, (listenerCounts.get(channelName) ?? 0) + 1);
   echo.private(channelName).listen(".notification.created", onEvent);
 
+  let released = false;
+
   return () => {
+    // Guards against a caller unsubscribing twice, which would otherwise
+    // drop the count below the number of live listeners.
+    if (released) return;
+    released = true;
+
+    const remaining = (listenerCounts.get(channelName) ?? 1) - 1;
+    echo.private(channelName).stopListening(".notification.created", onEvent);
+
+    if (remaining > 0) {
+      listenerCounts.set(channelName, remaining);
+      return;
+    }
+
+    listenerCounts.delete(channelName);
     echo.leave(channelName);
   };
 }
