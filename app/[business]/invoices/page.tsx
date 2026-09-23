@@ -2,9 +2,10 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import { ApiError } from "@/lib/api";
-import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
-import { convertAmount, formatMoney } from "@/lib/currency";
+import { getPosSettings, type BusinessSettings } from "@/lib/businessApi";
+import { convertPayment, convertAmount, formatMoney } from "@/lib/currency";
 import {
   addInvoicePayment,
   fetchInvoicePdf,
@@ -34,6 +35,8 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  const [query, setQuery] = useState("");
+  useSearchFromUrl(setQuery);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
@@ -63,6 +66,7 @@ export default function InvoicesPage() {
         const res = await listInvoices(businessSlug, {
           page,
           perPage: 20,
+          q: query || undefined,
           status: status || undefined,
           from: from || undefined,
           to: to || undefined,
@@ -82,14 +86,14 @@ export default function InvoicesPage() {
     return () => {
       mounted = false;
     };
-  }, [businessSlug, page, status, from, to, reloadSeq]);
+  }, [businessSlug, page, status, query, from, to, reloadSeq]);
 
   useEffect(() => {
     let mounted = true;
     async function loadBusinessConfig() {
       if (!businessSlug) return;
       try {
-        const data = await getBusinessSettings(businessSlug);
+        const data = await getPosSettings(businessSlug);
         if (mounted) setBusinessSettings(data);
       } catch (e) {
         if (mounted) setError(getErrorMessage(e));
@@ -103,9 +107,11 @@ export default function InvoicesPage() {
 
   const paymentEquivalent = useMemo(() => {
     if (!paymentTarget) return 0;
-    return convertAmount(Number(paymentAmount || "0"), paymentCurrency, paymentTarget.currency, {
+    return convertPayment(Number(paymentAmount || "0"), paymentCurrency, paymentTarget.currency, {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
       exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
     });
   }, [businessSettings, paymentAmount, paymentCurrency, paymentTarget]);
 
@@ -114,6 +120,8 @@ export default function InvoicesPage() {
     return convertAmount(paymentTarget.balanceDue, paymentTarget.currency, paymentCurrency, {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
       exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
     });
   }, [businessSettings, paymentCurrency, paymentTarget]);
 
@@ -236,7 +244,14 @@ export default function InvoicesPage() {
       ) : null}
 
       <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <input
+            value={query}
+            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+            placeholder="Numéro, référence ou client"
+            aria-label="Rechercher une facture"
+            className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+          />
           <input
             value={status}
             onChange={(event) => {
@@ -267,6 +282,7 @@ export default function InvoicesPage() {
           <button
             onClick={() => {
               setStatus("");
+              setQuery("");
               setFrom("");
               setTo("");
               setPage(1);

@@ -2,7 +2,7 @@ import { apiFetch } from "./api";
 
 type Dict = Record<string, unknown>;
 
-export type PurchaseOrderStatus = "draft" | "ordered" | "received" | "cancelled";
+export type PurchaseOrderStatus = "draft" | "ordered" | "partially_received" | "received" | "cancelled";
 
 export type PurchaseOrderItem = {
   id: string;
@@ -36,6 +36,7 @@ export type PurchaseOrder = {
   createdAt: string | null;
   updatedAt: string | null;
   items: PurchaseOrderItem[];
+  receipts: Array<{ id: string; receivedAt: string; receiverName: string; notes: string; items: Array<{ productName: string; quantity: number }> }>;
 };
 
 export type PurchaseOrderListParams = {
@@ -96,7 +97,7 @@ function toNumber(value: unknown, fallback = 0): number {
 
 function normalizeStatus(value: unknown): PurchaseOrderStatus {
   const normalized = toString(value, "draft").trim().toLowerCase();
-  if (normalized === "ordered" || normalized === "received" || normalized === "cancelled") {
+  if (normalized === "partially_received" || normalized === "ordered" || normalized === "received" || normalized === "cancelled") {
     return normalized;
   }
   return "draft";
@@ -184,6 +185,14 @@ function normalizePurchaseOrder(raw: unknown): PurchaseOrder {
     createdAt: toString(obj.created_at ?? obj.createdAt, "") || null,
     updatedAt: toString(obj.updated_at ?? obj.updatedAt, "") || null,
     items,
+    receipts: (Array.isArray(obj.receipts) ? obj.receipts : []).map((raw) => {
+      const row = isObject(raw) ? raw : {};
+      return { id: toString(row.id), receivedAt: toString(row.received_at), receiverName: toString(row.receiver_name), notes: toString(row.notes),
+        items: (Array.isArray(row.items) ? row.items : []).map((rawLine) => {
+          const line = isObject(rawLine) ? rawLine : {};
+          return { productName: toString(line.product_name), quantity: toNumber(line.quantity) };
+        }) };
+    }),
   };
 }
 
@@ -266,10 +275,12 @@ export async function updatePurchaseOrder(
 
 export async function receivePurchaseOrder(
   business: string,
-  purchaseOrderId: string
+  purchaseOrderId: string,
+  input?: { idempotencyKey: string; notes?: string; items: Array<{ id: string; quantity: number }> }
 ): Promise<PurchaseOrder> {
   const raw = await apiFetch<unknown>(`${basePath(business)}/${encodeURIComponent(purchaseOrderId)}/receive`, {
     method: "POST",
+    json: input ? { idempotency_key: input.idempotencyKey, notes: input.notes || null, items: input.items } : undefined,
   });
   return normalizePurchaseOrder(getResource(raw));
 }

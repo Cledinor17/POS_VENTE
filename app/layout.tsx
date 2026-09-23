@@ -20,13 +20,25 @@
 //     </html>
 //   );
 // }
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { cookies } from "next/headers";
 import Providers from "./providers";
 import { DEFAULT_LOCALE, isSupportedLocale } from "@/lib/locale";
 
-export const metadata: Metadata = { title: "POS Pro" };
+export const metadata: Metadata = {
+  title: "POS Pro",
+  applicationName: "FC Manager",
+  // Le manifeste (app/manifest.ts) couvre Android ; iOS ignore encore une
+  // partie de ses champs et lit ces balises a la place.
+  appleWebApp: { capable: true, title: "FC Manager", statusBarStyle: "default" },
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/apple-touch-icon.png",
+  },
+};
+
+export const viewport: Viewport = { themeColor: "#0a4d8f" };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();

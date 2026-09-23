@@ -9,6 +9,7 @@ import {
   type CashSession,
   type ListCashSessionsParams,
 } from "@/lib/cashSessionApi";
+import { downloadCashSessionReport } from "@/lib/operationalReportsApi";
 import { RefreshCcw, TrendingDown, TrendingUp, Minus } from "lucide-react";
 
 function fmt(v: unknown): string {
@@ -88,6 +89,7 @@ export default function CashSessionsHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [exportId, setExportId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -95,6 +97,13 @@ export default function CashSessionsHistoryPage() {
   const [from, setFrom] = useState(daysAgoIso(7));
   const [to, setTo] = useState(todayIso());
   const [statusFilter, setStatusFilter] = useState<"" | "open" | "closed">("");
+
+  async function exportSession(id: number) {
+    setExportId(id); setError("");
+    try { await downloadCashSessionReport(business, id); }
+    catch (e) { setError(fmt(e)); }
+    finally { setExportId(null); }
+  }
 
   const load = useCallback(async (silent = false) => {
     if (!business) return;
@@ -201,7 +210,7 @@ export default function CashSessionsHistoryPage() {
                   <th className="px-4 py-3">Montant compté</th>
                   <th className="px-4 py-3">Attendu</th>
                   <th className="px-4 py-3">Écart</th>
-                  <th className="px-4 py-3">Statut</th>
+                  <th className="px-4 py-3">Statut</th><th className="px-4 py-3">Rapport</th>
                 </tr>
               </thead>
               <tbody>
@@ -252,6 +261,7 @@ export default function CashSessionsHistoryPage() {
                         </span>
                       )}
                     </td>
+                    <td className="px-4 py-3"><button disabled={exportId !== null} onClick={() => void exportSession(s.id)} className="whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-indigo-700 disabled:opacity-50">{exportId === s.id ? "Préparation…" : "PDF à imprimer"}</button></td>
                   </tr>
                 ))}
               </tbody>

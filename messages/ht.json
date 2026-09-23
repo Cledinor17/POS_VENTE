@@ -79,6 +79,7 @@
   },
   "nav": {
     "dashboard": "Tablo de bò",
+    "dollar_purchases": "Achte dola",
     "pos_new_sale": "Nouvo vant (POS)",
     "pos_badge": "Rapid",
     "tickets_sales": "Tikè / Vant",
@@ -105,6 +106,7 @@
     "reports_departments": "Revni pa depatman",
     "reports_sales": "Rapò vant",
     "reports_inventory": "Rapò estòk",
+    "reports_cash_sessions": "Fèmti kès",
     "reports_ar": "Kreyans kliyan (AR)",
     "reports_finance": "Bilan ak rezilta",
     "hotel_planning": "Planifikasyon",

@@ -97,6 +97,7 @@ export type CurrentUserDailyReport = {
   closure: DailyReportClosure;
   sales: DailyReportSaleItem[];
   receipts: DailyReportReceiptItem[];
+  dollarPurchases: { number: string; usd: number; rate: number; htg: number }[];
 };
 
 export type SaveCurrentUserDailyClosureInput = {
@@ -213,6 +214,10 @@ function normalizeReport(raw: unknown): CurrentUserDailyReport {
     closure: normalizeClosure(obj.closure, toString(obj.date), normalizedSummary.cashToSubmit),
     sales: Array.isArray(obj.sales) ? obj.sales.map(normalizeItem) : [],
     receipts: Array.isArray(obj.receipts) ? obj.receipts.map(normalizeReceipt) : [],
+    dollarPurchases: Array.isArray(obj.dollar_purchases) ? obj.dollar_purchases.map(value => {
+      const item = asRecord(value);
+      return { number: toString(item.number), usd: toNumber(item.usd_amount), rate: toNumber(item.buy_rate), htg: toNumber(item.htg_amount) };
+    }) : [],
   };
 }
 

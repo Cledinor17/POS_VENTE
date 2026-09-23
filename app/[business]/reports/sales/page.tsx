@@ -74,6 +74,8 @@ export default function SalesReportsPage() {
     () => ({
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
       exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
     }),
     [businessSettings]
   );

@@ -71,8 +71,9 @@ type BusinessFormState = {
   website: string;
   taxNumber: string;
   currency: string;
-  exchangeRateDirection: string;
-  exchangeRateValue: string;
+  exchangeBuyRate: string;
+  exchangeSellRate: string;
+  dollarPurchaseEnabled: boolean;
   timezone: string;
   invoiceFooter: string;
   businessType: BusinessType;
@@ -92,8 +93,9 @@ const initialFormState: BusinessFormState = {
   website: "",
   taxNumber: "",
   currency: "",
-  exchangeRateDirection: "usd_to_htg",
-  exchangeRateValue: "1",
+  exchangeBuyRate: "1",
+  exchangeSellRate: "1",
+  dollarPurchaseEnabled: false,
   timezone: "",
   invoiceFooter: "",
   businessType: "hotel",
@@ -120,8 +122,9 @@ function toFormState(data: BusinessSettings): BusinessFormState {
     website: data.website ?? "",
     taxNumber: data.tax_number ?? "",
     currency: data.currency ?? "",
-    exchangeRateDirection: data.exchange_rate_direction ?? "usd_to_htg",
-    exchangeRateValue: String(data.exchange_rate_value ?? 1),
+    exchangeBuyRate: String(data.exchange_buy_rate),
+    exchangeSellRate: String(data.exchange_sell_rate),
+    dollarPurchaseEnabled: data.dollar_purchase_enabled,
     timezone: data.timezone ?? "",
     invoiceFooter: data.invoice_footer ?? "",
     businessType: data.business_type ?? "hotel",
@@ -158,7 +161,7 @@ function buildCurrencyPolicyMessage(hasHotel: boolean, hasMoment: boolean): stri
   const parts: string[] = [];
   if (hasHotel) parts.push("les chambres/nuit en USD");
   if (hasMoment) parts.push("les moments en HTG");
-  parts.push("les produits en HTG");
+  parts.push("les produits dans leur devise configuree");
 
   const joined = parts.length > 1
     ? `${parts.slice(0, -1).join(", ")} et ${parts[parts.length - 1]}`
@@ -174,7 +177,7 @@ function validateForm(form: BusinessFormState): string {
   if (form.email.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
     return "L'email n'est pas valide.";
   }
-  if (Number(form.exchangeRateValue) <= 0) {
+  if (![form.exchangeBuyRate, form.exchangeSellRate].every(value => Number.isFinite(Number(value)) && Number(value) > 0)) {
     return "Le taux de change doit etre superieur a zero.";
   }
   return "";
@@ -299,8 +302,11 @@ export default function BusinessPage() {
         website: form.website.trim(),
         tax_number: form.taxNumber.trim(),
         currency: form.currency.trim(),
-        exchange_rate_direction: form.exchangeRateDirection,
-        exchange_rate_value: Number(form.exchangeRateValue || "1"),
+        exchange_rate_direction: "usd_to_htg",
+        exchange_rate_value: Number(form.exchangeSellRate),
+        exchange_buy_rate: Number(form.exchangeBuyRate),
+        exchange_sell_rate: Number(form.exchangeSellRate),
+        dollar_purchase_enabled: form.dollarPurchaseEnabled,
         timezone: form.timezone.trim(),
         invoice_footer: form.invoiceFooter.trim(),
         business_type: form.businessType,
@@ -334,6 +340,7 @@ export default function BusinessPage() {
         has_moment: updated.has_moment !== false,
       };
       setModules(updatedModules);
+      window.dispatchEvent(new Event("business-settings-changed"));
       setSavedModules(updatedModules);
       setLoyaltyEnabled(updated.loyalty_enabled);
       setLoyaltyEarnAmount(String(updated.loyalty_earn_amount));
@@ -472,38 +479,32 @@ export default function BusinessPage() {
             </select>
           </Field>
 
-          <Field label="Sens du taux">
-            <select
-              value={form.exchangeRateDirection}
-              onChange={(event) => setField("exchangeRateDirection", event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            >
-              <option value="usd_to_htg">USD vers HTG</option>
-              <option value="htg_to_usd">HTG vers USD</option>
-            </select>
+          <Field label="Taux d’achat : HTG pour 1 USD">
+            <input type="number" min="0.000001" step="0.000001" value={form.exchangeBuyRate}
+              onChange={event => setField("exchangeBuyRate", event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5" />
+            <p className="mt-1 text-xs text-slate-600">Produit en HTG payé en dollars, et achat de dollars au client.</p>
           </Field>
-
-          <Field label="Taux de change">
-            <input
-              type="number"
-              min="0.000001"
-              step="0.000001"
-              value={form.exchangeRateValue}
-              onChange={(event) => setField("exchangeRateValue", event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-            <p className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-              Ce taux s&apos;applique uniquement aux <strong>nouvelles</strong> transactions.
-              Les enregistrements existants conservent le taux en vigueur au moment de leur creation.
-            </p>
+          <Field label="Taux de vente : HTG pour 1 USD">
+            <input type="number" min="0.000001" step="0.000001" value={form.exchangeSellRate}
+              onChange={event => setField("exchangeSellRate", event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5" />
+            <p className="mt-1 text-xs text-slate-600">Produit en dollars payé en gourdes. Les tickets existants gardent leur taux.</p>
           </Field>
+          <label className="md:col-span-2 flex items-start gap-3 rounded-xl border p-4">
+            <input type="checkbox" checked={form.dollarPurchaseEnabled}
+              onChange={event => setField("dollarPurchaseEnabled", event.target.checked)} className="mt-1" />
+            <span><strong>Activer l’achat de dollars dans le POS</strong>
+              <span className="block text-sm text-slate-600">Recevoir les dollars d’un client, lui remettre des gourdes au taux d’achat et imprimer un ticket.</span>
+            </span>
+          </label>
 
           <div className="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
             <div className="font-semibold">Taux actif HTG / USD</div>
             <div className="mt-1">
               {formatExchangeRateSummary({
-                exchangeRateDirection: form.exchangeRateDirection,
-                exchangeRateValue: Number(form.exchangeRateValue || "1"),
+                exchangeBuyRate: Number(form.exchangeBuyRate),
+                exchangeSellRate: Number(form.exchangeSellRate),
               })}
             </div>
             <div className="mt-1 text-xs text-blue-700">

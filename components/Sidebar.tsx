@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { getBusinessSettings } from "../lib/businessApi";
+import { getBusinessSettings, getPosSettings } from "../lib/businessApi";
 import { useAuth } from "../context/AuthContext";
 import { useParams, usePathname } from "next/navigation";
 import { hasPermission, type BusinessPermission } from "../lib/businessAccess";
@@ -223,6 +223,7 @@ export default function Sidebar() {
     moment: false,
   });
 
+  const [dollarPurchaseEnabled, setDollarPurchaseEnabled] = useState(false);
   const currentBusinessEntry = useMemo(
     () => businesses.find((item) => item.slug === business) ?? activeBusiness ?? null,
     [activeBusiness, businesses, business],
@@ -239,15 +240,17 @@ export default function Sidebar() {
     let mounted = true;
 
     async function loadBusinessLogo() {
+      setDollarPurchaseEnabled(false);
       if (!business) {
         setBusinessLogoUrl("");
         return;
       }
 
       try {
-        const data = await getBusinessSettings(business);
+        const data = await (hasPermission(currentPermissions, "business.read") ? getBusinessSettings(business) : getPosSettings(business));
         if (!mounted) return;
 
+        setDollarPurchaseEnabled(data.dollar_purchase_enabled);
         setModules({
           hotel: data.has_hotel !== false,
           restaurant: data.has_restaurant !== false,
@@ -284,10 +287,12 @@ export default function Sidebar() {
     }
 
     void loadBusinessLogo();
+    window.addEventListener("business-settings-changed", loadBusinessLogo);
     return () => {
       mounted = false;
+      window.removeEventListener("business-settings-changed", loadBusinessLogo);
     };
-  }, [business]);
+  }, [business, currentPermissions]);
 
   const dashboard: NavItem[] = [
     {
@@ -306,6 +311,7 @@ export default function Sidebar() {
       badgeKey: "pos_badge",
       permissions: "billing.manage",
     },
+    ...(dollarPurchaseEnabled ? [{ labelKey: "dollar_purchases", href: (b: string) => `/${b}/pos/dollar-purchases`, icon: ArrowLeftRight, permissions: "billing.manage" as BusinessPermission }] : []),
     { labelKey: "tickets_sales", href: (b) => `/${b}/sales`, icon: Receipt, permissions: "billing.read" },
     { labelKey: "returns", href: (b) => `/${b}/returns`, icon: RotateCcw, permissions: ["billing.manage", "billing.refund"] },
     { labelKey: "quotes_proforma", href: (b) => `/${b}/documents`, icon: FileText, permissions: "billing.read" },
@@ -368,6 +374,7 @@ export default function Sidebar() {
     { labelKey: "reports_departments", href: (b) => `/${b}/reports/departments`, icon: BarChart3, permissions: "reports.read" },
     { labelKey: "reports_sales", href: (b) => `/${b}/reports/sales`, icon: BarChart3, permissions: "reports.read" },
     { labelKey: "reports_inventory", href: (b) => `/${b}/reports/inventory`, icon: BarChart3, permissions: "reports.read" },
+    { labelKey: "reports_cash_sessions", href: (b) => `/${b}/reports/cash-sessions`, icon: Wallet, permissions: "reports.read" },
     { labelKey: "reports_ar", href: (b) => `/${b}/reports/ar`, icon: Receipt, permissions: "reports.read" },
     { labelKey: "reports_finance", href: (b) => `/${b}/reports/finance`, icon: Landmark, permissions: "reports.read" },
   ];
@@ -416,7 +423,7 @@ export default function Sidebar() {
 
   function isActiveItem(item: NavItem): boolean {
     const hrefPath = normalizeHrefPath(item.href(business));
-    if (item.exact) {
+    if (item.exact || item.labelKey === "pos_new_sale") {
       return pathname === hrefPath;
     }
     return pathname === hrefPath || pathname?.startsWith(`${hrefPath}/`);

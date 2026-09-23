@@ -79,6 +79,7 @@
   },
   "nav": {
     "dashboard": "Panel de control",
+    "dollar_purchases": "Compra de dólares",
     "pos_new_sale": "Nueva venta (POS)",
     "pos_badge": "Rápido",
     "tickets_sales": "Tickets / Ventas",
@@ -105,6 +106,7 @@
     "reports_departments": "Ingresos por departamento",
     "reports_sales": "Informes de ventas",
     "reports_inventory": "Informes de existencias",
+    "reports_cash_sessions": "Cierres de caja",
     "reports_ar": "Cuentas por cobrar (AR)",
     "reports_finance": "Balance y resultados",
     "hotel_planning": "Planificación",

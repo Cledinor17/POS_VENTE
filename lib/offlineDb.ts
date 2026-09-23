@@ -22,6 +22,7 @@ export type PendingSale = {
   createdAt: string;
   totalDisplay: number;
   currencyDisplay: string;
+  requiresApproval?: boolean;
 };
 
 type ProductsCacheRecord = {
@@ -29,6 +30,12 @@ type ProductsCacheRecord = {
   products: CatalogProduct[];
   cachedAt: string;
 };
+
+// Approval credentials must never be written to IndexedDB, including on retries.
+export function sanitizePendingSale(sale: PendingSale): PendingSale {
+  const { approval, ...payload } = sale.payload;
+  return { ...sale, payload, requiresApproval: Boolean(sale.requiresApproval || approval) };
+}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -52,13 +59,14 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 export async function getCachedProducts(
-  business: string
+  business: string,
+  branchId: string
 ): Promise<{ products: CatalogProduct[]; cachedAt: string } | null> {
   try {
     const db = await openDb();
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(PRODUCTS_STORE, "readonly");
-      const req = tx.objectStore(PRODUCTS_STORE).get(business);
+      const req = tx.objectStore(PRODUCTS_STORE).get(`${business}:${branchId}`);
       req.onsuccess = () => {
         const record = req.result as ProductsCacheRecord | undefined;
         resolve(record ? { products: record.products, cachedAt: record.cachedAt } : null);
@@ -70,13 +78,13 @@ export async function getCachedProducts(
   }
 }
 
-export async function setCachedProducts(business: string, products: CatalogProduct[]): Promise<void> {
+export async function setCachedProducts(business: string, branchId: string, products: CatalogProduct[]): Promise<void> {
   try {
     const db = await openDb();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(PRODUCTS_STORE, "readwrite");
       tx.objectStore(PRODUCTS_STORE).put({
-        business,
+        business: `${business}:${branchId}`,
         products,
         cachedAt: new Date().toISOString(),
       } satisfies ProductsCacheRecord);
@@ -92,7 +100,7 @@ export async function enqueuePendingSale(sale: PendingSale): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(SALES_STORE, "readwrite");
-    tx.objectStore(SALES_STORE).put(sale);
+    tx.objectStore(SALES_STORE).put(sanitizePendingSale(sale));
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error("Mise en file de la vente impossible."));
   });
@@ -102,16 +110,24 @@ export async function listPendingSales(business: string): Promise<PendingSale[]>
   try {
     const db = await openDb();
     return await new Promise((resolve, reject) => {
-      const tx = db.transaction(SALES_STORE, "readonly");
+      const tx = db.transaction(SALES_STORE, "readwrite");
       const req = tx.objectStore(SALES_STORE).getAll();
+      let rows: PendingSale[] = [];
       req.onsuccess = () => {
         const all = (req.result as PendingSale[]) ?? [];
-        resolve(all.filter((sale) => sale.business === business));
+        // Scrub credentials left by older app versions, across every business.
+        rows = all.map((sale) => {
+          const safe = sanitizePendingSale(sale);
+          if (sale.payload.approval) tx.objectStore(SALES_STORE).put(safe);
+          return safe;
+        }).filter((sale) => sale.business === business);
       };
+      tx.oncomplete = () => resolve(rows);
+      tx.onerror = () => reject(tx.error ?? new Error("Lecture des ventes en attente impossible."));
       req.onerror = () => reject(req.error ?? new Error("Lecture des ventes en attente impossible."));
     });
-  } catch {
-    return [];
+  } catch (error) {
+    throw error;
   }
 }
 
@@ -128,7 +144,7 @@ export async function updatePendingSaleStatus(
     getReq.onsuccess = () => {
       const record = getReq.result as PendingSale | undefined;
       if (record) {
-        store.put({ ...record, status, error });
+        store.put(sanitizePendingSale({ ...record, status, error }));
       }
     };
     tx.oncomplete = () => resolve();

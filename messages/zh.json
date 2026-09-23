@@ -79,6 +79,7 @@
   },
   "nav": {
     "dashboard": "仪表盘",
+    "dollar_purchases": "购买美元",
     "pos_new_sale": "新建销售（收银台）",
     "pos_badge": "快捷",
     "tickets_sales": "票据/销售",
@@ -105,6 +106,7 @@
     "reports_departments": "部门营收",
     "reports_sales": "销售报表",
     "reports_inventory": "库存报表",
+    "reports_cash_sessions": "收银交班",
     "reports_ar": "应收账款",
     "reports_finance": "资产负债表与损益表",
     "hotel_planning": "排房计划",

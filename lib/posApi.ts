@@ -1,6 +1,8 @@
 import { ApiError, apiFetch } from "./api";
+import type { PosReceipt } from "./posReceipt";
 
 export type PosCartItem = {
+  discountCurrency?: string;
   productId: string;
   name: string;
   sku: string;
@@ -47,6 +49,9 @@ export type PosApprovalPayload = {
 };
 
 export type PosCheckoutInput = {
+  branchId?: string;
+  cashSessionId?: string;
+  currency?: string;
   cashierId?: string | number;
   customerId?: string | number | null;
   note?: string;
@@ -166,6 +171,7 @@ export type PosSaleDetailPayment = {
 export type PosSaleDetail = PosSaleHistoryItem & {
   items: PosSaleDetailItem[];
   payments: PosSaleDetailPayment[];
+  receipt: PosReceipt | null;
 };
 
 type Dict = Record<string, unknown>;
@@ -279,6 +285,8 @@ function normalizeParkedItem(raw: unknown): PosCartItem {
     name: toString(obj.name, "Produit"),
     sku: toString(obj.sku, ""),
     price: toNumber(obj.price ?? obj.unit_price ?? obj.selling_price, 0),
+    currency: toString(obj.currency, "HTG"),
+    discountCurrency: toString(obj.discount_currency, toString(obj.currency, "HTG")),
     qty: toNumber(obj.qty ?? obj.quantity, 1),
     type: toString(obj.type, "product") === "service" ? "service" : "product",
     stock: toNumber(obj.stock ?? obj.stock_quantity, 0),
@@ -443,11 +451,55 @@ function normalizeSaleDetail(raw: unknown): PosSaleDetail {
 
   const itemsRaw = Array.isArray(saleObj.items) ? saleObj.items : [];
   const paymentsRaw = Array.isArray(saleObj.payments) ? saleObj.payments : [];
+  const items = itemsRaw.map(normalizeSaleDetailItem);
+  const receipt = isObject(saleObj.receipt) ? saleObj.receipt : null;
 
   return {
     ...base,
-    items: itemsRaw.map(normalizeSaleDetailItem),
+    items,
     payments: paymentsRaw.map(normalizeSaleDetailPayment),
+    receipt: receipt ? {
+      reprint: true,
+      saleId: base.id,
+      receiptNo: base.receiptNo,
+      createdAt: base.createdAt,
+      status: base.status,
+      customerName: base.customerName,
+      cashierName: base.createdByName || (base.createdBy ? `#${base.createdBy}` : "N/A"),
+      businessName: toString(receipt.business_name),
+      businessAddress: toString(receipt.business_address),
+      businessPhone: toString(receipt.business_phone),
+      businessEmail: toString(receipt.business_email),
+      businessLogoSrc: toString(receipt.business_logo_data_uri) || null,
+      invoiceFooter: toString(receipt.invoice_footer),
+      saleCurrency: base.currency,
+      subtotal: toNumber(receipt.subtotal),
+      discountAmount: toNumber(receipt.discount_amount),
+      tax: toNumber(receipt.tax_total),
+      total: base.total,
+      paymentMethod: toString(receipt.payment_method),
+      paymentCurrency: toString(receipt.payment_currency, base.currency),
+      paymentAmount: toNumber(receipt.payment_amount),
+      paymentDateLabel: toString(receipt.payment_date_label) || null,
+      receiptQrCodeDataUri: toString(receipt.receipt_qr_code_data_uri) || null,
+      cashReceived: receipt.cash_received == null ? null : toNumber(receipt.cash_received),
+      change: receipt.change_amount == null ? null : toNumber(receipt.change_amount),
+      refundedTotal: base.refundedTotal,
+      balanceDue: base.balanceDue,
+      items: items.map((item) => ({
+        name: item.name, sku: item.sku, qty: item.quantity, price: item.unitPrice,
+        netTotal: Math.round((item.lineTotal - item.taxAmount) * 100) / 100,
+      })),
+      payments: (Array.isArray(receipt.payments) ? receipt.payments : []).map((raw) => {
+        const payment = isObject(raw) ? raw : {};
+        return {
+          kind: toString(payment.kind), method: toString(payment.method),
+          amount: toNumber(payment.amount), currency: toString(payment.currency, base.currency),
+          cashReceived: payment.cash_received == null ? null : toNumber(payment.cash_received),
+          change: payment.change_amount == null ? null : toNumber(payment.change_amount),
+        };
+      }),
+    } : null,
   };
 }
 
@@ -510,6 +562,8 @@ export async function createPosParkedCart(
       qty: item.qty,
       quantity: item.qty,
       unit_price: item.price,
+      currency: item.currency ?? "HTG",
+      discount_currency: item.discountCurrency ?? item.currency ?? "HTG",
       price: item.price,
       tax_rate: item.taxRate,
       type: item.type,
@@ -538,6 +592,7 @@ export async function checkoutPosSale(
   input: PosCheckoutInput
 ): Promise<PosCheckoutResult | null> {
   const payload = {
+    cash_session_id: input.cashSessionId ?? null,
     cashier_id: input.cashierId ?? null,
     customer_id: input.customerId ?? null,
     note: input.note ?? null,
@@ -551,6 +606,7 @@ export async function checkoutPosSale(
     redeem_points: input.redeemPoints ?? null,
     coupon_code: input.couponCode ?? null,
     idempotency_key: input.idempotencyKey ?? null,
+    currency: input.currency ?? "HTG",
     payment_method: input.paymentMethod,
     payment_currency: input.paymentCurrency ?? "HTG",
     cash_received: input.cashReceived ?? null,
@@ -582,7 +638,10 @@ export async function checkoutPosSale(
     })),
   };
 
-  const raw = await tryApiFetch<unknown>(salePaths(business), { method: "POST", json: payload });
+  const raw = await tryApiFetch<unknown>(salePaths(business), {
+    method: "POST", json: payload,
+    ...(input.branchId ? { headers: { "X-Branch-Id": input.branchId } } : {}),
+  });
   if (raw === null) return null;
   return normalizeCheckoutResult(raw);
 }

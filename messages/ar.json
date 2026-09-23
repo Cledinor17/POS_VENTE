@@ -79,6 +79,7 @@
   },
   "nav": {
     "dashboard": "لوحة التحكم",
+    "dollar_purchases": "شراء الدولار",
     "pos_new_sale": "عملية بيع جديدة (نقطة البيع)",
     "pos_badge": "سريع",
     "tickets_sales": "الفواتير / المبيعات",
@@ -105,6 +106,7 @@
     "reports_departments": "الإيرادات حسب القسم",
     "reports_sales": "تقارير المبيعات",
     "reports_inventory": "تقارير المخزون",
+    "reports_cash_sessions": "إغلاق الصندوق",
     "reports_ar": "الذمم المدينة",
     "reports_finance": "الميزانية العمومية وقائمة الدخل",
     "hotel_planning": "التخطيط",

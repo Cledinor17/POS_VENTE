@@ -2,174 +2,82 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { ApiError } from "@/lib/api";
-import { formatMoney as formatCurrency } from "@/lib/currency";
-import {
-  getInventorySummary,
-  listInventoryMovements,
-  type InventoryMovement,
-  type InventorySummaryResult,
-} from "@/lib/inventoryApi";
+import { Download, Package } from "lucide-react";
+import { usePermissionGuard } from "@/lib/usePermissionGuard";
+import { formatMoney } from "@/lib/currency";
+import { downloadStockReport, getStockReport, type StockReport } from "@/lib/operationalReportsApi";
 
-const EMPTY_SUMMARY: InventorySummaryResult = {
-  currency: "USD",
-  summary: {
-    totalProducts: 0,
-    trackedProducts: 0,
-    lowStockCount: 0,
-    outOfStockCount: 0,
-    stockUnits: 0,
-    stockValue: 0,
-    potentialRevenue: 0,
-  },
-  lowStockProducts: [],
-};
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Une erreur est survenue.";
-}
-
-function formatMoney(amount: number, currency: string): string {
-  return formatCurrency(amount, currency);
-}
-
-function formatQty(value: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 3,
-  }).format(value);
-}
+const localDate = () => new Date().toLocaleDateString("en-CA");
+const qty = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 }).format(value);
+const errorMessage = (e: unknown) => e instanceof Error ? e.message : "Impossible de charger le rapport.";
+const columns = ["opening", "supplied", "available", "sold", "unit_price", "sold_value", "remaining", "remaining_value", "defects", "adjustments"] as const;
 
 export default function InventoryReportsPage() {
-  const params = useParams<{ business: string }>();
-  const businessSlug = params?.business ?? "";
-
-  const [summary, setSummary] = useState<InventorySummaryResult>(EMPTY_SUMMARY);
-  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const { business } = useParams<{ business: string }>();
+  const { allowed, loading: permissionLoading } = usePermissionGuard("reports.read");
+  const [from, setFrom] = useState(() => `${localDate().slice(0, 7)}-01`);
+  const [to, setTo] = useState(localDate);
+  const [period, setPeriod] = useState(() => ({ from, to }));
+  const [report, setReport] = useState<StockReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
-  const reportCurrency = summary.currency || "USD";
 
   useEffect(() => {
-    let mounted = true;
+    if (!business || !allowed) return;
+    let active = true;
+    setLoading(true); setError("");
+    getStockReport(business, period.from, period.to).then(data => { if (active) setReport(data); })
+      .catch(e => { if (active) { setError(errorMessage(e)); setReport(null); } })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [business, allowed, period]);
 
-    async function load() {
-      if (!businessSlug) return;
-      setLoading(true);
-      setError("");
-      try {
-        const [summaryRes, movementRes] = await Promise.all([
-          getInventorySummary(businessSlug),
-          listInventoryMovements(businessSlug, { page: 1, perPage: 10 }),
-        ]);
-
-        if (!mounted) return;
-        setSummary(summaryRes);
-        setMovements(movementRes.items);
-      } catch (e) {
-        if (mounted) setError(getErrorMessage(e));
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    void load();
-    return () => {
-      mounted = false;
-    };
-  }, [businessSlug]);
-
-  return (
-    <div className="space-y-5">
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-        <h1 className="text-xl font-bold text-slate-900">Rapports stock</h1>
-        <p className="text-sm text-slate-500 mt-1">Synthese inventaire et derniers mouvements backend.</p>
-      </section>
-
-      {error ? (
-        <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </section>
-      ) : null}
-
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label="Produits suivis" value={String(summary.summary.trackedProducts)} tone="text-indigo-700" />
-        <StatCard label="Stock total" value={formatQty(summary.summary.stockUnits)} tone="text-slate-800" />
-        <StatCard label="Valeur stock" value={formatMoney(summary.summary.stockValue, reportCurrency)} tone="text-sky-700" />
-        <StatCard label="Ruptures" value={String(summary.summary.outOfStockCount)} tone="text-rose-700" />
-      </section>
-
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b text-sm font-semibold text-slate-700">Derniers mouvements</div>
-          {loading ? (
-            <div className="py-8 text-center text-slate-500">Chargement...</div>
-          ) : movements.length === 0 ? (
-            <div className="py-8 text-center text-slate-500">Aucun mouvement trouve.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead>
-                  <tr className="text-left text-slate-500 border-b">
-                    <th className="py-3 pr-3 px-4 font-semibold">Date</th>
-                    <th className="py-3 pr-3 font-semibold">Produit</th>
-                    <th className="py-3 pr-3 font-semibold">Direction</th>
-                    <th className="py-3 pr-3 font-semibold">Quantite</th>
-                    <th className="py-3 px-4 font-semibold">Utilisateur</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {movements.map((item) => (
-                    <tr key={item.id} className="border-b last:border-0">
-                      <td className="py-3 pr-3 px-4 text-slate-600">
-                        {item.createdAt ? new Date(item.createdAt).toLocaleString("fr-FR") : "-"}
-                      </td>
-                      <td className="py-3 pr-3 text-slate-700">{item.productName}</td>
-                      <td className="py-3 pr-3 text-slate-700">{item.direction}</td>
-                      <td className="py-3 pr-3 text-slate-800 font-semibold">{formatQty(item.quantity)}</td>
-                      <td className="py-3 px-4 text-slate-600">
-                        {item.createdByName || (item.createdBy ? `#${item.createdBy}` : "-")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        <aside className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-          <h2 className="font-bold text-slate-900 mb-2">Alertes stock</h2>
-          {loading ? (
-            <p className="text-sm text-slate-500">Chargement...</p>
-          ) : summary.lowStockProducts.length === 0 ? (
-            <p className="text-sm text-slate-500">Aucune alerte.</p>
-          ) : (
-            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {summary.lowStockProducts.map((item) => (
-                <div key={item.id} className="rounded-xl border border-amber-200 bg-amber-50 p-2.5">
-                  <div className="text-sm font-semibold text-amber-800">{item.name}</div>
-                  <div className="text-xs text-amber-700">
-                    {item.sku || "N/A"} | stock {formatQty(item.stock)} / alerte{" "}
-                    {formatQty(item.alertQuantity)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </aside>
-      </section>
+  async function exportPdf() {
+    if (!report) return;
+    setExporting(true); setError("");
+    try { await downloadStockReport(business, report.from, report.to); }
+    catch (e) { setError(errorMessage(e)); }
+    finally { setExporting(false); }
+  }
+  if (permissionLoading) return <p className="p-6 text-slate-500">Chargement…</p>;
+  if (!allowed) return null;
+  return <div className="space-y-5 p-4 md:p-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900"><Package className="h-6 w-6" /> Rapport de stock</h1>
+        <p className="mt-1 text-sm text-slate-500">Approvisionnements, ventes, stock restant et valorisation par produit.</p></div>
+      <button onClick={() => void exportPdf()} disabled={!report || loading || exporting}
+        className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        <Download className="h-4 w-4" />{exporting ? "Préparation…" : "PDF à imprimer"}</button>
     </div>
-  );
-}
-
-function StatCard({ label, value, tone }: { label: string; value: string; tone: string }) {
-  return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className={`mt-2 text-2xl font-bold ${tone}`}>{value}</p>
-    </div>
-  );
+    <form className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4" onSubmit={e => {
+      e.preventDefault(); if (!from || !to || from > to) { setError("Choisis une période valide."); return; }
+      setPeriod({ from, to });
+    }}>
+      <label className="text-sm font-semibold text-slate-600">Du<input aria-label="Début de période" type="date" required value={from} onChange={e => setFrom(e.target.value)} className="mt-1 block rounded-lg border border-slate-300 p-2" /></label>
+      <label className="text-sm font-semibold text-slate-600">Au<input aria-label="Fin de période" type="date" required min={from} value={to} onChange={e => setTo(e.target.value)} className="mt-1 block rounded-lg border border-slate-300 p-2" /></label>
+      <button disabled={loading} className="rounded-lg bg-slate-800 px-4 py-2 text-white disabled:opacity-50">Afficher le rapport</button>
+      <span className="text-xs text-slate-500">Impression A4 paysage</span>
+    </form>
+    {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+    {loading ? <p className="text-slate-500">Chargement du rapport…</p> : report && <>
+      <div><h2 className="font-bold text-slate-800">{report.business_name} · {report.branch_name}</h2><p className="text-xs text-slate-500">Du {report.from} au {report.to} · {report.currency} · Édité le {report.generated_at}</p></div>
+      {!!report.unassigned_movements_count && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">À rapprocher : {report.unassigned_movements_count} mouvement(s) de cette période ne sont rattachés à aucune succursale et ne sont pas inclus dans ce rapport par succursale.</p>}
+      <div className="grid gap-3 sm:grid-cols-3">{[
+        ["Stock restant", qty(report.totals.remaining)],
+        ["Valeur au coût d’achat", formatMoney(report.totals.cost_value, report.currency)],
+        ["Valeur au prix de vente", formatMoney(report.totals.remaining_value, report.currency)],
+      ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-xl font-bold text-slate-900">{value}</div></div>)}</div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[1300px] text-right text-xs"><thead className="bg-slate-800 text-white"><tr>{["Code-barres", "Catégorie", "Produit", "Stock 1 · début", "Stock 2 · appro.", "Qté totale", "Qté vendue", "Prix unitaire", "Valeur vendue*", "Qté restante", "Valeur restante", "Défectueux", "Autres +/−"].map(label => <th key={label} className="px-3 py-3">{label}</th>)}</tr></thead>
+          <tbody>{report.rows.map(row => <tr key={row.product_id} className="border-t border-slate-100">
+            <td className="px-3 py-3 font-mono">{row.barcode}</td><td className="px-3 py-3 text-left">{row.category}</td><td className="px-3 py-3 text-left font-semibold">{row.name}</td>
+            {columns.map(key => <td key={key} className={`px-3 py-3 tabular-nums ${key === "opening" ? "bg-amber-50" : key.startsWith("remaining") ? "bg-emerald-50" : ""}`}>{key.includes("value") || key === "unit_price" ? row[key].toFixed(2) : qty(row[key])}</td>)}
+          </tr>)}{!report.rows.length && <tr><td colSpan={13} className="p-6 text-center text-slate-500">Aucun produit suivi dans cette succursale.</td></tr>}</tbody>
+          <tfoot className="bg-slate-100 font-bold"><tr><td colSpan={3} className="p-3 text-left">TOTAL</td>{columns.map(key => <td key={key} className="px-3 py-3">{key === "unit_price" ? "—" : key.includes("value") ? report.totals[key].toFixed(2) : qty(report.totals[key])}</td>)}</tr></tfoot>
+        </table>
+      </div>
+      <div className="space-y-1 text-xs text-slate-500"><p>Qté totale = stock de début + approvisionnements. Stock restant = total − ventes − défectueux + autres mouvements nets.</p><p>Autres : retours, transferts, corrections et initialisations. * Valeurs aux prix et taux actuels, avant remises ; la valeur vendue est indicative et ne représente pas les encaissements.</p></div>
+    </>}
+  </div>;
 }

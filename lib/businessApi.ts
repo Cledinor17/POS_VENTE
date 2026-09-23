@@ -31,6 +31,9 @@ export type BusinessSettings = {
   currency: string;
   exchange_rate_direction: string;
   exchange_rate_value: number;
+  exchange_buy_rate: number;
+  exchange_sell_rate: number;
+  dollar_purchase_enabled: boolean;
   usd_to_htg_rate: number;
   htg_to_usd_rate: number;
   timezone: string;
@@ -73,6 +76,9 @@ type BusinessMultipartPayload = {
   currency?: string;
   exchange_rate_direction?: string;
   exchange_rate_value?: number;
+  exchange_buy_rate?: number;
+  exchange_sell_rate?: number;
+  dollar_purchase_enabled?: boolean;
   timezone?: string;
   invoice_footer?: string;
   business_type?: BusinessType;
@@ -121,6 +127,9 @@ function normalizeBusiness(raw: unknown): BusinessSettings {
     exchange_rate_value: Number(obj.exchange_rate_value ?? 1) || 1,
     usd_to_htg_rate: Number(obj.usd_to_htg_rate ?? obj.exchange_rate_value ?? 1) || 1,
     htg_to_usd_rate: Number(obj.htg_to_usd_rate ?? 1) || 1,
+    exchange_buy_rate: Number(obj.exchange_buy_rate ?? obj.usd_to_htg_rate ?? 1),
+    exchange_sell_rate: Number(obj.exchange_sell_rate ?? obj.usd_to_htg_rate ?? 1),
+    dollar_purchase_enabled: obj.dollar_purchase_enabled === true,
     timezone: asString(obj.timezone),
     logo_path: asString(obj.logo_path),
     logo_url: asString(obj.logo_url),
@@ -163,6 +172,8 @@ function buildBusinessFormData(payload: BusinessMultipartPayload): FormData {
     "currency",
     "exchange_rate_direction",
     "exchange_rate_value",
+    "exchange_buy_rate",
+    "exchange_sell_rate",
     "timezone",
     "invoice_footer",
     "business_type",
@@ -172,8 +183,8 @@ function buildBusinessFormData(payload: BusinessMultipartPayload): FormData {
   ];
 
   const boolKeys: Array<
-    "has_hotel" | "has_restaurant" | "has_pool" | "has_services" | "has_moment" | "loyalty_enabled"
-  > = ["has_hotel", "has_restaurant", "has_pool", "has_services", "has_moment", "loyalty_enabled"];
+    "has_hotel" | "has_restaurant" | "has_pool" | "has_services" | "has_moment" | "loyalty_enabled" | "dollar_purchase_enabled"
+  > = ["has_hotel", "has_restaurant", "has_pool", "has_services", "has_moment", "loyalty_enabled", "dollar_purchase_enabled"];
   for (const key of boolKeys) {
     if (payload[key] !== undefined) {
       formData.append(key, payload[key] ? "1" : "0");
@@ -254,4 +265,9 @@ export async function updateBusinessSettings(
 
   const body = asRecord(raw);
   return normalizeBusiness(body.data ?? body);
+}
+
+export async function getPosSettings(business: string): Promise<BusinessSettings> {
+  const raw = await apiFetch<{data: unknown}>(`/api/app/${encodeURIComponent(business)}/pos/settings`);
+  return normalizeBusiness(raw.data);
 }

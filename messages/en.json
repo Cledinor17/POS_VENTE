@@ -79,6 +79,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "dollar_purchases": "Buy dollars",
     "pos_new_sale": "New sale (POS)",
     "pos_badge": "Quick",
     "tickets_sales": "Tickets / Sales",
@@ -105,6 +106,7 @@
     "reports_departments": "Revenue by department",
     "reports_sales": "Sales reports",
     "reports_inventory": "Stock reports",
+    "reports_cash_sessions": "Cash register closings",
     "reports_ar": "Accounts receivable (AR)",
     "reports_finance": "Balance sheet & P&L",
     "hotel_planning": "Planning",

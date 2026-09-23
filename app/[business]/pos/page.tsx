@@ -1,6 +1,9 @@
 "use client";
+import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { pricePosCart } from "@/lib/posCurrency";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
@@ -28,19 +31,25 @@ import BarcodeScannerModal from "@/components/BarcodeScannerModal";
 import SensitiveActionApprovalModal, {
   type SensitiveActionApproval,
 } from "@/components/SensitiveActionApprovalModal";
+import { useBranch } from "@/context/BranchContext";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
-import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
+import { getPosSettings, type BusinessSettings } from "@/lib/businessApi";
 import { hasPermission } from "@/lib/businessAccess";
 import { listCustomers, type CustomerItem } from "@/lib/customersApi";
 import { validateCoupon } from "@/lib/couponsApi";
+import {
+  buildProductScanIndex,
+  resolveScannedProduct,
+} from "@/lib/productBarcode";
+import { printReceipt, type PosReceipt } from "@/lib/posReceipt";
 import {
   listBusinessApprovers,
   type BusinessApproverAbility,
   type BusinessApproverItem,
 } from "@/lib/businessUsersApi";
 import { getProducts, type CatalogProduct } from "@/lib/catalogApi";
-import { convertAmount, formatMoney } from "@/lib/currency";
+import { getExchangeRate, convertAmount, formatMoney } from "@/lib/currency";
 import {
   DEFAULT_PRODUCT_AVATAR_PATH,
   resolveProductImageUrl,
@@ -65,12 +74,13 @@ import {
 } from "@/lib/printersApi";
 import { printRawEscposViaQz } from "@/lib/qzPrint";
 import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
-import { enqueuePendingSale, getCachedProducts, listPendingSales, setCachedProducts } from "@/lib/offlineDb";
+import { enqueuePendingSale, getCachedProducts, listPendingSales, removePendingSale, setCachedProducts } from "@/lib/offlineDb";
 import { syncPendingSales } from "@/lib/offlineSync";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
 import { getCurrentCashSession, openCashSession, type CashSession } from "@/lib/cashSessionApi";
 
 type CartItem = {
+  discountCurrency?: string;
   productId: string;
   name: string;
   sku: string;
@@ -112,31 +122,7 @@ type PaymentMethod = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 };
-type CompletedSale = {
-  saleId: string;
-  receiptNo: string;
-  createdAt: string;
-  businessName: string;
-  businessAddress: string;
-  businessPhone: string;
-  businessEmail: string;
-  businessLogoSrc: string | null;
-  invoiceFooter: string;
-  cashierName: string;
-  items: CartItem[];
-  saleCurrency: string;
-  subtotal: number;
-  discountAmount: number;
-  tax: number;
-  total: number;
-  paymentMethod: PaymentMethodId;
-  paymentCurrency: string;
-  paymentAmount: number;
-  paymentDateLabel: string | null;
-  receiptQrCodeDataUri: string | null;
-  cashReceived: number;
-  change: number;
-};
+type CompletedSale = PosReceipt;
 type NoticeTone = "success" | "info" | "warning" | "error";
 type Notice = {
   id: number;
@@ -191,14 +177,6 @@ function getStringField(
       return value.trim();
   }
   return fallback;
-}
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 function formatBusinessAddress(settings: BusinessSettings | null): string {
   if (!settings) return "";
@@ -311,56 +289,13 @@ function fromApiParkedCart(cart: PosParkedCartApi): ParkedCart {
     items: cart.items,
   };
 }
-function buildReceiptHtml(sale: CompletedSale): string {
-  const linesHtml = sale.items
-    .map((item) => {
-      const lineGross = item.qty * item.price;
-      const lineTotal = lineGross - computeItemDiscount(lineGross, item.discountType, item.discountValue);
-      return `<tr><td><div class="item-name">${escapeHtml(item.name)}</div>${item.sku ? `<div class="item-meta">${escapeHtml(item.sku)}</div>` : ""}</td><td style="text-align:right">${escapeHtml(String(item.qty))} x ${escapeHtml(formatMoney(item.price, sale.saleCurrency))}</td><td style="text-align:right">${escapeHtml(formatMoney(lineTotal, sale.saleCurrency))}</td></tr>`;
-    })
-    .join("");
-  const paymentLabel =
-    DEFAULT_PAYMENT_METHODS.find((m) => m.id === sale.paymentMethod)?.label ??
-    sale.paymentMethod;
-  const paymentSummary = `<div class="row"><span>Montant regle</span><strong>${escapeHtml(formatMoney(sale.paymentAmount, sale.paymentCurrency))}</strong></div>`;
-  const discountBlock =
-    sale.discountAmount > 0
-      ? `<div class="row"><span>Rabais</span><span>- ${escapeHtml(formatMoney(sale.discountAmount, sale.saleCurrency))}</span></div>`
-      : "";
-  const cashBlock =
-    sale.paymentMethod === "cash"
-      ? `<div class="row"><span>Recu</span><strong>${escapeHtml(formatMoney(sale.cashReceived, sale.paymentCurrency))}</strong></div><div class="row"><span>Monnaie</span><strong>${escapeHtml(formatMoney(sale.change, sale.paymentCurrency))}</strong></div>`
-      : "";
-  const logoBlock = sale.businessLogoSrc
-    ? `<div class="logo-wrap"><img src="${sale.businessLogoSrc}" alt="Logo hotel" class="logo" /></div>`
-    : "";
-  const qrBlock = sale.receiptQrCodeDataUri
-    ? `<div class="qr-card"><div class="qr-title">QR paiement</div><img src="${sale.receiptQrCodeDataUri}" alt="QR ticket" class="qr-image" /><div class="muted small">Scanner pour voir le business, le montant paye et la date.</div></div>`
-    : "";
-  const footerBlock = sale.invoiceFooter.trim()
-    ? `<div class="footer-note">${escapeHtml(sale.invoiceFooter).replace(/\n/g, "<br />")}</div>`
-    : "";
-  const paymentDateLabel = sale.paymentDateLabel || new Date(sale.createdAt).toLocaleString("fr-FR");
-  return `
-<!doctype html>
-<html><head><meta charset="utf-8" /><title>Ticket ${escapeHtml(sale.receiptNo)}</title><style>@page { size: 80mm auto; margin: 4mm; } body { font-family: Arial, sans-serif; font-size: 11px; width: 72mm; margin: 0 auto; color: #111827; } .center { text-align: center; } .muted { color: #6b7280; } .small { font-size: 9px; line-height: 1.35; } .sep { border-top: 1px dashed #9ca3af; margin: 8px 0; } .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; } .title { font-size: 14px; font-weight: 700; margin-bottom: 2px; } table { width: 100%; border-collapse: collapse; } td { padding: 3px 0; vertical-align: top; } .grand { font-size: 14px; font-weight: 800; } .logo-wrap { text-align: center; margin-bottom: 8px; } .logo { width: 56px; height: 56px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 12px; padding: 4px; background: #fff; } .header-card, .qr-card, .footer-note { border: 1px solid #e5e7eb; border-radius: 12px; padding: 8px; background: #f8fafc; margin-bottom: 8px; } .item-name { font-weight: 700; } .item-meta { color: #6b7280; font-size: 9px; } .qr-title { text-transform: uppercase; letter-spacing: .08em; font-size: 9px; color: #475569; font-weight: 700; margin-bottom: 6px; text-align: center; } .qr-image { width: 96px; height: 96px; display: block; margin: 0 auto 6px; } .footer-note { font-size: 10px; line-height: 1.45; color: #334155; }</style></head><body><div class="center">${logoBlock}<div class="title">${escapeHtml(sale.businessName)}</div><div class="muted">${escapeHtml(sale.businessAddress || "")}</div><div class="muted">${escapeHtml(sale.businessPhone || "")}${sale.businessEmail ? ` | ${escapeHtml(sale.businessEmail)}` : ""}</div></div><div class="sep"></div><div class="header-card"><div class="row"><span>Ticket</span><strong>${escapeHtml(sale.receiptNo)}</strong></div><div class="row"><span>Date</span><span>${escapeHtml(paymentDateLabel)}</span></div><div class="row"><span>Caissier</span><span>${escapeHtml(sale.cashierName)}</span></div><div class="row"><span>Paiement</span><span>${escapeHtml(paymentLabel)}</span></div></div><table>${linesHtml}</table><div class="sep"></div><div class="row"><span>Sous-total</span><span>${escapeHtml(formatMoney(sale.subtotal, sale.saleCurrency))}</span></div>${discountBlock}<div class="row"><span>Taxes</span><span>${escapeHtml(formatMoney(sale.tax, sale.saleCurrency))}</span></div><div class="row grand"><span>Total</span><span>${escapeHtml(formatMoney(sale.total, sale.saleCurrency))}</span></div>${paymentSummary}${cashBlock}<div class="sep"></div>${footerBlock}${qrBlock}<div class="center muted">Merci et a bientot.</div></body></html>`;
-}
-function printReceipt(sale: CompletedSale) {
-  const receiptWindow = window.open("", "_blank", "width=420,height=760");
-  if (!receiptWindow) return;
-  receiptWindow.document.open();
-  receiptWindow.document.write(buildReceiptHtml(sale));
-  receiptWindow.document.close();
-  setTimeout(() => {
-    receiptWindow.focus();
-    receiptWindow.print();
-  }, 250);
-}
 export default function PosPage() {
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
-  const saleCurrency = "HTG";
+
   const { user, activeBusiness, permissions } = useAuth();
+  const { currentBranch } = useBranch();
+  const branchId = currentBranch?.id;
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
@@ -368,8 +303,16 @@ export default function PosPage() {
   const [, setError] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [query, setQuery] = useState("");
+  useSearchFromUrl(setQuery);
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [sourceCart, setCart] = useState<CartItem[]>([]);
+  const [paymentCurrency, setPaymentCurrency] = useState<"USD" | "HTG">("HTG");
+  const pricedCart = useMemo(() => pricePosCart(sourceCart, paymentCurrency, businessSettings?.currency || "HTG", {
+      exchangeBuyRate: businessSettings?.exchange_buy_rate, exchangeSellRate: businessSettings?.exchange_sell_rate,
+      exchangeRateDirection: businessSettings?.exchange_rate_direction, exchangeRateValue: businessSettings?.exchange_rate_value,
+    }), [sourceCart, paymentCurrency, businessSettings]);
+  const saleCurrency = pricedCart.currency;
+  const cart = pricedCart.items;
   const [hiddenProductIds, setHiddenProductIds] = useState<
     Record<string, boolean>
   >({});
@@ -383,10 +326,17 @@ export default function PosPage() {
     DEFAULT_PAYMENT_METHODS,
   );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodId>("cash");
-  const [paymentCurrency, setPaymentCurrency] = useState<"USD" | "HTG">("HTG");
   const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [discountType, setDiscountType] = useState<"none" | DiscountType>("none");
   const [discountValueInput, setDiscountValueInput] = useState("");
+  const [discountCurrency, setDiscountCurrency] = useState("HTG");
+  const previousSaleCurrency = useRef(saleCurrency);
+  useEffect(() => {
+    if (previousSaleCurrency.current !== saleCurrency) {
+      setAppliedCoupon(null);
+      previousSaleCurrency.current = saleCurrency;
+    }
+  }, [saleCurrency]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerItem[]>([]);
@@ -498,9 +448,9 @@ export default function PosPage() {
           setProducts(data);
           setOfflineCatalogAt(null);
         }
-        void setCachedProducts(businessSlug, data);
+        if (branchId) void setCachedProducts(businessSlug, branchId, data);
       } catch (e) {
-        const cached = await getCachedProducts(businessSlug);
+        const cached = branchId ? await getCachedProducts(businessSlug, branchId) : null;
         if (cached && mounted) {
           setProducts(cached.products);
           setOfflineCatalogAt(cached.cachedAt);
@@ -515,7 +465,7 @@ export default function PosPage() {
     return () => {
       mounted = false;
     };
-  }, [businessSlug, pushError]);
+  }, [businessSlug, branchId, pushError]);
   useEffect(() => {
     if (isOnline) return;
     setSelectedCustomer(null);
@@ -527,18 +477,20 @@ export default function PosPage() {
     setCouponError("");
   }, [isOnline]);
   useEffect(() => {
-    if (!businessSlug) return;
+    if (!businessSlug || !user?.id) return;
     let mounted = true;
     function refreshPendingCount() {
       void listPendingSales(businessSlug).then((items) => {
-        if (mounted) setPendingSalesCount(items.length);
-      });
+        if (mounted) setPendingSalesCount(items.filter((sale) => String(sale.payload.cashierId) === String(user?.id)).length);
+      }).catch((error) => { if (mounted) pushError(getErrorMessage(error)); });
     }
     refreshPendingCount();
     async function runSync() {
       setSyncingSales(true);
       try {
-        await syncPendingSales(businessSlug);
+        await syncPendingSales(businessSlug, { userId: String(user?.id ?? "") });
+      } catch (error) {
+        if (mounted) pushError(getErrorMessage(error));
       } finally {
         if (mounted) setSyncingSales(false);
         refreshPendingCount();
@@ -554,7 +506,7 @@ export default function PosPage() {
       window.removeEventListener("online", handleOnline);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [businessSlug]);
+  }, [businessSlug, user?.id]);
   useEffect(() => {
     if (!businessSlug) return;
     let mounted = true;
@@ -578,7 +530,7 @@ export default function PosPage() {
     async function loadBusinessConfig() {
       if (!businessSlug) return;
       try {
-        const data = await getBusinessSettings(businessSlug);
+        const data = await getPosSettings(businessSlug);
         if (mounted) setBusinessSettings(data);
       } catch (e) {
         if (mounted) pushError(getErrorMessage(e));
@@ -681,6 +633,8 @@ export default function PosPage() {
     return convertAmount(product.price, product.priceCurrency, saleCurrency, {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
       exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
     });
   }, [businessSettings, saleCurrency]);
   const categories = useMemo(() => {
@@ -704,16 +658,7 @@ export default function PosPage() {
       return matchQuery && matchCategory;
     });
   }, [products, query, categoryFilter]);
-  const barcodeLookup = useMemo(() => {
-    const lookup = new Map<string, CatalogProduct>();
-    for (const product of products) {
-      const barcode = product.barcode.trim().toLowerCase();
-      if (barcode) {
-        lookup.set(barcode, product);
-      }
-    }
-    return lookup;
-  }, [products]);
+  const scanIndex = useMemo(() => buildProductScanIndex(products), [products]);
   useEffect(() => {
     if (cart.length === 0) {
       setHiddenProductIds((prev) =>
@@ -757,7 +702,10 @@ export default function PosPage() {
       ),
     [cart],
   );
-  const discountValue = safeNumber(discountValueInput);
+  const discountValue = discountType === "fixed" ? convertAmount(safeNumber(discountValueInput), discountCurrency, saleCurrency, {
+    exchangeBuyRate: businessSettings?.exchange_buy_rate, exchangeSellRate: businessSettings?.exchange_sell_rate,
+    exchangeRateDirection: businessSettings?.exchange_rate_direction, exchangeRateValue: businessSettings?.exchange_rate_value,
+  }) : safeNumber(discountValueInput);
   const discountAmount = useMemo(() => {
     if (discountType === "none" || subtotal <= 0 || discountValue <= 0) return 0;
     if (discountType === "percent") {
@@ -773,7 +721,8 @@ export default function PosPage() {
       ),
     [cart],
   );
-  const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
+  const valuationConfig = { exchangeRateValue: businessSettings?.exchange_sell_rate || businessSettings?.usd_to_htg_rate || 1 };
+  const couponDiscountAmount = convertAmount(appliedCoupon?.discountAmount ?? 0, businessSettings?.currency || "HTG", saleCurrency, valuationConfig);
   const grandTotal = Math.max(0, subtotal - discountAmount - couponDiscountAmount) + taxTotal;
   const itemCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.qty, 0),
@@ -791,7 +740,7 @@ export default function PosPage() {
     );
   }, [businessSlug, itemCount]);
   const loyaltyEnabled = Boolean(businessSettings?.loyalty_enabled);
-  const loyaltyRedeemValue = businessSettings?.loyalty_redeem_value || 1;
+  const loyaltyRedeemValue = (businessSettings?.loyalty_redeem_value || 1) * getExchangeRate(businessSettings?.currency || "HTG", saleCurrency, valuationConfig);
   const loyaltyCapPercent = businessSettings?.loyalty_redemption_cap_percent ?? 50;
   const maxRedeemablePoints = useMemo(() => {
     if (!loyaltyEnabled || !selectedCustomer) return 0;
@@ -803,13 +752,15 @@ export default function PosPage() {
     Math.max(0, Math.trunc(safeNumber(redeemPointsInput))),
     maxRedeemablePoints,
   );
-  const pointsDiscountAmount = redeemPoints * loyaltyRedeemValue;
+  const pointsDiscountAmount = Number((redeemPoints * loyaltyRedeemValue).toFixed(2));
   const remainingAfterPoints = Math.max(0, grandTotal - pointsDiscountAmount);
   const amountDueInPaymentCurrency = useMemo(
     () =>
       convertAmount(remainingAfterPoints, saleCurrency, paymentCurrency, {
         exchangeRateDirection: businessSettings?.exchange_rate_direction,
         exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
       }),
     [businessSettings, remainingAfterPoints, paymentCurrency, saleCurrency],
   );
@@ -872,13 +823,13 @@ export default function PosPage() {
           productId: String(product.id),
           name: product.name,
           sku: product.sku,
-          price: getSaleUnitPrice(product),
+          price: product.price,
           qty: qtyToAdd,
           type: product.type,
           stock: product.stock,
           taxRate: product.taxRate,
           imagePath: product.imagePath,
-          currency: saleCurrency,
+          currency: product.priceCurrency,
         },
       ];
     });
@@ -888,12 +839,9 @@ export default function PosPage() {
         "success",
       );
     }
-  }, [getSaleUnitPrice, pushError, pushNotice, saleCurrency]);
+  }, [pushError, pushNotice]);
   const tryAddScannedProduct = useCallback((rawCode: string): boolean => {
-    const normalized = rawCode.trim().toLowerCase();
-    if (!normalized) return false;
-
-    const found = barcodeLookup.get(normalized);
+    const found = resolveScannedProduct(scanIndex, rawCode);
     if (!found) return false;
 
     addToCart(found, 1);
@@ -903,7 +851,7 @@ export default function PosPage() {
       queryInputRef.current?.select();
     }, 0);
     return true;
-  }, [addToCart, barcodeLookup]);
+  }, [addToCart, scanIndex]);
   const handleCameraScan = useCallback((code: string) => {
     if (!tryAddScannedProduct(code)) {
       pushError(`Produit introuvable pour le code ${code}.`);
@@ -954,7 +902,7 @@ export default function PosPage() {
   ) {
     setCart((prev) =>
       prev.map((item) =>
-        item.productId === productId ? { ...item, discountType, discountValue } : item,
+        item.productId === productId ? { ...item, discountType, discountValue, discountCurrency: saleCurrency } : item,
       ),
     );
   }
@@ -975,7 +923,7 @@ export default function PosPage() {
       id: `P-${Date.now().toString(36).toUpperCase()}`,
       note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
       createdAt: new Date().toISOString(),
-      items: cart,
+      items: sourceCart,
     };
     try {
       if (useRemoteParked) {
@@ -1086,14 +1034,16 @@ export default function PosPage() {
     if (!businessSlug || syncingSales) return;
     setSyncingSales(true);
     try {
-      await syncPendingSales(businessSlug);
-      const remaining = await listPendingSales(businessSlug);
+      await syncPendingSales(businessSlug, { userId: String(user?.id ?? "") });
+      const remaining = (await listPendingSales(businessSlug)).filter((sale) => String(sale.payload.cashierId) === String(user?.id));
       setPendingSalesCount(remaining.length);
       if (remaining.length === 0) {
         pushNotice("Ventes hors-ligne synchronisees.", "success");
       } else {
-        pushNotice(`${remaining.length} vente(s) hors-ligne restent a synchroniser.`, "warning");
+        pushNotice(`${remaining.length} vente(s) hors-ligne restent a synchroniser. Consultez les ventes en attente pour voir les détails.`, "warning");
       }
+    } catch (error) {
+      pushError(getErrorMessage(error));
     } finally {
       setSyncingSales(false);
     }
@@ -1127,7 +1077,7 @@ export default function PosPage() {
     try {
       const result = await validateCoupon(businessSlug, {
         code,
-        subtotal,
+        subtotal: convertAmount(subtotal, saleCurrency, businessSettings?.currency || "HTG", valuationConfig),
         customerId: selectedCustomer?.id,
       });
       if (result.valid) {
@@ -1148,6 +1098,8 @@ export default function PosPage() {
     setCouponError("");
   }
   async function runCheckoutSale(approval?: PosApprovalPayload): Promise<boolean> {
+    if (!branchId || !cashSession) { pushError("La succursale et la session de caisse doivent être chargées."); return false; }
+    if (!businessSettings) { pushError("Les taux de change ne sont pas encore charges."); return false; }
     if (cart.length === 0) {
       pushError("Ajoute des produits avant de passer a la caisse.");
       return false;
@@ -1160,6 +1112,9 @@ export default function PosPage() {
     setError("");
     const idempotencyKey = generateClientId();
     const checkoutInput: PosCheckoutInput = {
+      branchId,
+      cashSessionId: String(cashSession.id),
+      currency: saleCurrency,
       cashierId: user?.id ?? undefined,
       customerId: selectedCustomer?.id ?? undefined,
       subtotal,
@@ -1243,9 +1198,11 @@ export default function PosPage() {
       };
       const storageKey = `pos_sales:${businessSlug}`;
       const existingRaw = safeGetItem(storageKey);
-      const existing = existingRaw
-        ? (JSON.parse(existingRaw) as CompletedSale[])
-        : [];
+      let existing: CompletedSale[] = [];
+      try {
+        const parsed: unknown = existingRaw ? JSON.parse(existingRaw) : [];
+        if (Array.isArray(parsed)) existing = parsed as CompletedSale[];
+      } catch { /* An unreadable local receipt history must not undo a confirmed sale. */ }
       safeSetItem(storageKey, JSON.stringify([sale, ...existing]));
       setProducts((prev) =>
         prev.map((product) => {
@@ -1278,12 +1235,22 @@ export default function PosPage() {
       void printSaleReceipt(sale);
       return sale;
     }
+    let queued = false;
     try {
+      // Persist before sending: closing the tab during the request must be recoverable.
+      await enqueuePendingSale({
+        id: idempotencyKey, business: businessSlug, payload: checkoutInput, status: "pending", error: null,
+        createdAt: new Date().toISOString(), totalDisplay: grandTotal, currencyDisplay: saleCurrency,
+      });
+      queued = true;
       const backendResult = await checkoutPosSale(businessSlug, checkoutInput);
+      if (!backendResult) throw new Error("Le serveur n’a pas confirmé la vente.");
+      try { await removePendingSale(idempotencyKey); }
+      catch { pushNotice("Vente confirmée. La référence locale sera vérifiée à la prochaine synchronisation.", "warning"); }
       finishSale(backendResult, false);
       return true;
     } catch (e) {
-      if (!(e instanceof ApiError)) {
+      if (queued && (!(e instanceof ApiError) || e.status >= 500 || e.status === 408)) {
         try {
           await enqueuePendingSale({
             id: idempotencyKey,
@@ -1302,6 +1269,10 @@ export default function PosPage() {
           pushError(getErrorMessage(queueError));
           return false;
         }
+      }
+      if (queued) {
+        try { await removePendingSale(idempotencyKey); }
+        catch (storageError) { pushError(getErrorMessage(storageError)); return false; }
       }
       pushError(getErrorMessage(e));
       return false;
@@ -1352,6 +1323,7 @@ export default function PosPage() {
             ) : null}
           </div>{" "}
           <div className="flex items-center gap-2">
+            {pendingSalesCount > 0 && <Link href={`/${businessSlug}/pos/pending`} className="rounded-xl border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-900">Voir les ventes en attente</Link>}
             {pendingSalesCount > 0 ? (
               <button
                 onClick={() => void handleManualSync()}
@@ -1364,6 +1336,7 @@ export default function PosPage() {
                   : `${pendingSalesCount} vente(s) en attente - Synchroniser maintenant`}{" "}
               </button>
             ) : null}
+            {businessSettings?.dollar_purchase_enabled && <Link href={`/${businessSlug}/pos/dollar-purchases`} className="rounded-xl border border-indigo-200 px-4 py-2.5 text-sm font-semibold text-indigo-700">Achat de dollars</Link>}
             {defaultPrinter?.cashDrawerEnabled ? (
               <button
                 onClick={handleOpenDrawer}
@@ -1977,8 +1950,8 @@ export default function PosPage() {
                   type="number"
                   min="0"
                   step="0.01"
-                  value={discountValueInput}
-                  onChange={(event) => setDiscountValueInput(event.target.value)}
+                  value={discountType === "fixed" && discountCurrency !== saleCurrency && discountValueInput !== "" ? discountValue : discountValueInput}
+                  onChange={(event) => { setDiscountValueInput(event.target.value); setDiscountCurrency(saleCurrency); }}
                   disabled={discountType === "none"}
                   placeholder={discountType === "percent" ? "10" : "0.00"}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-50"
@@ -2000,7 +1973,7 @@ export default function PosPage() {
               ) : appliedCoupon ? (
                 <div className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
                   <span className="text-sm font-semibold text-indigo-800">
-                    {appliedCoupon.code} (- {formatMoney(appliedCoupon.discountAmount, saleCurrency)})
+                    {appliedCoupon.code} (- {formatMoney(couponDiscountAmount, saleCurrency)})
                   </span>
                   <button
                     type="button"
@@ -2044,7 +2017,7 @@ export default function PosPage() {
               <select
                 value={paymentCurrency}
                 onChange={(event) =>
-                  setPaymentCurrency(event.target.value === "USD" ? "USD" : "HTG")
+                  { setPaymentCurrency(event.target.value === "USD" ? "USD" : "HTG"); setCashReceivedInput(""); }
                 }
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               >

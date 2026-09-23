@@ -1,13 +1,15 @@
 "use client";
+import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Ban, Eye, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
+import { Ban, Eye, Printer, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
 import SensitiveActionApprovalModal, {
   type SensitiveActionApproval,
 } from "@/components/SensitiveActionApprovalModal";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
+import { printReceipt } from "@/lib/posReceipt";
 import {
   listBusinessApprovers,
   type BusinessApproverAbility,
@@ -92,12 +94,14 @@ export default function SalesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  useSearchFromUrl(setSearch, setSearchInput);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
+  const [printLoadingId, setPrintLoadingId] = useState<string | null>(null);
   const [detailSale, setDetailSale] = useState<PosSaleDetail | null>(null);
   const [refundSale, setRefundSale] = useState<PosSaleHistoryItem | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
@@ -187,6 +191,22 @@ export default function SalesPage() {
   }
   function closeSaleDetail() {
     setDetailSale(null);
+  }
+  async function reprintSale(saleId: string) {
+    if (!businessSlug || printLoadingId) return;
+    setPrintLoadingId(saleId);
+    setError("");
+    try {
+      const detail = await getPosSaleDetail(businessSlug, saleId);
+      if (!detail.receipt) {
+        throw new Error("Les donnees necessaires a la reimpression de ce ticket sont indisponibles.");
+      }
+      printReceipt(detail.receipt);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setPrintLoadingId(null);
+    }
   }
   async function performVoidSale(
     sale: PosSaleHistoryItem,
@@ -452,13 +472,25 @@ export default function SalesPage() {
                 {detailSale ? detailSale.receiptNo : "Chargement..."}{" "}
               </div>{" "}
             </div>{" "}
-            <button
-              onClick={closeSaleDetail}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1"
-            >
-              {" "}
-              <X className="h-3.5 w-3.5" /> Fermer{" "}
-            </button>{" "}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {detailSale ? (
+                <button
+                  onClick={() => void reprintSale(detailSale.id)}
+                  disabled={printLoadingId !== null || detailLoadingId !== null}
+                  className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 inline-flex items-center gap-1"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  {printLoadingId === detailSale.id ? "Preparation..." : "Réimprimer"}
+                </button>
+              ) : null}
+              <button
+                onClick={closeSaleDetail}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1"
+              >
+                {" "}
+                <X className="h-3.5 w-3.5" /> Fermer{" "}
+              </button>{" "}
+            </div>
           </div>{" "}
           {!detailSale ? (
             <div className="py-6 text-sm text-slate-500">
@@ -729,8 +761,17 @@ export default function SalesPage() {
                         {formatPaymentMethod(sale.paymentMethod)}
                       </div>{" "}
                     </div>{" "}
-                    <div className="flex items-end gap-2 justify-start md:justify-end">
+                    <div className="flex flex-wrap items-end gap-2 justify-start md:justify-end">
                       {" "}
+                      <button
+                        onClick={() => void reprintSale(sale.id)}
+                        disabled={printLoadingId !== null || isBusy}
+                        aria-label={`Réimprimer le ticket ${sale.receiptNo}`}
+                        className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                      >
+                        <Printer className="h-3.5 w-3.5" />
+                        {printLoadingId === sale.id ? "Preparation..." : "Réimprimer"}
+                      </button>
                       <button
                         onClick={() => {
                           void openSaleDetail(sale.id);

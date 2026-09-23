@@ -5,6 +5,8 @@ export type SupportedCurrency = typeof USD | typeof HTG;
 export type ExchangeConfig = {
   exchangeRateDirection?: string;
   exchangeRateValue?: number;
+  exchangeBuyRate?: number;
+  exchangeSellRate?: number;
 };
 
 export function normalizeCurrency(
@@ -16,6 +18,7 @@ export function normalizeCurrency(
 }
 
 export function getUsdToHtgRate(config?: ExchangeConfig | null): number {
+  if (Number(config?.exchangeSellRate) > 0) return Number(config?.exchangeSellRate);
   const direction = String(config?.exchangeRateDirection || "usd_to_htg").trim().toLowerCase();
   const rawValue = Number(config?.exchangeRateValue || 1);
   const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 1;
@@ -38,8 +41,16 @@ export function getExchangeRate(
 
   const usdToHtg = getUsdToHtgRate(config);
   if (from === USD && to === HTG) return usdToHtg;
-  if (from === HTG && to === USD) return Number((1 / usdToHtg).toFixed(6));
+  if (from === HTG && to === USD) return 1 / getBuyRate(config);
   return 1;
+}
+
+export function getBuyRate(config?: ExchangeConfig | null): number {
+  return Number(config?.exchangeBuyRate) > 0 ? Number(config?.exchangeBuyRate) : getUsdToHtgRate(config);
+}
+
+export function convertPayment(amount: number, paymentCurrency: string, invoiceCurrency: string, config?: ExchangeConfig | null): number {
+  return Number((amount / getExchangeRate(invoiceCurrency, paymentCurrency, config)).toFixed(2));
 }
 
 export function convertAmount(
@@ -71,6 +82,5 @@ export function formatMoney(amount: number, currency: string | null | undefined)
 
 export function formatExchangeRateSummary(config?: ExchangeConfig | null): string {
   const usdToHtg = getUsdToHtgRate(config);
-  const htgToUsd = usdToHtg > 0 ? 1 / usdToHtg : 1;
-  return `1 USD = ${usdToHtg.toFixed(2)} HTG | 1 HTG = ${htgToUsd.toFixed(6)} USD`;
+  return `1 USD : achat ${getBuyRate(config).toFixed(2)} HTG · vente ${usdToHtg.toFixed(2)} HTG`;
 }

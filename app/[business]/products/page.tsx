@@ -1,9 +1,10 @@
 "use client";
+import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import Link from "next/link";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Ban, Pencil, Power, PowerOff, Trash2, Upload } from "lucide-react";
+import { Ban, Pencil, Power, PowerOff, ScanBarcode, Trash2, Upload } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import {
@@ -22,6 +23,7 @@ import {
 import { formatMoney } from "@/lib/currency";
 import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
 import ImportModal, { type ImportColumnHelp } from "@/components/ImportModal";
+import ProductBarcodeModal from "@/components/ProductBarcodeModal";
 
 const PRODUCT_IMPORT_COLUMNS: ImportColumnHelp[] = [
   { name: "sku", required: true, description: "Reference unique du produit (sert a mettre a jour un produit existant)." },
@@ -79,6 +81,7 @@ export default function ProductsPage() {
   const { loading: permissionsLoading, permissions: currentPermissions } = useBusinessPermissions(business);
   const [allProducts, setAllProducts] = useState<CatalogProduct[]>([]);
   const [query, setQuery] = useState("");
+  useSearchFromUrl(setQuery);
   const [status, setStatus] = useState<"all" | ProductStatus>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -93,6 +96,7 @@ export default function ProductsPage() {
   const hasProductAccess = canReadCatalog || canCreateProducts || canEditProducts || canManageSupplies;
   const isProductsReadOnly = canReadCatalog && !canCreateProducts && !canEditProducts && !canManageSupplies;
   const [importOpen, setImportOpen] = useState(false);
+  const [barcodeProduct, setBarcodeProduct] = useState<CatalogProduct | null>(null);
   const loadProducts = useCallback(async () => {
     if (!business || permissionsLoading) return;
     if (!canReadCatalog) {
@@ -234,6 +238,12 @@ export default function ProductsPage() {
           onImported={() => void loadProducts()}
         />
       ) : null}
+      <ProductBarcodeModal
+        key={barcodeProduct ? String(barcodeProduct.id) : "closed"}
+        open={Boolean(barcodeProduct)}
+        product={barcodeProduct}
+        onClose={() => setBarcodeProduct(null)}
+      />
       {!permissionsLoading && !hasProductAccess ? (
         <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Ce profil n&apos;a pas encore d&apos;acces au catalogue produits.
@@ -381,6 +391,13 @@ export default function ProductsPage() {
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setBarcodeProduct(item)}
+                            title="Code-barres du produit (scan en caisse)"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                          >
+                            <ScanBarcode className="h-4 w-4" />
+                          </button>
                           {canEditProducts ? (
                             <>
                               <Link

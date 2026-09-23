@@ -1,5 +1,6 @@
 "use client";
 
+import PurchaseReceiptPanel from "@/components/PurchaseReceiptPanel";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -9,7 +10,6 @@ import { getProducts, type CatalogProduct } from "@/lib/catalogApi";
 import {
   cancelPurchaseOrder,
   getPurchaseOrder,
-  receivePurchaseOrder,
   updatePurchaseOrder,
   type PurchaseOrder,
   type PurchaseOrderStatus,
@@ -44,6 +44,7 @@ function emptyLine(): FormLine {
 }
 
 function statusLabel(status: PurchaseOrderStatus): string {
+  if (status === "partially_received") return "Partiellement reçue";
   if (status === "ordered") return "Commandee";
   if (status === "received") return "Recue";
   if (status === "cancelled") return "Annulee";
@@ -51,6 +52,7 @@ function statusLabel(status: PurchaseOrderStatus): string {
 }
 
 function statusClassName(status: PurchaseOrderStatus): string {
+  if (status === "partially_received") return "bg-amber-100 text-amber-800";
   if (status === "received") return "bg-emerald-100 text-emerald-700";
   if (status === "ordered") return "bg-blue-100 text-blue-700";
   if (status === "cancelled") return "bg-rose-100 text-rose-700";
@@ -98,7 +100,7 @@ export default function PurchaseOrderDetailPage() {
     return map;
   }, [products]);
 
-  const isEditable = order ? order.status !== "received" && order.status !== "cancelled" : false;
+  const isEditable = order ? ["draft", "ordered"].includes(order.status) : false;
 
   const formTotals = useMemo(() => {
     return lines.reduce(
@@ -215,22 +217,7 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
-  async function handleReceive() {
-    if (!businessSlug || !order) return;
-    if (!window.confirm(`Marquer ${order.number} comme recu et augmenter le stock ?`)) return;
-    setActionLoading(true);
-    setError("");
-    setInfo("");
-    try {
-      const updated = await receivePurchaseOrder(businessSlug, order.id);
-      setOrder(updated);
-      setInfo(`${order.number} recu. Stock mis a jour.`);
-    } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setActionLoading(false);
-    }
-  }
+  function handleReceive() { document.getElementById("purchase-receipts")?.scrollIntoView({ behavior: "smooth" }); }
 
   async function handleCancel() {
     if (!businessSlug || !order) return;
@@ -292,7 +279,7 @@ export default function PurchaseOrderDetailPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            {isEditable ? (
+            {order.status !== "received" && order.status !== "cancelled" ? (
               <>
                 <button type="button" onClick={() => void handleReceive()} disabled={actionLoading} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
                   <CheckCircle2 className="h-4 w-4" />
@@ -448,6 +435,7 @@ export default function PurchaseOrderDetailPage() {
           </div>
         </div>
       </form>
+      <PurchaseReceiptPanel business={businessSlug} order={order} onUpdated={setOrder} />
     </div>
   );
 }

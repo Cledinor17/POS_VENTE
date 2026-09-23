@@ -4,8 +4,8 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError } from "@/lib/api";
-import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
-import { convertAmount, formatMoney } from "@/lib/currency";
+import { getPosSettings, type BusinessSettings } from "@/lib/businessApi";
+import { convertPayment, convertAmount, formatMoney } from "@/lib/currency";
 import { getProducts, type CatalogProduct } from "@/lib/catalogApi";
 import {
   addHotelReservationCharge,
@@ -169,7 +169,7 @@ export default function HotelFoliosPage() {
   const loadBusinessConfig = useCallback(async () => {
     if (!business) return;
     try {
-      const data = await getBusinessSettings(business);
+      const data = await getPosSettings(business);
       setBusinessSettings(data);
       setPaymentCurrency((data.currency || "USD").toUpperCase() === "HTG" ? "HTG" : "USD");
     } catch (err) {
@@ -302,9 +302,11 @@ export default function HotelFoliosPage() {
 
   const paymentEquivalent = useMemo(() => {
     if (!folio) return 0;
-    return convertAmount(Number(paymentAmount || "0"), paymentCurrency, folio.currency, {
+    return convertPayment(Number(paymentAmount || "0"), paymentCurrency, folio.currency, {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
       exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
     });
   }, [businessSettings, folio, paymentAmount, paymentCurrency]);
 
@@ -313,6 +315,8 @@ export default function HotelFoliosPage() {
     return convertAmount(folio.balance_due, folio.currency, paymentCurrency, {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
       exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
     });
   }, [businessSettings, folio, paymentCurrency]);
 

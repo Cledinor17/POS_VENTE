@@ -1,4 +1,5 @@
 "use client";
+import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -187,6 +188,7 @@ export default function CustomersPage() {
   const [total, setTotal] = useState(0);
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
+  useSearchFromUrl(setQuery, setQueryInput);
   const [activeFilter, setActiveFilter] = useState<"" | "1" | "0">("");
   const [form, setForm] = useState<CreateCustomerFormState>(() => createEmptyCustomerForm());
   const [formError, setFormError] = useState("");
@@ -854,9 +856,12 @@ export default function CustomersPage() {
                         value={form.creditLimit}
                         onChange={(event) => updateFormField("creditLimit", event.target.value)}
                         placeholder={t("credit_limit_placeholder")}
+                        aria-describedby="customer-credit-help"
                         className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                       />
-                      <div />
+                      <p id="customer-credit-help" className="self-center text-xs text-slate-500">
+                        Plafond dans la devise du client, toutes succursales comprises. Vide : sans plafond. Zéro : paiement intégral requis.
+                      </p>
                       <textarea
                         value={form.notes}
                         onChange={(event) => updateFormField("notes", event.target.value)}

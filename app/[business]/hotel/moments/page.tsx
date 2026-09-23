@@ -70,6 +70,8 @@ function getMomentDefaultAmount(room: HotelRoom | null, businessSettings: Busine
   return convertAmount(room.price_per_night / 12, room.price_per_night_currency, room.price_per_moment_currency, {
     exchangeRateDirection: businessSettings?.exchange_rate_direction,
     exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
   });
 }
 

@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { getErrorMessage } from "@/lib/errors";
-import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
+import { getDashboardSettings, getDashboardSales, type DashboardSettings, type DashboardSales } from "@/lib/dashboardApi";
+import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
+import { hasPermission } from "@/lib/businessAccess";
 import { convertAmount, formatMoney as formatCurrency } from "@/lib/currency";
-import { listAllPosSales, type PosSaleHistoryItem } from "@/lib/posApi";
+import { listPosSales, type PosSaleHistoryItem } from "@/lib/posApi";
 import { getInventorySummary, type InventorySummaryResult } from "@/lib/inventoryApi";
 import { listCustomers } from "@/lib/customersApi";
 import {
@@ -140,20 +142,6 @@ function paymentLabel(value: string | null, notSetLabel: string): string {
   return method.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-function buildRange(days: number, locale: string): { keys: string[]; labels: string[] } {
-  const keys: string[] = [];
-  const labels: string[] = [];
-  const now = new Date();
-
-  for (let i = days - 1; i >= 0; i -= 1) {
-    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-    keys.push(toDateKey(date));
-    labels.push(date.toLocaleDateString(locale, { day: "2-digit", month: "short" }));
-  }
-
-  return { keys, labels };
-}
-
 export default function DashboardPage() {
   const t = useTranslations("dashboard");
   const locale = useLocale();
@@ -161,9 +149,15 @@ export default function DashboardPage() {
   const businessSlug = params?.business ?? "";
 
   const [range, setRange] = useState<RangeKey>("30d");
+  const { permissions, loading: permissionsLoading } = useBusinessPermissions(businessSlug);
+  const canSales = hasPermission(permissions, ["billing.read", "billing.manage"]);
+  const canInventory = hasPermission(permissions, ["inventory.read", "inventory.manage"]);
+  const canCustomers = hasPermission(permissions, ["customers.read", "customers.create", "customers.edit", "customers.manage"]);
+  const canReports = hasPermission(permissions, "reports.read");
+  const [salesSummary, setSalesSummary] = useState<DashboardSales | null>(null);
   const [sales, setSales] = useState<PosSaleHistoryItem[]>([]);
   const [inventory, setInventory] = useState<InventorySummaryResult>(EMPTY_SUMMARY);
-  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
+  const [businessSettings, setBusinessSettings] = useState<DashboardSettings | null>(null);
   const [customersTotal, setCustomersTotal] = useState(0);
   const [pnl, setPnl] = useState<ProfitAndLossResult | null>(null);
   const [arAging, setArAging] = useState<ArAgingResult | null>(null);
@@ -176,7 +170,7 @@ export default function DashboardPage() {
 
   const loadDashboard = useCallback(
     async (silent = false) => {
-      if (!businessSlug) return;
+      if (!businessSlug || permissionsLoading) return;
       if (silent) setRefreshing(true);
       else setLoading(true);
 
@@ -185,14 +179,17 @@ export default function DashboardPage() {
         const asOf = toInputDate(now);
         const monthStart = toInputDate(new Date(now.getFullYear(), now.getMonth(), 1));
 
+        const days = RANGE_OPTIONS.find((option) => option.id === range)?.days ?? 30;
+        const from = toInputDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1));
         const results = await Promise.allSettled([
-          getBusinessSettings(businessSlug),
-          listAllPosSales(businessSlug, {}, { perPage: 100 }),
-          getInventorySummary(businessSlug),
-          listCustomers(businessSlug, { page: 1, perPage: 1 }),
-          getProfitAndLoss(businessSlug, { from: monthStart, to: asOf }),
-          getArAging(businessSlug, { asOf }),
-          getArSummary(businessSlug, { asOf }),
+          getDashboardSettings(businessSlug),
+          canSales ? listPosSales(businessSlug, { perPage: 10 }).then((result) => result.items) : Promise.resolve([]),
+          canInventory ? getInventorySummary(businessSlug) : Promise.resolve(EMPTY_SUMMARY),
+          canCustomers ? listCustomers(businessSlug, { page: 1, perPage: 1 }) : Promise.resolve({ total: 0 }),
+          canReports ? getProfitAndLoss(businessSlug, { from: monthStart, to: asOf }) : Promise.resolve(null),
+          canReports ? getArAging(businessSlug, { asOf }) : Promise.resolve(null),
+          canReports ? getArSummary(businessSlug, { asOf }) : Promise.resolve(null),
+          canSales ? getDashboardSales(businessSlug, from, asOf) : Promise.resolve(null),
         ]);
 
         const nextWarnings: string[] = [];
@@ -248,6 +245,10 @@ export default function DashboardPage() {
           addWarning(t("warning_ar_summary"), arSummaryRes.reason);
         }
 
+        const summaryRes = results[7];
+        if (summaryRes.status === "fulfilled") setSalesSummary(summaryRes.value);
+        else { setSalesSummary(null); addWarning(t("warning_sales"), summaryRes.reason); }
+
         const failures = results.filter((r) => r.status === "rejected").length;
         if (failures === results.length) {
           const rejected = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
@@ -265,7 +266,7 @@ export default function DashboardPage() {
         else setLoading(false);
       }
     },
-    [businessSlug, t]
+    [businessSlug, t, permissionsLoading, canSales, canInventory, canCustomers, canReports, range]
   );
 
   useEffect(() => {
@@ -277,6 +278,8 @@ export default function DashboardPage() {
     () => ({
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
       exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
     }),
     [businessSettings]
   );
@@ -288,77 +291,18 @@ export default function DashboardPage() {
     [exchangeConfig, reportCurrency]
   );
 
-  const insights = useMemo(() => {
-    const validSales = sales.filter((sale) => normalizeStatus(sale.status) !== "void");
-    const rangeWindow = buildRange(selectedDays, locale);
-    const totals = rangeWindow.keys.map(() => 0);
-    const tickets = rangeWindow.keys.map(() => 0);
-    const indexMap = new Map<string, number>();
-    rangeWindow.keys.forEach((key, index) => indexMap.set(key, index));
-
-    const todayKey = toDateKey(new Date());
-    let todayTotal = 0;
-    let todayTickets = 0;
-    let todayPaid = 0;
-    let balanceDue = 0;
-
-    const paymentMap = new Map<string, number>();
-    const statusMap = new Map<string, number>();
-
-    for (const sale of sales) {
-      const status = normalizeStatus(sale.status);
-      statusMap.set(status, (statusMap.get(status) ?? 0) + 1);
-    }
-
-    for (const sale of validSales) {
-      const created = parseDate(sale.createdAt);
-      if (!created) continue;
-      const saleTotal = convertDisplayAmount(sale.total, sale.currency);
-      const salePaid = convertDisplayAmount(sale.amountPaid, sale.currency);
-      const saleBalance = convertDisplayAmount(sale.balanceDue, sale.currency);
-      const salePaidTotal = convertDisplayAmount(sale.paidTotal, sale.currency);
-
-      const key = toDateKey(created);
-      const index = indexMap.get(key);
-      if (index !== undefined) {
-        totals[index] += saleTotal;
-        tickets[index] += 1;
-      }
-
-      if (key === todayKey) {
-        todayTotal += saleTotal;
-        todayTickets += 1;
-        todayPaid += salePaid;
-      }
-
-      balanceDue += Math.max(0, saleBalance);
-
-      const method = paymentLabel(sale.paymentMethod, t("payment_method_undefined"));
-      const amount = sale.paidTotal > 0 ? salePaidTotal : salePaid;
-      paymentMap.set(method, (paymentMap.get(method) ?? 0) + Math.max(0, amount));
-    }
-
-    const periodTotal = totals.reduce((sum, value) => sum + value, 0);
-    const periodTickets = tickets.reduce((sum, value) => sum + value, 0);
-
-    return {
-      labels: rangeWindow.labels,
-      totals,
-      tickets,
-      todayTotal,
-      todayTickets,
-      todayPaid,
-      balanceDue,
-      avgTicket: periodTickets > 0 ? periodTotal / periodTickets : 0,
-      statusRows: Array.from(statusMap.entries())
-        .map(([status, count]) => ({ status, count }))
-        .sort((a, b) => b.count - a.count),
-      paymentRows: Array.from(paymentMap.entries())
-        .map(([method, amount]) => ({ method, amount }))
-        .sort((a, b) => b.amount - a.amount)
-        .slice(0, 6),
-    };
-  }, [convertDisplayAmount, sales, selectedDays, locale, t]);
+  const insights = useMemo(() => ({
+    labels: salesSummary?.days.map((day) => new Date(`${day.date}T12:00:00`).toLocaleDateString(locale, { day: "2-digit", month: "short" })) ?? [],
+    totals: salesSummary?.days.map((day) => day.total) ?? [],
+    tickets: salesSummary?.days.map((day) => day.tickets) ?? [],
+    todayTotal: salesSummary?.today.total ?? 0,
+    todayTickets: salesSummary?.today.tickets ?? 0,
+    todayPaid: salesSummary?.today.paid ?? 0,
+    balanceDue: salesSummary?.balanceDue ?? 0,
+    avgTicket: salesSummary?.avgTicket ?? 0,
+    statusRows: salesSummary?.statusRows ?? [],
+    paymentRows: salesSummary?.paymentRows.map((row) => ({ ...row, method: paymentLabel(row.method, t("payment_method_undefined")) })) ?? [],
+  }), [salesSummary, locale, t]);
 
   const recentSales = useMemo(() => {
     return [...sales]
@@ -521,17 +465,18 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
+      {!permissionsLoading && !canSales && !canReports && !canInventory && !canCustomers && <section className="rounded-2xl border bg-white p-6 text-slate-600">Bienvenue. Utilisez le menu pour accéder aux fonctions de votre poste.</section>}
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <MetricCard title={t("metric_today_sales")} value={formatMoney(insights.todayTotal, reportCurrency)} note={t("metric_today_sales_note", { count: insights.todayTickets })} icon={CircleDollarSign} tone="emerald" />
-        <MetricCard title={t("metric_today_payments")} value={formatMoney(insights.todayPaid, reportCurrency)} note={t("metric_today_payments_note", { value: formatMoney(insights.avgTicket, reportCurrency) })} icon={CreditCard} tone="indigo" />
-        <MetricCard title={t("metric_pending_balance")} value={formatMoney(insights.balanceDue, reportCurrency)} note={t("metric_pending_balance_note", { value: formatMoney(arSummary?.totalAr ?? 0, reportCurrency) })} icon={ShoppingCart} tone="amber" />
-        <MetricCard title={t("metric_net_result")} value={formatMoney(netProfit, reportCurrency)} note={t("metric_net_result_note", { income: formatMoney(monthIncome, reportCurrency), expense: formatMoney(monthExpense, reportCurrency) })} icon={CircleDollarSign} tone={netProfit >= 0 ? "sky" : "rose"} />
-        <MetricCard title={t("metric_stock_value")} value={formatMoney(inventory.summary.stockValue, reportCurrency)} note={t("metric_stock_value_note", { value: formatMoney(inventory.summary.potentialRevenue, reportCurrency) })} icon={Boxes} tone="slate" />
-        <MetricCard title={t("metric_customers")} value={formatNumber(customersTotal, locale)} note={t("metric_customers_note", { count: inventory.summary.lowStockCount })} icon={Users} tone="sky" />
+        {canSales && <MetricCard title={t("metric_today_sales")} value={formatMoney(insights.todayTotal, reportCurrency)} note={t("metric_today_sales_note", { count: insights.todayTickets })} icon={CircleDollarSign} tone="emerald" />}
+        {canSales && <MetricCard title={t("metric_today_payments")} value={formatMoney(insights.todayPaid, reportCurrency)} note={t("metric_today_payments_note", { value: formatMoney(insights.avgTicket, reportCurrency) })} icon={CreditCard} tone="indigo" />}
+        {canSales && <MetricCard title={t("metric_pending_balance")} value={formatMoney(insights.balanceDue, reportCurrency)} note={t("metric_pending_balance_note", { value: formatMoney(arSummary?.totalAr ?? 0, reportCurrency) })} icon={ShoppingCart} tone="amber" />}
+        {canReports && <MetricCard title={t("metric_net_result")} value={formatMoney(netProfit, reportCurrency)} note={t("metric_net_result_note", { income: formatMoney(monthIncome, reportCurrency), expense: formatMoney(monthExpense, reportCurrency) })} icon={CircleDollarSign} tone={netProfit >= 0 ? "sky" : "rose"} />}
+        {canInventory && <MetricCard title={t("metric_stock_value")} value={formatMoney(inventory.summary.stockValue, reportCurrency)} note={t("metric_stock_value_note", { value: formatMoney(inventory.summary.potentialRevenue, reportCurrency) })} icon={Boxes} tone="slate" />}
+        {canCustomers && <MetricCard title={t("metric_customers")} value={formatNumber(customersTotal, locale)} note={t("metric_customers_note", { count: inventory.summary.lowStockCount })} icon={Users} tone="sky" />}
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel title={t("panel_sales_evolution", { days: selectedDays })} loading={loading} className="xl:col-span-2">
+        {canSales && <Panel title={t("panel_sales_evolution", { days: selectedDays })} loading={loading} className="xl:col-span-2">
           {insights.totals.every((value) => value === 0) ? (
             <EmptyPanel text={t("empty_sales_period")} />
           ) : (
@@ -539,9 +484,9 @@ export default function DashboardPage() {
               <Line data={salesChartData} options={salesChartOptions} />
             </div>
           )}
-        </Panel>
+        </Panel>}
 
-        <Panel title={t("panel_payments_by_method")} loading={loading}>
+        {canSales && <Panel title={t("panel_payments_by_method")} loading={loading}>
           {insights.paymentRows.length === 0 ? (
             <EmptyPanel text={t("empty_payments_period")} />
           ) : (
@@ -559,11 +504,11 @@ export default function DashboardPage() {
               </div>
             </>
           )}
-        </Panel>
+        </Panel>}
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel title={t("panel_ar_aging")} loading={loading}>
+        {canReports && <Panel title={t("panel_ar_aging")} loading={loading}>
           {arAging ? (
             <>
               <div className="h-56">
@@ -574,9 +519,9 @@ export default function DashboardPage() {
           ) : (
             <EmptyPanel text={t("empty_ar_data")} />
           )}
-        </Panel>
+        </Panel>}
 
-        <Panel title={t("panel_top_customers_ar")} loading={loading}>
+        {canReports && <Panel title={t("panel_top_customers_ar")} loading={loading}>
           {!arSummary || arSummary.rows.length === 0 ? (
             <EmptyPanel text={t("empty_ar_customer")} />
           ) : (
@@ -597,9 +542,9 @@ export default function DashboardPage() {
               })}
             </div>
           )}
-        </Panel>
+        </Panel>}
 
-        <Panel title={t("panel_stock_alerts")} loading={loading}>
+        {canInventory && <Panel title={t("panel_stock_alerts")} loading={loading}>
           {inventory.lowStockProducts.length === 0 ? (
             <EmptyPanel text={t("empty_stock_alerts")} />
           ) : (
@@ -623,10 +568,10 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
-        </Panel>
+        </Panel>}
       </section>
 
-      <Panel title={t("panel_recent_sales")} loading={loading}>
+      {canSales && <Panel title={t("panel_recent_sales")} loading={loading}>
         {recentSales.length === 0 ? (
           <EmptyPanel text={t("empty_recent_sales")} />
         ) : (
@@ -663,7 +608,7 @@ export default function DashboardPage() {
             </table>
           </div>
         )}
-      </Panel>
+      </Panel>}
     </div>
   );
 }

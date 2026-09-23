@@ -102,11 +102,13 @@ export default function SensitiveActionApprovalModal({
     }
 
     setLocalError("");
-    await onConfirm({
+    const credentials = {
       userId: approvers ? selectedApproverId : undefined,
       email: approvers ? undefined : email.trim(),
       password,
-    });
+    };
+    setPassword("");
+    await onConfirm(credentials);
   }
 
   const portalRoot = typeof document === "undefined" ? null : document.body;

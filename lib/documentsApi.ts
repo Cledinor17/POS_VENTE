@@ -1,8 +1,11 @@
 import { apiFetch, apiFetchBlob } from "./api";
+import { normalizeCurrency } from "./currency";
+import type { DocumentCurrencySettings } from "./documentCurrency";
 
 type Dict = Record<string, unknown>;
 
 export type DocumentListParams = {
+  q?: string;
   page?: number;
   perPage?: number;
   status?: string;
@@ -85,6 +88,7 @@ export type CreateSalesDocumentItemInput = {
   quantity: number;
   unit?: string;
   unitPrice: number;
+  currency?: string;
   taxRate?: number;
 };
 
@@ -215,6 +219,7 @@ function buildPath(
   params: DocumentListParams = {},
 ): string {
   const qp = new URLSearchParams();
+  if (params.q?.trim()) qp.set("q", params.q.trim());
   if (params.page && params.page > 0) qp.set("page", String(params.page));
   if (params.perPage && params.perPage > 0)
     qp.set("per_page", String(params.perPage));
@@ -416,7 +421,7 @@ function toCreatePayload(
         : null,
     issue_date: input.issueDate ?? null,
     expiry_date: input.expiryDate ?? null,
-    currency: input.currency ?? "USD",
+    ...(input.currency ? { currency: input.currency } : {}),
     reference: input.reference ?? null,
     title: input.title ?? null,
     notes: input.notes ?? null,
@@ -432,6 +437,7 @@ function toCreatePayload(
       quantity: item.quantity,
       unit: item.unit ?? null,
       unit_price: item.unitPrice,
+      ...(item.currency ? { currency: item.currency } : {}),
       tax_rate: item.taxRate ?? 0,
     })),
   };
@@ -442,6 +448,17 @@ export async function listSalesDocuments(
   params: DocumentListParams = {},
 ): Promise<DocumentListResult<SalesDocumentItem>> {
   return listResource(business, "documents", params, normalizeSalesDocument);
+}
+
+export async function getDocumentCurrencySettings(business: string): Promise<DocumentCurrencySettings> {
+  const raw = await apiFetch<Dict>(`/api/app/${encodeURIComponent(business)}/documents/currency-settings`);
+  return {
+    currency: normalizeCurrency(toString(raw.currency), "HTG"),
+    exchangeRateDirection: toString(raw.exchange_rate_direction, "usd_to_htg"),
+    exchangeRateValue: toNumber(raw.exchange_rate_value, 1),
+    exchangeBuyRate: toNumber(raw.exchange_buy_rate, 0) || undefined,
+    exchangeSellRate: toNumber(raw.exchange_sell_rate, 0) || undefined,
+  };
 }
 
 export async function createSalesDocument(

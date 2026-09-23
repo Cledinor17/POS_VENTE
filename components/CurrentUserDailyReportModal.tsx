@@ -11,9 +11,12 @@ import {
 import {
   closeCashSession,
   getCurrentCashSession,
+  getMyClosedCashSessions,
   openCashSession,
   type CashSession,
 } from "../lib/cashSessionApi";
+
+import { downloadCashSessionReport, getCashSessionReport, type CashSessionReport } from "../lib/operationalReportsApi";
 
 function todayLocalDate() {
   const now = new Date();
@@ -141,6 +144,10 @@ export default function CurrentUserDailyReportModal({
   // Cash session
   const [cashSession, setCashSession] = useState<CashSession | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
+  const [sessionReport, setSessionReport] = useState<CashSessionReport | null>(null);
+  const [closedSessions, setClosedSessions] = useState<CashSession[]>([]);
+  const [sessionExportId, setSessionExportId] = useState<number | null>(null);
+  const [remittedInputs, setRemittedInputs] = useState({ HTG: "0.00", USD: "0.00" });
   const [openingInputs, setOpeningInputs] = useState<Record<RemittanceCurrency, string>>({ HTG: "0.00", USD: "0.00" });
   const [openingNote, setOpeningNote] = useState("");
   const [closingInputs, setClosingInputs] = useState<Record<RemittanceCurrency, string>>({ HTG: "0.00", USD: "0.00" });
@@ -257,6 +264,7 @@ export default function CurrentUserDailyReportModal({
   // Load current cash session on mount
   useEffect(() => {
     if (!business) return;
+    getMyClosedCashSessions(business).then(setClosedSessions).catch(() => {});
     getCurrentCashSession(business)
       .then((s) => setCashSession(s))
       .catch(() => { /* ignore */ });
@@ -276,27 +284,40 @@ export default function CurrentUserDailyReportModal({
     finally { setSessionLoading(false); }
   }
 
-  async function handleCloseSession() {
+  async function prepareCloseSession() {
     if (!cashSession) return;
+    if (showSessionForm === "close") { setShowSessionForm(null); return; }
+    setShowSessionForm("close"); setSessionReport(null); setSessionLoading(true); setError("");
+    try { setSessionReport(await getCashSessionReport(business, cashSession.id)); }
+    catch (e) { setError(getErrorMessage(e, "Impossible de calculer les encaissements de la session.")); }
+    finally { setSessionLoading(false); }
+  }
+
+  async function exportSession(id: number) {
+    setSessionExportId(id); setError("");
+    try { await downloadCashSessionReport(business, id); }
+    catch (e) { setError(getErrorMessage(e, "Impossible de télécharger le rapport. Réessaie avec le bouton PDF.")); }
+    finally { setSessionExportId(null); }
+  }
+
+  async function handleCloseSession() {
+    if (!cashSession || !sessionReport) return;
+    const counted = { HTG: parseMoneyInput(closingInputs.HTG), USD: parseMoneyInput(closingInputs.USD) };
+    const remitted = { HTG: parseMoneyInput(remittedInputs.HTG), USD: parseMoneyInput(remittedInputs.USD) };
+    if ([...Object.values(counted), ...Object.values(remitted)].some(v => v === null || v < 0)) {
+      setError("Saisis des montants positifs ou zéro dans chaque devise."); return;
+    }
     setSessionLoading(true); setError("");
     try {
-      // Attendu = fonds d'ouverture + cash encaissé (le backend fait aussi ce calcul)
-      const salesHTG = report?.closure.currentExpectedCashAmountByCurrency?.HTG ?? 0;
-      const salesUSD = report?.closure.currentExpectedCashAmountByCurrency?.USD ?? 0;
-      const openHTG = cashSession.openingAmountByCurrency?.HTG ?? 0;
-      const openUSD = cashSession.openingAmountByCurrency?.USD ?? 0;
-      const expectedByCurrency = {
-        HTG: salesHTG + openHTG,
-        USD: salesUSD + openUSD,
-      };
       const s = await closeCashSession(business, cashSession.id, {
-        closingAmountByCurrency: { HTG: parseMoneyInput(closingInputs.HTG) ?? 0, USD: parseMoneyInput(closingInputs.USD) ?? 0 },
-        expectedAmountByCurrency: expectedByCurrency,
+        closingAmountByCurrency: { HTG: counted.HTG!, USD: counted.USD! },
+        remittedAmountByCurrency: { HTG: remitted.HTG!, USD: remitted.USD! },
         closingNote: closingNote.trim() || undefined,
       });
-      setCashSession(s);
+      setCashSession(s); setClosedSessions(previous => [s, ...previous.filter(item => item.id !== s.id)].slice(0, 20));
       setShowSessionForm(null);
-      setNotice("Caisse fermée.");
+      setNotice("Caisse fermée. Le rapport PDF est disponible ci-dessous.");
+      await exportSession(s.id);
     } catch (e: unknown) { setError(getErrorMessage(e, "Impossible de fermer la session.")); }
     finally { setSessionLoading(false); }
   }
@@ -389,7 +410,7 @@ export default function CurrentUserDailyReportModal({
                   </button>
                 )}
                 {cashSession?.status === "open" && (
-                  <button type="button" onClick={() => setShowSessionForm(showSessionForm === "close" ? null : "close")}
+                  <button type="button" onClick={() => void prepareCloseSession()} disabled={sessionLoading}
                     className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
                     Fermer caisse
                   </button>
@@ -430,20 +451,28 @@ export default function CurrentUserDailyReportModal({
               <div className="mt-4 space-y-3 border-t border-emerald-200 pt-3">
                 {/* Récapitulatif attendu */}
                 <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-xs text-slate-700 space-y-1">
-                  <p className="font-semibold text-slate-600">Attendu dans la caisse</p>
+                  <p className="font-semibold text-slate-600">À remettre : fonds + recettes nettes − déjà remis</p>
                   {(["HTG", "USD"] as const).map((code) => {
                     const opening = cashSession.openingAmountByCurrency?.[code] ?? 0;
-                    const sales = report?.closure.currentExpectedCashAmountByCurrency?.[code] ?? 0;
-                    const total = opening + sales;
+                    const sales = sessionReport?.cash[code] ?? 0;
+                    const remitted = Number(remittedInputs[code]) || 0;
+                    const total = opening + sales - remitted;
                     return (
                       <div key={code} className="flex items-center justify-between gap-2">
                         <span className="text-slate-500">{code}</span>
                         <span className="font-mono">
-                          {opening.toFixed(2)} + {sales.toFixed(2)} = <strong>{total.toFixed(2)}</strong>
+                          {sessionReport ? <>{opening.toFixed(2)} + {sales.toFixed(2)} − {remitted.toFixed(2)} = <strong>{total.toFixed(2)}</strong></> : "Calcul en cours…"}
                         </span>
                       </div>
                     );
                   })}
+                </div>
+                <p className="text-xs text-slate-500">Déjà remis pendant cette session, y compris les remises saisies dans le rapport journalier (laisser zéro sinon).</p>
+                <div className="flex gap-3">
+                  {(["HTG", "USD"] as const).map(code => <label key={code} className="flex-1 text-xs font-semibold text-slate-600">
+                    Déjà remis {code}<input aria-label={`Déjà remis ${code}`} type="number" min="0" step="0.01" value={remittedInputs[code]}
+                      onChange={e => setRemittedInputs(p => ({ ...p, [code]: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-right text-sm" />
+                  </label>)}
                 </div>
                 <p className="text-xs font-semibold text-slate-700">Montant compté dans la caisse</p>
                 <div className="flex gap-3">
@@ -463,13 +492,23 @@ export default function CurrentUserDailyReportModal({
                     placeholder="Ex: Solde transmis à la direction"
                     className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
                 </label>
-                <button type="button" onClick={() => void handleCloseSession()} disabled={sessionLoading}
+                <button type="button" onClick={() => void handleCloseSession()} disabled={sessionLoading || !sessionReport}
                   className="w-full rounded-xl bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
                   {sessionLoading ? "Fermeture..." : "Confirmer la fermeture"}
                 </button>
               </div>
             )}
           </div>
+
+          {closedSessions.length > 0 && <details className="rounded-2xl border border-slate-200 bg-white p-4" open>
+            <summary className="cursor-pointer text-sm font-bold text-slate-800">Mes rapports de fermeture</summary>
+            <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">{closedSessions.map(session => <div key={session.id} className="flex items-center justify-between gap-3 text-xs">
+              <span>Caisse #{session.id} · {formatDateTime(session.closedAt)}</span>
+              <button type="button" disabled={sessionExportId !== null} onClick={() => void exportSession(session.id)} className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 font-semibold text-indigo-700 disabled:opacity-50">
+                {sessionExportId === session.id ? "Préparation…" : "PDF à imprimer"}
+              </button>
+            </div>)}</div>
+          </details>}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -703,6 +742,12 @@ export default function CurrentUserDailyReportModal({
                 </div>
               </div>
 
+                    {report.dollarPurchases.length > 0 && <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+                      <h3 className="font-semibold">Achats de dollars</h3>
+                      {report.dollarPurchases.map(item => <div key={item.number} className="mt-2 text-sm">
+                        {item.number} : + {formatMoney(item.usd, "USD")} / − {formatMoney(item.htg, "HTG")} · taux {item.rate}
+                      </div>)}
+                    </div>}
               {variant === "mobile" ? (
                 <>
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">

@@ -10,7 +10,6 @@ import {
   cancelPurchaseOrder,
   createPurchaseOrder,
   listPurchaseOrders,
-  receivePurchaseOrder,
   type PurchaseOrder,
   type PurchaseOrderStatus,
 } from "@/lib/purchasesApi";
@@ -54,6 +53,7 @@ function emptyLine(): FormLine {
 }
 
 function statusLabel(status: PurchaseOrderStatus): string {
+  if (status === "partially_received") return "Partiellement reçue";
   if (status === "ordered") return "Commandee";
   if (status === "received") return "Recue";
   if (status === "cancelled") return "Annulee";
@@ -61,6 +61,7 @@ function statusLabel(status: PurchaseOrderStatus): string {
 }
 
 function statusClassName(status: PurchaseOrderStatus): string {
+  if (status === "partially_received") return "bg-amber-100 text-amber-800";
   if (status === "received") return "bg-emerald-100 text-emerald-700";
   if (status === "ordered") return "bg-blue-100 text-blue-700";
   if (status === "cancelled") return "bg-rose-100 text-rose-700";
@@ -231,23 +232,6 @@ export default function PurchaseOrdersPage() {
     }
   }
 
-  async function handleReceive(order: PurchaseOrder) {
-    if (!businessSlug) return;
-    if (!window.confirm(`Marquer ${order.number} comme recu et augmenter le stock ?`)) return;
-    setActionLoadingId(order.id);
-    setError("");
-    setInfo("");
-    try {
-      await receivePurchaseOrder(businessSlug, order.id);
-      setInfo(`${order.number} recu. Stock mis a jour.`);
-      setReloadSeq((prev) => prev + 1);
-    } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setActionLoadingId(null);
-    }
-  }
-
   async function handleCancel(order: PurchaseOrder) {
     if (!businessSlug) return;
     if (!window.confirm(`Annuler ${order.number} ?`)) return;
@@ -406,6 +390,7 @@ export default function PurchaseOrdersPage() {
               <option value="">Tous statuts</option>
               <option value="draft">Brouillon</option>
               <option value="ordered">Commandee</option>
+              <option value="partially_received">Partiellement reçue</option>
               <option value="received">Recue</option>
               <option value="cancelled">Annulee</option>
             </select>
@@ -451,10 +436,10 @@ export default function PurchaseOrdersPage() {
                           Voir
                         </Link>
                         {order.status !== "received" && order.status !== "cancelled" ? (
-                          <button type="button" onClick={() => void handleReceive(order)} disabled={actionLoadingId === order.id} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                          <Link href={`/${businessSlug}/purchase-orders/${order.id}#purchase-receipts`} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
                             <CheckCircle2 className="h-4 w-4" />
                             Recevoir
-                          </button>
+                          </Link>
                         ) : null}
                         {order.status !== "received" && order.status !== "cancelled" ? (
                           <button type="button" onClick={() => void handleCancel(order)} disabled={actionLoadingId === order.id} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60">

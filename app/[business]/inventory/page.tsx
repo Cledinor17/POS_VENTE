@@ -94,7 +94,7 @@ export default function InventoryPage() {
     "increase",
   );
   const [quantity, setQuantity] = useState("");
-  const [reason, setReason] = useState("manual_adjustment");
+  const [reason, setReason] = useState("restock");
   const [notes, setNotes] = useState("");
   const [unitCost, setUnitCost] = useState("");
   useEffect(() => {
@@ -178,7 +178,7 @@ export default function InventoryPage() {
     setSelectedProductId("");
     setOperation("increase");
     setQuantity("");
-    setReason("manual_adjustment");
+    setReason("restock");
     setNotes("");
     setUnitCost("");
   }
@@ -417,7 +417,7 @@ export default function InventoryPage() {
                             setSelectedProductId(String(product.id));
                             setOperation("increase");
                             setQuantity("");
-                            setReason("manual_adjustment");
+                            setReason("restock");
                             setNotes("");
                             setUnitCost(
                               product.cost > 0 ? String(product.cost) : "",
@@ -449,7 +449,7 @@ export default function InventoryPage() {
         </section>
         <aside className="space-y-4">
           <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
-            <h3 className="font-bold text-slate-900">Ajustement manuel</h3>
+            <h3 className="font-bold text-slate-900">Approvisionnement et ajustement</h3>
             <select
               value={selectedProductId}
               onChange={(event) => setSelectedProductId(event.target.value)}
@@ -474,16 +474,15 @@ export default function InventoryPage() {
             ) : null}
             <select
               value={operation}
-              onChange={(event) =>
-                setOperation(
-                  event.target.value as "increase" | "decrease" | "set",
-                )
-              }
+              onChange={(event) => {
+                const next = event.target.value as "increase" | "decrease" | "set";
+                setOperation(next); setReason(next === "increase" ? "restock" : "inventory_correction");
+              }}
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
-              <option value="increase">Ajouter au stock</option>
+              <option value="increase">Approvisionnement : ajouter au stock actuel</option>
               <option value="decrease">Retirer du stock</option>
-              <option value="set">Definir le stock exact</option>
+              <option value="set">Inventaire : remplacer par le stock compté</option>
             </select>
             <input
               type="number"
@@ -494,12 +493,16 @@ export default function InventoryPage() {
               placeholder="Quantite"
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />
-            <input
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Raison (ex: correction, casse)"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
+            {selectedProduct && quantity !== "" && Number.isFinite(Number(quantity)) && Number(quantity) >= 0 && <p className="rounded-xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800">
+              {operation === "increase" ? `Stock total = ${formatQty(selectedProduct.stock)} + ${formatQty(Number(quantity))} = ${formatQty(selectedProduct.stock + Number(quantity))}` : operation === "decrease" ? `Stock restant = ${formatQty(selectedProduct.stock)} − ${formatQty(Number(quantity))} = ${formatQty(selectedProduct.stock - Number(quantity))}` : `Stock après inventaire : ${formatQty(Number(quantity))}`}
+            </p>}
+            <select aria-label="Motif du mouvement" value={reason} onChange={event => setReason(event.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5">
+              {operation === "increase" && <option value="restock">Approvisionnement</option>}
+              <option value="inventory_correction">Correction d’inventaire</option>
+              {operation === "decrease" && <option value="damage">Casse / défectueux</option>}
+              {operation === "decrease" && <option value="loss">Perte / péremption</option>}
+              {operation === "increase" && <option value="customer_return">Retour de produit</option>}
+            </select>
             <input
               type="number"
               min="0"

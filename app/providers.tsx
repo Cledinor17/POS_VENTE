@@ -4,6 +4,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { LocaleProvider } from "@/context/LocaleContext";
 import AppToaster from "@/components/AppToaster";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
+import OfflineDataMaintenance from "@/components/OfflineDataMaintenance";
 import type { Locale } from "@/lib/locale";
 
 export default function Providers({
@@ -19,6 +20,7 @@ export default function Providers({
         {children}
         <AppToaster />
         <ServiceWorkerRegistration />
+        <OfflineDataMaintenance />
       </AuthProvider>
     </LocaleProvider>
   );

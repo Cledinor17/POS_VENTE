@@ -79,6 +79,7 @@
   },
   "nav": {
     "dashboard": "Tableau de bord",
+    "dollar_purchases": "Achat de dollars",
     "pos_new_sale": "Nouvelle vente (POS)",
     "pos_badge": "Rapide",
     "tickets_sales": "Tickets / Ventes",
@@ -105,6 +106,7 @@
     "reports_departments": "Revenus par departement",
     "reports_sales": "Rapports de vente",
     "reports_inventory": "Rapports de stock",
+    "reports_cash_sessions": "Fermetures de caisse",
     "reports_ar": "Creances clients (AR)",
     "reports_finance": "Bilan et resultat",
     "hotel_planning": "Planning",

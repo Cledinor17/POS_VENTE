@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import { listPendingSales } from "./offlineDb";
 
 type Dict = Record<string, unknown>;
 function isObj(v: unknown): v is Dict { return typeof v === "object" && v !== null; }
@@ -93,7 +94,7 @@ export async function openCashSession(business: string, input: OpenSessionInput 
 
 export type CloseSessionInput = {
   closingAmountByCurrency: Record<string, number>;
-  expectedAmountByCurrency?: Record<string, number>;
+  remittedAmountByCurrency?: Record<string, number>;
   closingNote?: string;
 };
 
@@ -102,11 +103,15 @@ export async function closeCashSession(
   sessionId: number,
   input: CloseSessionInput
 ): Promise<CashSession> {
+  const pending = await listPendingSales(business);
+  if (pending.some((sale) => sale.status !== "synced" && (!sale.payload.cashSessionId || String(sale.payload.cashSessionId) === String(sessionId)))) {
+    throw new Error("Synchronisez les ventes en attente sur ce poste avant de fermer la caisse. Ouvrez « Mes ventes en attente » depuis la caisse.");
+  }
   const raw = await apiFetch<unknown>(`${base(business)}/${sessionId}/close`, {
     method: "PATCH",
     json: {
       closing_amount_by_currency: input.closingAmountByCurrency,
-      expected_amount_by_currency: input.expectedAmountByCurrency ?? undefined,
+      remitted_amount_by_currency: input.remittedAmountByCurrency ?? undefined,
       closing_note: input.closingNote ?? undefined,
     },
   });
@@ -157,4 +162,9 @@ export async function listCashSessions(
     perPage: toNum(meta.per_page, 25),
     total: toNum(meta.total, 0),
   };
+}
+
+export async function getMyClosedCashSessions(business: string): Promise<CashSession[]> {
+  const raw = await apiFetch<{ sessions: unknown[] }>(`${base(business)}/mine`);
+  return raw.sessions.map(normalizeSession);
 }

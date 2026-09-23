@@ -1,4 +1,5 @@
 "use client";
+import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import SensitiveActionApprovalModal, {
@@ -6,19 +7,20 @@ import SensitiveActionApprovalModal, {
 } from "@/components/SensitiveActionApprovalModal";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
-import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
 import { hasPermission } from "@/lib/businessAccess";
 import {
   listBusinessApprovers,
   type BusinessApproverItem,
 } from "@/lib/businessUsersApi";
 import { getProducts, type CatalogProduct } from "@/lib/catalogApi";
-import { convertAmount, formatMoney } from "@/lib/currency";
+import { convertPayment, convertAmount, formatMoney, normalizeCurrency, formatExchangeRateSummary } from "@/lib/currency";
+import { calculateDocumentAmounts, type DocumentCurrencySettings } from "@/lib/documentCurrency";
 import {
   createSalesDocument,
   convertSalesDocumentToInvoice,
   fetchInvoicePdf,
   fetchSalesDocumentPdf,
+  getDocumentCurrencySettings,
   listSalesDocuments,
   type SalesDocumentItem,
 } from "@/lib/documentsApi";
@@ -28,6 +30,7 @@ type DraftLine = {
   name: string;
   quantity: string;
   unitPrice: string;
+  currency?: string;
   taxRate: string;
 };
 type ConvertFormState = {
@@ -120,7 +123,9 @@ export default function DocumentsPage() {
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
   const { permissions } = useAuth();
-  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
+  const [currencyConfig, setCurrencyConfig] = useState<{ business: string; settings: DocumentCurrencySettings } | null>(null);
+  const businessSettings = currencyConfig?.business === businessSlug ? currencyConfig.settings : null;
+  const [currencyError, setCurrencyError] = useState("");
   const [items, setItems] = useState<SalesDocumentItem[]>([]);
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,6 +135,8 @@ export default function DocumentsPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [status, setStatus] = useState("");
+  const [query, setQuery] = useState("");
+  useSearchFromUrl(setQuery);
   const [type, setType] = useState<"" | "quote" | "proforma">("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -160,10 +167,13 @@ export default function DocumentsPage() {
     async function loadBusinessConfig() {
       if (!businessSlug) return;
       try {
-        const data = await getBusinessSettings(businessSlug);
-        if (mounted) setBusinessSettings(data);
+        const data = await getDocumentCurrencySettings(businessSlug);
+        if (mounted) {
+          setCurrencyConfig({ business: businessSlug, settings: data });
+          setCurrencyError("");
+        }
       } catch (e) {
-        if (mounted) setError(getErrorMessage(e));
+        if (mounted) setCurrencyError(getErrorMessage(e));
       }
     }
     void loadBusinessConfig();
@@ -237,6 +247,7 @@ export default function DocumentsPage() {
           type: type || undefined,
           from: from || undefined,
           to: to || undefined,
+          q: query || undefined,
         });
         if (!mounted) return;
         setItems(res.items);
@@ -252,24 +263,17 @@ export default function DocumentsPage() {
     return () => {
       mounted = false;
     };
-  }, [businessSlug, page, status, type, from, to, reloadSeq]);
-  const draftTotals = useMemo(() => {
-    return lines.reduce(
-      (acc, line) => {
-        const quantity = Math.max(0, parseNumber(line.quantity, 0));
-        const unitPrice = Math.max(0, parseNumber(line.unitPrice, 0));
-        const taxRate = Math.max(0, parseNumber(line.taxRate, 0));
-        const lineSubtotal = quantity * unitPrice;
-        const lineTax = lineSubtotal * (taxRate / 100);
-        return {
-          subtotal: acc.subtotal + lineSubtotal,
-          tax: acc.tax + lineTax,
-          total: acc.total + lineSubtotal + lineTax,
-        };
-      },
-      { subtotal: 0, tax: 0, total: 0 },
-    );
-  }, [lines]);
+  }, [businessSlug, page, status, type, from, to, reloadSeq, query]);
+  const draftTotals = useMemo(() => calculateDocumentAmounts(
+    lines.map((line) => ({
+      name: line.name,
+      quantity: Math.max(0, parseNumber(line.quantity, 0)),
+      unitPrice: Math.max(0, parseNumber(line.unitPrice, 0)),
+      taxRate: Math.max(0, parseNumber(line.taxRate, 0)),
+      currency: line.currency,
+    })),
+    businessSettings ?? { currency: "HTG" },
+  ), [lines, businessSettings]);
   const estimatedConvertedTotal = useMemo(() => {
     if (!convertTarget) return 0;
     const baseTotal = Number(convertTarget.total || 0);
@@ -288,20 +292,24 @@ export default function DocumentsPage() {
       convertTarget.currency,
       convertForm.paymentCurrency,
       {
-        exchangeRateDirection: businessSettings?.exchange_rate_direction,
-        exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeRateDirection: businessSettings?.exchangeRateDirection,
+        exchangeRateValue: businessSettings?.exchangeRateValue,
+        exchangeBuyRate: businessSettings?.exchangeBuyRate,
+        exchangeSellRate: businessSettings?.exchangeSellRate,
       },
     );
   }, [businessSettings, convertForm.paymentCurrency, convertTarget, estimatedConvertedTotal]);
   const convertPaymentEquivalent = useMemo(() => {
     if (!convertTarget) return 0;
-    return convertAmount(
+    return convertPayment(
       Number(convertForm.paymentAmount || "0"),
       convertForm.paymentCurrency,
       convertTarget.currency,
       {
-        exchangeRateDirection: businessSettings?.exchange_rate_direction,
-        exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeRateDirection: businessSettings?.exchangeRateDirection,
+        exchangeRateValue: businessSettings?.exchangeRateValue,
+        exchangeBuyRate: businessSettings?.exchangeBuyRate,
+        exchangeSellRate: businessSettings?.exchangeSellRate,
       },
     );
   }, [businessSettings, convertForm.paymentAmount, convertForm.paymentCurrency, convertTarget]);
@@ -317,12 +325,19 @@ export default function DocumentsPage() {
     setLines((prev) =>
       prev.map((line) => {
         if (line.key !== lineKey) return line;
-        if (!selected) return { ...line, productId };
+        if (!selected) return {
+          ...line,
+          productId,
+          unitPrice: String(convertAmount(parseNumber(line.unitPrice), line.currency ?? businessSettings?.currency,
+            businessSettings?.currency, businessSettings)),
+          currency: undefined,
+        };
         return {
           ...line,
           productId,
           name: selected.name,
           unitPrice: String(selected.price ?? 0),
+          currency: normalizeCurrency(selected.sellingCurrency || selected.priceCurrency, businessSettings?.currency ?? "HTG"),
           taxRate: String(selected.taxRate ?? 0),
         };
       }),
@@ -339,13 +354,14 @@ export default function DocumentsPage() {
   }
   async function handleCreateDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!businessSlug) return;
+    if (!businessSlug || !businessSettings) return;
     const normalizedItems = lines
       .map((line) => ({
         productId: line.productId || undefined,
         name: line.name.trim(),
         quantity: Math.max(0, parseNumber(line.quantity, 0)),
         unitPrice: Math.max(0, parseNumber(line.unitPrice, 0)),
+        currency: normalizeCurrency(line.currency, businessSettings.currency),
         taxRate: Math.max(0, parseNumber(line.taxRate, 0)),
       }))
       .filter((line) => line.name.length > 0);
@@ -370,6 +386,7 @@ export default function DocumentsPage() {
         title: newTitle.trim() || undefined,
         issueDate: newIssueDate || undefined,
         expiryDate: newExpiryDate || undefined,
+        currency: draftTotals.currency,
         items: normalizedItems,
       });
       setInfo(
@@ -405,7 +422,7 @@ export default function DocumentsPage() {
     options: ConvertFormState,
     approval?: SensitiveActionApproval,
   ): Promise<boolean> {
-    if (!businessSlug) return false;
+    if (!businessSlug || !businessSettings) return false;
     const discountValue = parseNumber(options.discountValue, 0);
     const paymentAmount = parseNumber(options.paymentAmount, 0);
     if (options.discountType && discountValue <= 0) {
@@ -585,18 +602,14 @@ export default function DocumentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => {
-                  const qty = Math.max(0, parseNumber(line.quantity, 0));
-                  const price = Math.max(0, parseNumber(line.unitPrice, 0));
-                  const taxRate = Math.max(0, parseNumber(line.taxRate, 0));
-                  const lineSubtotal = qty * price;
-                  const lineTotal =
-                    lineSubtotal + lineSubtotal * (taxRate / 100);
+                {lines.map((line, index) => {
+                  const amount = draftTotals.amounts[index];
                   return (
                     <tr key={line.key} className="border-b last:border-0">
                       <td className="py-2 px-3">
                         <select
                           value={line.productId}
+                          disabled={!businessSettings || productsLoading}
                           onChange={(event) =>
                             onProductChange(line.key, event.target.value)
                           }
@@ -650,6 +663,12 @@ export default function DocumentsPage() {
                           }
                           className="w-full rounded-lg border border-slate-300 px-2.5 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                         />
+                        <div className="mt-1 text-xs text-slate-500">
+                          {businessSettings ? amount.sourceCurrency : "Chargement de la devise..."}
+                          {businessSettings && amount.sourceCurrency !== draftTotals.currency && (
+                            <> → {formatMoney(amount.unitPrice, draftTotals.currency)}</>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2 px-3">
                         <input
@@ -666,7 +685,7 @@ export default function DocumentsPage() {
                         />
                       </td>
                       <td className="py-2 px-3 font-semibold text-slate-800">
-                        {formatMoney(lineTotal, businessSettings?.currency || "USD")}
+                        {businessSettings ? formatMoney(amount.total, draftTotals.currency) : "—"}
                       </td>
                       <td className="py-2 px-3">
                         <button
@@ -699,13 +718,20 @@ export default function DocumentsPage() {
             </button>{" "}
             <div className="text-sm text-slate-700 space-y-1 text-right">
               {" "}
-              <div>Sous-total: {formatMoney(draftTotals.subtotal, businessSettings?.currency || "USD")}</div>{" "}
-              <div>TVA: {formatMoney(draftTotals.tax, businessSettings?.currency || "USD")}</div>{" "}
+              <div>Sous-total: {businessSettings ? formatMoney(draftTotals.subtotal, draftTotals.currency) : "—"}</div>{" "}
+              <div>TVA: {businessSettings ? formatMoney(draftTotals.tax, draftTotals.currency) : "—"}</div>{" "}
               <div className="font-bold text-slate-900">
-                Total: {formatMoney(draftTotals.total, businessSettings?.currency || "USD")}
+                Total: {businessSettings ? formatMoney(draftTotals.total, draftTotals.currency) : "—"}
               </div>{" "}
             </div>{" "}
           </div>{" "}
+          {businessSettings && (
+            <p className="text-xs text-slate-600">
+              Devise du document : <strong>{draftTotals.currency}</strong>.
+              {draftTotals.mixedCurrencies && ` Les articles sont convertis dans la devise du business. ${formatExchangeRateSummary(businessSettings)}`}
+            </p>
+          )}
+          {currencyError && <p role="alert" className="text-sm text-red-600">Chargement de la devise impossible : {currencyError}</p>}
           <div className="flex items-center justify-between">
             {" "}
             <div className="text-xs text-slate-500">
@@ -716,7 +742,7 @@ export default function DocumentsPage() {
             </div>{" "}
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !businessSettings || productsLoading}
               className="rounded-xl brand-primary-btn text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
             >
               {" "}
@@ -742,6 +768,7 @@ export default function DocumentsPage() {
             <option value="quote">Devis</option>{" "}
             <option value="proforma">Proforma</option>{" "}
           </select>{" "}
+          <input aria-label="Rechercher un document" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Numéro, référence, client" className="rounded-xl border border-slate-300 px-3 py-2" />
           <input
             value={status}
             onChange={(event) => {
@@ -880,7 +907,7 @@ export default function DocumentsPage() {
                         onClick={() => {
                           openConvertModal(item);
                         }}
-                        disabled={!canConvert || convertBusy || saving}
+                        disabled={!canConvert || convertBusy || saving || !businessSettings}
                         title="Convertir en facture"
                         aria-label="Convertir en facture"
                         className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
@@ -999,7 +1026,7 @@ export default function DocumentsPage() {
                               onClick={() => {
                                 openConvertModal(item);
                               }}
-                              disabled={!canConvert || convertBusy || saving}
+                              disabled={!canConvert || convertBusy || saving || !businessSettings}
                               title="Convertir en facture"
                               aria-label="Convertir en facture"
                               className="rounded-lg border border-emerald-300 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
@@ -1230,7 +1257,7 @@ export default function DocumentsPage() {
                   void handleConvert(convertTarget, convertForm);
                 }}
                 disabled={
-                  rowBusyKey === `convert-${convertTarget.id}` || saving
+                  rowBusyKey === `convert-${convertTarget.id}` || saving || !businessSettings
                 }
                 className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
               >
