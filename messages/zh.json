@@ -1,4 +1,10 @@
 {
+  "image_upload": {
+    "size_hint": "文件大小上限：{maxSize}。",
+    "too_large": "此图片过大（{size}）。请选择不超过 {maxSize} 的图片，或缩小图片后重试。",
+    "server_too_large": "此图片过大，无法上传。请缩小图片或选择较小的图片后重试。",
+    "network_error": "图片上传失败。请检查网络连接后重试。如果问题仍然存在，请联系管理员。"
+  },
   "common": {
     "loading": "加载中...",
     "unexpected_error": "发生错误。"

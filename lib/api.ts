@@ -11,7 +11,9 @@ export class ApiError<TBody = unknown> extends Error {
   }
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+// Paths already start with '/api/...'. A trailing slash in the deployed
+// environment otherwise produces '//api/...' and can redirect CORS preflights.
+export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 
 type ErrorLike = { message?: unknown };
 

@@ -1,4 +1,4 @@
-import { ApiError, apiFetch, getToken } from "./api";
+import { API_BASE, ApiError, apiFetch, getToken } from "./api";
 
 type Dict = Record<string, unknown>;
 
@@ -289,7 +289,7 @@ export async function exportInventoryMovementsCsv(
   const query = qp.toString();
   const path = query ? `${basePath(business)}/movements.csv?${query}` : `${basePath(business)}/movements.csv`;
 
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+  const baseUrl = API_BASE;
   const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
   const token = getToken();
 

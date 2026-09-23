@@ -4,12 +4,14 @@ import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Camera } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import BarcodeScannerModal from "@/components/BarcodeScannerModal";
 import BranchAssignmentPicker from "@/components/BranchAssignmentPicker";
 import { useBranch } from "@/context/BranchContext";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { DEFAULT_PRODUCT_AVATAR_PATH } from "@/lib/productImage";
+import { MAX_IMAGE_BYTES, formatImageSize, imageSizeMessage, imageUploadErrorMessage } from "@/lib/imageUpload";
 import { toastError, toastSuccess } from "@/lib/toast";
 import {
   createProduct,
@@ -81,6 +83,8 @@ function validateForm(state: ProductFormState) {
   return "";
 }
 export default function NewProductPage() {
+  const imageT = useTranslations("image_upload");
+  const locale = useLocale();
   const router = useRouter();
   const params = useParams<{ business: string }>();
   const business = params?.business ?? "";
@@ -88,6 +92,7 @@ export default function NewProductPage() {
   const { currency: defaultCurrency } = useBusinessDefaults(business);
   const [form, setForm] = useState<ProductFormState>(initialFormState);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const imageError = imageSizeMessage(imageFile, imageT, locale);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
@@ -106,7 +111,7 @@ export default function NewProductPage() {
   }, [currentBranch]);
 
   useEffect(() => {
-    if (!imageFile) {
+    if (!imageFile || imageFile.size > MAX_IMAGE_BYTES) {
       setImagePreviewUrl("");
       return;
     }
@@ -158,7 +163,7 @@ export default function NewProductPage() {
     }
     setError("");
     setSuccess("");
-    const validationMessage = validateForm(form);
+    const validationMessage = imageError || validateForm(form);
     if (validationMessage) {
       setError(validationMessage);
       toastError(validationMessage);
@@ -189,7 +194,9 @@ export default function NewProductPage() {
       toastSuccess("Produit enregistre avec succes.");
       router.push(`/${business}/products`);
     } catch (e) {
-      const message = getErrorMessage(e);
+      const message = imageFile
+        ? imageUploadErrorMessage(e, imageT, locale, "L’image n’a pas pu être envoyée. Réessayez.")
+        : getErrorMessage(e);
       setError(message);
       toastError(message);
     } finally {
@@ -197,8 +204,8 @@ export default function NewProductPage() {
     }
   }
   const isSubmitDisabled = useMemo(
-    () => saving || categoriesLoading || categories.length === 0,
-    [saving, categoriesLoading, categories.length],
+    () => saving || categoriesLoading || categories.length === 0 || Boolean(imageError),
+    [saving, categoriesLoading, categories.length, imageError],
   );
   return (
     <div className="space-y-6">
@@ -417,17 +424,25 @@ export default function NewProductPage() {
           </div>{" "}
           <div className="md:col-span-2">
             {" "}
-            <Field label="Image produit (image_path)">
+            <Field label="Image du produit">
               {" "}
               <div className="space-y-3">
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(event) =>
-                    setImageFile(event.target.files?.[0] ?? null)
-                  }
+                  disabled={saving}
+                  aria-describedby="product-image-hint product-image-error"
+                  aria-invalid={Boolean(imageError)}
+                  onChange={(event) => {
+                    setImageFile(event.target.files?.[0] ?? null);
+                    setError("");
+                  }}
                   className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                 />
+                <p id="product-image-hint" className="text-sm text-slate-600">
+                  {imageT("size_hint", { maxSize: formatImageSize(MAX_IMAGE_BYTES, locale) })}
+                </p>
+                {imageError ? <p id="product-image-error" role="alert" className="text-sm text-red-600">{imageError}</p> : null}
                 <div className="flex items-center gap-3">
                   <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
                     <Image
@@ -441,7 +456,7 @@ export default function NewProductPage() {
                   </div>
                   <div className="text-xs text-slate-500">
                     {imageFile
-                      ? `Fichier: ${imageFile.name}`
+                      ? `Fichier: ${imageFile.name} (${formatImageSize(imageFile.size, locale)})`
                       : "Optionnel. Si aucune image n'est choisie, le produit reste sans image."}
                   </div>
                 </div>

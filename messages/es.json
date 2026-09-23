@@ -1,4 +1,10 @@
 {
+  "image_upload": {
+    "size_hint": "Tamaño máximo: {maxSize}.",
+    "too_large": "Esta imagen es demasiado grande ({size}). Elija una imagen de {maxSize} como máximo o reduzca su tamaño.",
+    "server_too_large": "Esta imagen es demasiado grande para enviarla. Reduzca su tamaño o elija una imagen más pequeña e inténtelo de nuevo.",
+    "network_error": "No se pudo enviar la imagen. Compruebe su conexión e inténtelo de nuevo. Si el problema persiste, contacte con el administrador."
+  },
   "common": {
     "loading": "Cargando...",
     "unexpected_error": "Ocurrió un error."

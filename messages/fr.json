@@ -1,4 +1,10 @@
 {
+  "image_upload": {
+    "size_hint": "Taille maximale : {maxSize}.",
+    "too_large": "Cette image est trop volumineuse ({size}). Choisissez une image de {maxSize} maximum ou réduisez sa taille.",
+    "server_too_large": "Cette image est trop volumineuse pour être envoyée. Réduisez sa taille ou choisissez une image plus légère, puis réessayez.",
+    "network_error": "L’image n’a pas pu être envoyée. Vérifiez votre connexion et réessayez. Si le problème persiste, contactez l’administrateur."
+  },
   "common": {
     "loading": "Chargement...",
     "unexpected_error": "Une erreur est survenue."

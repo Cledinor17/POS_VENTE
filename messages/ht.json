@@ -1,4 +1,10 @@
 {
+  "image_upload": {
+    "size_hint": "Gwosè maksimòm: {maxSize}.",
+    "too_large": "Imaj sa a twò gwo ({size}). Chwazi yon imaj ki pa depase {maxSize} oswa diminye gwosè li.",
+    "server_too_large": "Imaj sa a twò gwo pou voye. Diminye gwosè li oswa chwazi yon imaj ki pi piti, epi eseye ankò.",
+    "network_error": "Nou pa t kapab voye imaj la. Verifye koneksyon ou epi eseye ankò. Si pwoblèm nan kontinye, kontakte administratè a."
+  },
   "common": {
     "loading": "Chajman...",
     "unexpected_error": "Gen yon erè ki fèt."

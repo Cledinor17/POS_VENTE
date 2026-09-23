@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useAuth } from "../context/AuthContext";
 import { useAppLocale } from "../context/LocaleContext";
 import { updatePassword, updateAvatar } from "../lib/authApi";
 import { getErrorMessage } from "../lib/errors";
+import { MAX_IMAGE_BYTES, formatImageSize, imageSizeMessage, imageUploadErrorMessage } from "../lib/imageUpload";
 import type { Locale } from "../lib/locale";
 import BranchSwitcher from "./BranchSwitcher";
 import CurrentUserDailyReportModal from "./CurrentUserDailyReportModal";
@@ -395,17 +396,20 @@ function AvatarModal({
   onSaved: () => Promise<void>;
 }) {
   const t = useTranslations("topbar.avatar_modal");
+  const imageT = useTranslations("image_upload");
+  const locale = useLocale();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewLoadFailed, setPreviewLoadFailed] = useState(false);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const imageError = imageSizeMessage(file, imageT, locale);
   const previewSource = previewUrl || currentAvatarUrl || "";
   const showPreviewPhoto = Boolean(previewSource) && !previewLoadFailed;
 
   useEffect(() => {
-    if (!file) {
+    if (!file || file.size > MAX_IMAGE_BYTES) {
       setPreviewUrl("");
       return;
     }
@@ -422,13 +426,14 @@ function AvatarModal({
   async function submit() {
     setErr("");
     if (!file) return setErr(t("no_file_selected"));
+    if (imageError) return setErr(imageError);
     setLoading(true);
     try {
       await updateAvatar(file);
       await onSaved();
       onClose();
     } catch (e: unknown) {
-      setErr(getErrorMessage(e, t("generic_error")));
+      setErr(imageUploadErrorMessage(e, imageT, locale, t("generic_error")));
     } finally {
       setLoading(false);
     }
@@ -436,7 +441,7 @@ function AvatarModal({
 
   return (
     <ModalShell title={t("title")} onClose={onClose}>
-      {err ? <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{err}</div> : null}
+      {imageError || err ? <div role="alert" className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{imageError || err}</div> : null}
 
       <div className="space-y-3">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -461,6 +466,7 @@ function AvatarModal({
               {file ? (
                 <>
                   {t("file_prefix")} <span className="font-semibold">{file.name}</span>
+                  {" "}({formatImageSize(file.size, locale)})
                 </>
               ) : (
                 t("choose_hint")
@@ -473,12 +479,24 @@ function AvatarModal({
           ref={fileRef}
           type="file"
           accept="image/*"
+          disabled={loading}
+          aria-describedby="avatar-size-hint"
+          aria-invalid={Boolean(imageError)}
           className="hidden"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => {
+            setFile(e.target.files?.[0] ?? null);
+            setErr("");
+          }}
         />
+
+        <p id="avatar-size-hint" className="text-sm text-slate-600">
+          {imageT("size_hint", { maxSize: formatImageSize(MAX_IMAGE_BYTES, locale) })}
+        </p>
 
         <button
           onClick={() => fileRef.current?.click()}
+          disabled={loading}
+          aria-describedby="avatar-size-hint"
           className="w-full rounded-2xl border border-orange-200 bg-orange-50 py-3 font-semibold text-orange-700 transition-colors hover:bg-orange-100"
         >
           {t("choose_button")}
@@ -486,7 +504,7 @@ function AvatarModal({
 
         <button
           onClick={submit}
-          disabled={loading}
+          disabled={loading || Boolean(imageError)}
           className="w-full rounded-2xl brand-primary-btn py-3 font-bold disabled:opacity-60"
         >
           {loading ? t("submit_loading") : t("submit")}

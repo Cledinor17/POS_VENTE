@@ -1,7 +1,6 @@
 import type Echo from "laravel-echo";
-import { getToken } from "./api";
+import { API_BASE, getToken } from "./api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 const REVERB_APP_KEY = process.env.NEXT_PUBLIC_REVERB_APP_KEY;
 const REVERB_HOST = process.env.NEXT_PUBLIC_REVERB_HOST;
 const REVERB_PORT = process.env.NEXT_PUBLIC_REVERB_PORT;

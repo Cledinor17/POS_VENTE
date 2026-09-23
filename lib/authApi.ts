@@ -1,4 +1,5 @@
-import { apiFetch, getToken, setToken } from "./api";
+import { apiFetch, setToken } from "./api";
+import { assertImageSize } from "./imageUpload";
 import type {
   AuthUser,
   BusinessSummary,
@@ -160,21 +161,14 @@ export async function updateLocale(locale: string) {
 }
 
 export async function updateAvatar(file: File) {
-  const token = getToken();
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-
+  assertImageSize(file);
   const fd = new FormData();
   fd.append("avatar", file);
 
-  const res = await fetch(`${base}/api/me/avatar`, {
+  // Keep multipart handling in the browser while requesting JSON responses,
+  // so validation/authentication failures do not become HTML redirects.
+  return apiFetch<{ message: string; avatar_path: string; avatar_url: string }>("/api/me/avatar", {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: fd,
   });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(txt || "Upload avatar echoue");
-  }
-  return res.json().catch(() => ({}));
 }

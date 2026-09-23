@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import { assertImageSize } from "./imageUpload";
 
 export type Id = number | string;
 export type ProductStatus = "active" | "draft" | "archived";
@@ -457,6 +458,7 @@ export async function createProduct(
   let raw: unknown;
 
   if (input.imageFile instanceof File) {
+    assertImageSize(input.imageFile);
     const formData = payloadToFormData(payload);
     formData.append("image", input.imageFile);
     raw = await apiFetch<unknown>(`${businessBasePath(business)}/products`, {
@@ -487,6 +489,7 @@ export async function updateProduct(
   let raw: unknown;
 
   if (input.imageFile instanceof File) {
+    assertImageSize(input.imageFile);
     const formData = payloadToFormData(payload);
     formData.append("image", input.imageFile);
     raw = await apiFetch<unknown>(`${businessBasePath(business)}/products/${encodeId(productId)}`, {
