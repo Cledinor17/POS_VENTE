@@ -78,6 +78,7 @@ import { enqueuePendingSale, getCachedProducts, listPendingSales, removePendingS
 import { syncPendingSales } from "@/lib/offlineSync";
 import { useOnlineStatus } from "@/lib/useOnlineStatus";
 import { getCurrentCashSession, openCashSession, type CashSession } from "@/lib/cashSessionApi";
+import { isNetworkUnavailable, offlineScopeKey, readOfflineValue, rememberOfflineValue, removeOfflineValue } from "@/lib/offlineAccess";
 
 type CartItem = {
   discountCurrency?: string;
@@ -294,7 +295,7 @@ export default function PosPage() {
   const businessSlug = params?.business ?? "";
 
   const { user, activeBusiness, permissions } = useAuth();
-  const { currentBranch } = useBranch();
+  const { currentBranch, loading: branchLoading } = useBranch();
   const branchId = currentBranch?.id;
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
@@ -508,15 +509,29 @@ export default function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessSlug, user?.id]);
   useEffect(() => {
-    if (!businessSlug) return;
+    // A cached cash session is bound to the exact cashier AND branch. No
+    // fallback is permitted after an HTTP 401/403/422 or a known closed session.
+    if (!businessSlug || user?.id == null || !branchId || branchLoading) {
+      setCashSession(null);
+      setCashSessionLoading(true);
+      return;
+    }
     let mounted = true;
+    const cacheKey = offlineScopeKey("cash-session", businessSlug, user.id, branchId);
+    setCashSession(null);
     setCashSessionLoading(true);
     getCurrentCashSession(businessSlug)
       .then((session) => {
-        if (mounted) setCashSession(session);
+        if (!mounted) return;
+        setCashSession(session);
+        if (session?.status === "open") rememberOfflineValue(cacheKey, session);
+        else removeOfflineValue(cacheKey);
       })
-      .catch(() => {
-        if (mounted) setCashSession(null);
+      .catch((error) => {
+        if (!mounted) return;
+        const cached = isNetworkUnavailable(error) ? readOfflineValue<CashSession>(cacheKey) : null;
+        setCashSession(cached?.status === "open" && String(cached.userId) === String(user.id)
+          ? cached : null);
       })
       .finally(() => {
         if (mounted) setCashSessionLoading(false);
@@ -524,23 +539,35 @@ export default function PosPage() {
     return () => {
       mounted = false;
     };
-  }, [businessSlug]);
+  }, [businessSlug, branchId, branchLoading, user?.id, isOnline]);
   useEffect(() => {
     let mounted = true;
     async function loadBusinessConfig() {
-      if (!businessSlug) return;
+      if (!businessSlug || user?.id == null || !branchId) return;
+      const cacheKey = offlineScopeKey("pos-settings", businessSlug, user.id, branchId);
+      setBusinessSettings(null);
       try {
         const data = await getPosSettings(businessSlug);
-        if (mounted) setBusinessSettings(data);
-      } catch (e) {
-        if (mounted) pushError(getErrorMessage(e));
+        if (mounted) {
+          setBusinessSettings(data);
+          rememberOfflineValue(cacheKey, data);
+        }
+      } catch (error) {
+        if (!mounted) return;
+        const cached = isNetworkUnavailable(error)
+          ? readOfflineValue<BusinessSettings>(cacheKey) : null;
+        if (cached) {
+          setBusinessSettings(cached);
+        } else {
+          pushError(getErrorMessage(error));
+        }
       }
     }
     void loadBusinessConfig();
     return () => {
       mounted = false;
     };
-  }, [businessSlug, pushError]);
+  }, [businessSlug, branchId, user?.id, pushError, isOnline]);
   useEffect(() => {
     let mounted = true;
     async function loadDefaultPrinter() {
@@ -1060,6 +1087,9 @@ export default function PosPage() {
         openingNote: openingNoteInput.trim() || undefined,
       });
       setCashSession(session);
+      if (branchId && user?.id != null) {
+        rememberOfflineValue(offlineScopeKey("cash-session", businessSlug, user.id, branchId), session);
+      }
       setShowOpenRegisterForm(false);
       setOpeningNoteInput("");
       pushNotice("Caisse ouverte.", "success");
