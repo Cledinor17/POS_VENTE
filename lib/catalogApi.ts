@@ -450,6 +450,39 @@ export async function getProducts(
   return extractCollection<unknown>(raw).map(normalizeProduct);
 }
 
+export type ProductPage = {
+  items: CatalogProduct[];
+  page: number;
+  lastPage: number;
+  total: number;
+  perPage: number;
+};
+
+/** Laravel paginates after applying a server-side, tenant-scoped search. */
+export async function getProductPage(
+  business: string,
+  options: { page?: number; perPage?: number; q?: string; status?: ProductStatus | "all" } = {}
+): Promise<ProductPage> {
+  const qp = new URLSearchParams();
+  qp.set("page", String(Math.max(1, options.page ?? 1)));
+  qp.set("per_page", String(Math.max(1, Math.min(100, options.perPage ?? 10))));
+  if (options.q?.trim()) qp.set("q", options.q.trim());
+  if (options.status && options.status !== "all") qp.set("status", options.status);
+
+  const raw = await apiFetch<unknown>(`${businessBasePath(business)}/products?${qp.toString()}`);
+  const payload = isObject(raw) && isObject(raw.data) && !Array.isArray(raw.data) ? raw.data : raw;
+  const meta = isObject(payload) ? payload : {};
+  const items = extractCollection<unknown>(raw).map(normalizeProduct);
+
+  return {
+    items,
+    page: Math.max(1, toNumber(meta.current_page, options.page ?? 1)),
+    lastPage: Math.max(1, toNumber(meta.last_page, 1)),
+    total: Math.max(0, toNumber(meta.total, items.length)),
+    perPage: Math.max(1, toNumber(meta.per_page, options.perPage ?? 10)),
+  };
+}
+
 export async function createProduct(
   business: string,
   input: CreateProductInput
