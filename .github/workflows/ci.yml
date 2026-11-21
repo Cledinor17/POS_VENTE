@@ -18,6 +18,14 @@ jobs:
       # The legacy lock needs peer-dependency normalization before clean install.
       # This line can be removed once the corrected lock is committed.
       - run: npm install --package-lock-only --ignore-scripts
+      - run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const raw = fs.readFileSync('package-lock.json', 'utf8');
+          for (let i = 0; i < raw.length; i += 1200) {
+            console.log('POSLOCK=' + JSON.stringify([i, raw.slice(i, i + 1200)]));
+          }
+          NODE
       - run: git diff -- package-lock.json | head -180
       - run: |
           node - <<'NODE'
