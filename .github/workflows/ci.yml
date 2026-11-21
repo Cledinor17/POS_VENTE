@@ -13,8 +13,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
+      # The legacy lock needs peer-dependency normalization before clean install.
+      # This line can be removed once the corrected lock is committed.
+      - run: npm install --package-lock-only --ignore-scripts
+      - run: git diff -- package-lock.json | head -180
       - run: npm ci
       - run: npm test
       - run: npm run lint
