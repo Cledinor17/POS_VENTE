@@ -1,7 +1,7 @@
-// Hand-written service worker (no next-pwa — incompatible with Turbopack).
-// Scope: caches static assets only, so /pos can still load while offline.
-// It NEVER touches business data: /api/* always goes straight to the
-// network, untouched. Product catalog and pending sales are handled
+// Service worker: caches POS client shells visited while online and static assets.
+// It NEVER stores API responses, business data, permissions or sales.
+// Product catalog and pending sales remain explicit IndexedDB records.
+// (see lib/offlineDb.ts) and are revalidated by the API when connected.
 // explicitly by the app via IndexedDB (see lib/offlineDb.ts), never by
 // an opaque HTTP cache here.
 
@@ -31,7 +31,7 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     // Only cache the already-visited POS React shell, never arbitrary pages or
     // login/API responses. Data, permissions and sales are NOT served from HTTP cache.
-    const isPosShell = /^\\/[^/]+\\/pos(?:\\/pending)?\\/?$/.test(url.pathname);
+    const isPosShell = /^\/[^/]+\/pos(?:\/pending)?\/?$/.test(url.pathname);
     event.respondWith(
       (async () => {
         try {
