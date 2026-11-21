@@ -65,6 +65,8 @@ export function getToken(): string | null {
 }
 
 export function setToken(token: string | null) {
+  // Cached identity must never survive a different user's login/logout.
+  if (getToken() !== token) safeRemoveItem("pos_offline_identity_v1");
   memoryToken = token;
   if (!token) safeRemoveItem("pos_token");
   else safeSetItem("pos_token", token);
@@ -98,6 +100,9 @@ export function branchStorageKey(business: string): string {
 // returning visitors; BranchContext overwrites the in-memory pointer once
 // it has confirmed the stored id is still a branch they can access.
 function resolveBranchId(path: string): string | null {
+  // Branch discovery must work even when a formerly cached branch was
+  // deleted or revoked. All other calls still carry their explicit branch.
+  if (path.includes("/branches/mine")) return null;
   if (memoryBranchId) return memoryBranchId;
 
   const match = path.match(/\/api\/app\/([^/?]+)/);
