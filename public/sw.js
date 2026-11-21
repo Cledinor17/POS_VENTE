@@ -37,10 +37,12 @@ self.addEventListener("fetch", (event) => {
         try {
           const response = await fetch(request);
           if (isPosShell && response.ok && response.type === "basic") {
-            // A POS route contains a client-rendered shell. Refresh it online,
-            // and keep the last successfully visited shell for offline reloads.
-            const cache = await caches.open(CACHE_VERSION);
-            await cache.put(request, response.clone());
+            // A cache quota/security error must never turn a successful online
+            // response into a failed navigation.
+            try {
+              const cache = await caches.open(CACHE_VERSION);
+              await cache.put(request, response.clone());
+            } catch { /* Storage unavailable: keep online navigation working. */ }
           }
           return response;
         } catch {
