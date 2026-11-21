@@ -1,0 +1,27 @@
+name: Frontend checks
+on:
+  pull_request:
+  push:
+    branches: ['integration/**']
+permissions:
+  contents: read
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx eslint lib/api.ts lib/offlineAccess.ts lib/brandAssets.ts components/BusinessBrandMetadata.tsx tests/offlineAccess.test.mjs tests/serviceWorkerOffline.test.mjs tests/brandAssets.test.mjs
+      # Pre-existing lint errors in unrelated pages are reported separately.
+      # They must be addressed before a full lint-clean release.
+      - run: npm run lint
+        continue-on-error: true
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: https://posapi.haytinumeric.com
