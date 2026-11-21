@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import { branchStorageKey, setBranchId } from "../lib/api";
 import { listMyBranches, type MyBranchItem } from "../lib/branchesApi";
 import { safeGetItem, safeSetItem } from "../lib/safeStorage";
+import { useAuth } from "./AuthContext";
+import { isNetworkUnavailable, offlineScopeKey, readOfflineValue, rememberOfflineValue } from "../lib/offlineAccess";
 
 type BranchState = {
   branches: MyBranchItem[];
@@ -19,6 +21,8 @@ const BranchContext = createContext<BranchState | null>(null);
 export function BranchProvider({ children }: { children: React.ReactNode }) {
   const params = useParams<{ business: string }>();
   const business = params?.business ?? "";
+  const { user } = useAuth();
+  const userId = user?.id;
 
   const [branches, setBranches] = useState<MyBranchItem[]>([]);
   const [currentBranch, setCurrentBranch] = useState<MyBranchItem | null>(null);
@@ -42,25 +46,42 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refresh = useCallback(async () => {
-    if (!business) return;
-    setLoading(true);
-    try {
-      const list = await listMyBranches(business);
-      setBranches(list);
-      applySelection(list);
-    } catch {
+    if (!business || userId == null) {
       setBranches([]);
       setCurrentBranch(null);
       setBranchId(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const cacheKey = offlineScopeKey("branches", business, userId);
+    try {
+      const list = await listMyBranches(business);
+      rememberOfflineValue(cacheKey, list);
+      setBranches(list);
+      applySelection(list);
+    } catch (error) {
+      // Offline access only reuses branches previously authorized for THIS user.
+      const cached = isNetworkUnavailable(error)
+        ? readOfflineValue<MyBranchItem[]>(cacheKey) : null;
+      if (cached && Array.isArray(cached) && cached.every((item) =>
+        typeof item.id === "string" && typeof item.name === "string" &&
+        typeof item.isActive === "boolean")) {
+        setBranches(cached);
+        applySelection(cached);
+      } else {
+        setBranches([]);
+        setCurrentBranch(null);
+        setBranchId(null);
+      }
     } finally {
       setLoading(false);
     }
-  }, [business, applySelection]);
+  }, [business, userId, applySelection]);
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [business]);
+  }, [refresh]);
 
   const selectBranch = useCallback(
     (branchId: string) => {
