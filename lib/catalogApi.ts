@@ -470,7 +470,7 @@ export async function getProductPage(
   if (options.status && options.status !== "all") qp.set("status", options.status);
 
   const raw = await apiFetch<unknown>(`${businessBasePath(business)}/products?${qp.toString()}`);
-  const payload = isObject(raw) && isObject(raw.data) ? raw.data : raw;
+  const payload = isObject(raw) && isObject(raw.data) && !Array.isArray(raw.data) ? raw.data : raw;
   const meta = isObject(payload) ? payload : {};
   const items = extractCollection<unknown>(raw).map(normalizeProduct);
 
