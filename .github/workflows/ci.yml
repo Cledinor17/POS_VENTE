@@ -19,7 +19,13 @@ jobs:
       # This line can be removed once the corrected lock is committed.
       - run: npm install --package-lock-only --ignore-scripts
       - run: git diff -- package-lock.json | head -180
-      - run: node -e "const p=require('./package-lock.json').packages; console.log('NESTED_HELPERS='+JSON.stringify(p['node_modules/next-intl/node_modules/@swc/helpers']));"
+      - run: |
+          node - <<'NODE'
+          const p = require('./package-lock.json').packages;
+          for (const key of Object.keys(p).filter(k => k.endsWith('/@swc/helpers'))) {
+            console.log('SWC_ENTRY=' + JSON.stringify({ key, data: p[key] }));
+          }
+          NODE
       - run: npm ci
       - run: npm test
       - run: npx eslint lib/api.ts lib/offlineAccess.ts tests/offlineAccess.test.mjs tests/serviceWorkerOffline.test.mjs
