@@ -37,11 +37,12 @@ test("list uses platform-only route with encoded search and filters", async () =
 
 test("status management posts an explicit reason and never uses tenant APIs", async () => {
   calls.length = 0;
-  await api.changePlatformBusinessStatus(1, "suspend", "Contract violation");
+  await api.changePlatformBusinessStatus(1, "suspend", "Contract violation", "secret12");
   assert.equal(calls[0].path, "/api/platform/businesses/1/suspend");
   assert.equal(calls[0].options.method, "POST");
   assert.equal(calls[0].options.json.reason, "Contract violation");
-  await api.changePlatformBusinessStatus(1, "reactivate", "Resolved");
+  assert.equal(calls[0].options.json.current_password, "secret12");
+  await api.changePlatformBusinessStatus(1, "reactivate", "Resolved", "secret12");
   assert.equal(calls[1].path, "/api/platform/businesses/1/reactivate");
 });
 
