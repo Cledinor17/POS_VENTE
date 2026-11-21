@@ -85,9 +85,9 @@ export async function patchPlatformBusiness(id: number, data: PlatformBusinessPa
   return res.data;
 }
 
-export async function changePlatformBusinessStatus(id: number, operation: "suspend" | "reactivate", reason: string): Promise<PlatformBusiness> {
+export async function changePlatformBusinessStatus(id: number, operation: "suspend" | "reactivate", reason: string, currentPassword: string): Promise<PlatformBusiness> {
   const res = await apiFetch<{ data: PlatformBusiness }>(`${prefix}/businesses/${id}/${operation}`, {
-    method: "POST", json: { reason },
+    method: "POST", json: { reason, current_password: currentPassword },
   });
   return res.data;
 }
