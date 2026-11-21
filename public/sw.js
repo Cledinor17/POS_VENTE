@@ -5,7 +5,7 @@
 // explicitly by the app via IndexedDB (see lib/offlineDb.ts), never by
 // an opaque HTTP cache here.
 
-const CACHE_VERSION = "pos-static-v2";
+const CACHE_VERSION = "pos-static-v3";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -29,8 +29,25 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
 
   if (request.mode === "navigate") {
+    // Only cache the already-visited POS React shell, never arbitrary pages or
+    // login/API responses. Data, permissions and sales are NOT served from HTTP cache.
+    const isPosShell = /^\\/[^/]+\\/pos(?:\\/pending)?\\/?$/.test(url.pathname);
     event.respondWith(
-      fetch(request).catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+      (async () => {
+        try {
+          const response = await fetch(request);
+          if (isPosShell && response.ok && response.type === "basic") {
+            // A POS route contains a client-rendered shell. Refresh it online,
+            // and keep the last successfully visited shell for offline reloads.
+            const cache = await caches.open(CACHE_VERSION);
+            await cache.put(request, response.clone());
+          }
+          return response;
+        } catch {
+          const cached = await caches.match(request);
+          return cached || Response.error();
+        }
+      })()
     );
     return;
   }
