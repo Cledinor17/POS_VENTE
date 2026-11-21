@@ -102,7 +102,7 @@ export function branchStorageKey(business: string): string {
 function resolveBranchId(path: string): string | null {
   // Branch discovery must work even when a formerly cached branch was
   // deleted or revoked. All other calls still carry their explicit branch.
-  if (/\\/branches\\/mine(?:[?/#]|$)/.test(path)) return null;
+  if (path.includes("/branches/mine")) return null;
   if (memoryBranchId) return memoryBranchId;
 
   const match = path.match(/\/api\/app\/([^/?]+)/);
