@@ -10,7 +10,7 @@ API protégée par `auth:sanctum`, `platformAdmin` et limitation de débit :
 - `GET /api/platform/businesses?search=&status=&page=` : annuaire paginé, propriétaires et compteurs.
 - `GET /api/platform/businesses/{id}` : détails administratifs.
 - `PATCH /api/platform/businesses/{id}` : champs administratifs autorisés uniquement ; pas de `slug`, `status`, mot de passe, propriétaire ni écritures comptables.
-- `POST /api/platform/businesses/{id}/suspend` et `/reactivate` : motif obligatoire, état et horodatage, erreur 409 en cas de doublon.
+- `POST /api/platform/businesses/{id}/suspend` et `/reactivate` : motif et mot de passe administrateur obligatoires, état et horodatage, erreur 409 en cas de doublon.
 - `GET /api/platform/businesses/{id}/events` : historique serveur des modifications.
 
 La suspension place `businesses.status = suspended`. Les requêtes `/api/app/{business}/…` de membres pourtant authentifiés reçoivent HTTP **423**. Cela bloque la vente, la modification du stock, les exports, les rapports et la restauration ; les données ne sont pas effacées. Les ventes enregistrées hors ligne avant la suspension ne peuvent plus se synchroniser tant que le business reste suspendu : **les réconcilier lors de la réactivation**, sans ignorer l'erreur.
@@ -23,7 +23,7 @@ Les contrôles de plateforme s'exécutent hors du contexte `SetBusiness` afin de
 3. Déployer le backend et exécuter `php artisan migrate --force` depuis son répertoire, puis `php artisan config:cache`. La migration conserve tous les tenants actifs ; elle ajoute `suspended_at`, `suspended_by`, `suspension_reason` et la table `platform_business_events`.
 4. Déployer le frontend Next.js avec sa variable `NEXT_PUBLIC_API_BASE_URL`, puis lancer `npm ci`, `npm run build` et le redémarrage contrôlé du processus PM2.
 5. Sur le VPS, attribuer le privilège à **un compte existant avec email vérifié** : `php artisan platform:admin adresse@domaine.tld`. La révocation s'effectue avec `--revoke`. N'ajoutez jamais ce privilège depuis une inscription publique ni via le rôle `owner`.
-6. Tester avec un business de démonstration : login Super Admin, liste, modification administrative, suspension, HTTP 423 sur POS, audit, réactivation et réouverture du POS. Contrôler le comportement de la file de ventes hors ligne.
+6. Tester avec un business de démonstration : login Super Admin, liste, modification administrative, suspension (motif + slug + mot de passe), HTTP 423 sur POS, audit, réactivation et réouverture du POS. Contrôler le comportement de la file de ventes hors ligne.
 7. Prévoir un accès « break-glass » au VPS pour récupérer une entreprise suspendue accidentellement. Ne pas faire de rollback destructif de la migration après avoir collecté des événements réels.
 
 ### Conditions techniques
