@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import BranchSwitcher from "./BranchSwitcher";
 import { RequireAuth } from "./RequireAuth";
 import Sidebar from "./Sidebar";
+import BusinessBrandMetadata from "./BusinessBrandMetadata";
 import Topbar from "./Topbar";
 import { logout } from "../lib/authApi";
 import { useAuth } from "../context/AuthContext";
@@ -133,6 +134,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
 
   return (
     <RequireAuth>
+      <BusinessBrandMetadata business={business} />
       <div className="min-h-screen app-shell-bg">
         {/* Sidebar FIXE (desktop) */}
         <aside
