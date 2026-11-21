@@ -13,7 +13,7 @@ function fixture(online = false) {
   ).outputText;
   const module = { exports: {} };
   runInNewContext(code, {
-    exports: module.exports, module, navigator: { onLine: online }, Date, JSON,
+    exports: module.exports, module, navigator: { onLine: online }, Date, JSON, TypeError,
     require(id) {
       if (id === "./api") return { ApiError };
       if (id === "./safeStorage") return {
