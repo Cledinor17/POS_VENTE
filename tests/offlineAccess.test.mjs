@@ -11,9 +11,9 @@ function fixture(online = false) {
     readFileSync(new URL("../lib/offlineAccess.ts", import.meta.url), "utf8"),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } },
   ).outputText;
-  const module = { exports: {} };
+  const loadedModule = { exports: {} };
   runInNewContext(code, {
-    exports: module.exports, module, navigator: { onLine: online }, Date, JSON, TypeError,
+    exports: loadedModule.exports, module: loadedModule, navigator: { onLine: online }, Date, JSON, TypeError,
     require(id) {
       if (id === "./api") return { ApiError };
       if (id === "./safeStorage") return {
@@ -24,7 +24,7 @@ function fixture(online = false) {
       throw new Error(id);
     },
   });
-  return { ...module.exports, values, ApiError };
+  return { ...loadedModule.exports, values, ApiError };
 }
 
 test("offline identity contains only minimal user data, never credentials", () => {
