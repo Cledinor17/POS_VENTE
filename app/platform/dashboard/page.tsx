@@ -82,6 +82,7 @@ export default function PlatformDashboard() {
   const [operation, setOperation] = useState<ControlOperation | null>(null);
   const [reason, setReason] = useState("");
   const [confirmSlug, setConfirmSlug] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionInfo, setActionInfo] = useState("");
@@ -165,17 +166,18 @@ export default function PlatformDashboard() {
 
   async function applyOperation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || !operation || saving || confirmSlug !== selected.slug || reason.trim().length < (operation === "suspend" ? 10 : 5)) return;
+    if (!selected || !operation || saving || confirmSlug !== selected.slug || !currentPassword || reason.trim().length < (operation === "suspend" ? 10 : 5)) return;
     setSaving(true);
     setActionError("");
     setActionInfo("");
     try {
-      await changePlatformBusinessStatus(selected.id, operation, reason.trim());
+      await changePlatformBusinessStatus(selected.id, operation, reason.trim(), currentPassword);
       await refreshSelected(selected.id);
       setActionInfo(operation === "suspend" ? "L'entreprise est suspendue. L'API refuse maintenant ses opérations." : "L'entreprise est de nouveau active.");
       setOperation(null);
       setReason("");
       setConfirmSlug("");
+      setCurrentPassword("");
     } catch (error: unknown) {
       setActionError(getErrorMessage(error, "L'opération a échoué."));
     } finally {
@@ -311,7 +313,7 @@ export default function PlatformDashboard() {
                 )}
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => {setEditOpen(value=>!value);setOperation(null);setActionError("");}} className="rounded-lg border border-[#0a4d8f] px-4 py-2 text-sm font-semibold text-[#0a4d8f] hover:bg-blue-50">Modifier les paramètres</button>
-                  <button type="button" onClick={() => {setOperation(selected.status==="active"?"suspend":"reactivate");setEditOpen(false);setReason("");setConfirmSlug("");setActionError("");}}
+                  <button type="button" onClick={() => {setOperation(selected.status==="active"?"suspend":"reactivate");setEditOpen(false);setReason("");setConfirmSlug("");setCurrentPassword("");setActionError("");}}
                     className={`rounded-lg px-4 py-2 text-sm font-semibold text-white ${selected.status === "active" ? "bg-rose-700 hover:bg-rose-800" : "bg-emerald-700 hover:bg-emerald-800"}`}>
                     {selected.status === "active" ? "Suspendre" : "Réactiver"}
                   </button>
@@ -364,12 +366,16 @@ export default function PlatformDashboard() {
                       <input value={confirmSlug} onChange={e=>setConfirmSlug(e.target.value)} autoComplete="off" required
                         className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" />
                     </label>
+                    <label className="block text-xs font-medium">Votre mot de passe administrateur
+                      <input type="password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} autoComplete="current-password" required
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" />
+                    </label>
                     <div className="flex gap-2">
-                      <button type="submit" disabled={saving || confirmSlug !== selected.slug || reason.trim().length < (operation==="suspend"?10:5)}
+                      <button type="submit" disabled={saving || confirmSlug !== selected.slug || !currentPassword || reason.trim().length < (operation==="suspend"?10:5)}
                         className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${operation==="suspend"?"bg-rose-700":"bg-emerald-700"}`}>
                         {saving?"Traitement…":operation==="suspend"?"Suspendre le business":"Réactiver le business"}
                       </button>
-                      <button type="button" onClick={()=>setOperation(null)} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm">Annuler</button>
+                      <button type="button" onClick={()=>{setOperation(null);setCurrentPassword("");}} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm">Annuler</button>
                     </div>
                   </form>
                 )}
