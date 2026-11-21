@@ -18,7 +18,7 @@
     "laravel-echo": "^2.4.0",
     "libphonenumber-js": "^1.13.10",
     "lucide-react": "^0.576.0",
-    "next": "16.1.6",
+    "next": "16.4.6",
     "next-intl": "^4.13.5",
     "pusher-js": "^8.6.0",
     "qz-tray": "^2.2.6",
@@ -33,7 +33,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "9.39.3",
-    "eslint-config-next": "^16.1.6",
+    "eslint-config-next": "16.4.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
