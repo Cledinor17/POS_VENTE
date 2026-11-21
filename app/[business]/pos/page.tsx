@@ -444,7 +444,10 @@ export default function PosPage() {
       setLoadingProducts(true);
       setError("");
       try {
-        const data = await getProducts(businessSlug);
+        // The cashier needs the entire catalogue of the active branch for
+        // local name/SKU/category search, barcode scanning and offline sales.
+        // Without all=true Laravel returns only its first ten products.
+        const data = await getProducts(businessSlug, { all: true });
         if (mounted) {
           setProducts(data);
           setOfflineCatalogAt(null);
