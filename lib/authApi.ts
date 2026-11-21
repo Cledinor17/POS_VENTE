@@ -129,10 +129,10 @@ export async function me(): Promise<MeResponse> {
   const businesses = Array.isArray(payload.businesses)
     ? payload.businesses.map(toBusinessSummary).filter((item): item is BusinessSummary => item !== null)
     : [];
+  const apiBusiness = toBusinessSummary(payload.activeBusiness);
   const activeBusiness =
-    toBusinessSummary(payload.activeBusiness) ??
-    businesses.find((business) => business.pivot?.status === "active") ??
-    businesses[0] ??
+    (apiBusiness?.status !== "suspended" ? apiBusiness : null) ??
+    businesses.find((business) => business.status !== "suspended" && business.pivot?.status === "active") ??
     null;
 
   const permissions = Array.isArray(payload.permissions)

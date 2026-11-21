@@ -145,7 +145,7 @@ function CollapsibleNavMenu({
 
 export default function Sidebar() {
   const t = useTranslations("nav");
-  const { activeBusiness, businesses, permissions: fallbackPermissions } = useAuth();
+  const { user, activeBusiness, businesses, permissions: fallbackPermissions } = useAuth();
   const params = useParams<{ business: string }>();
   const pathname = usePathname();
   const business = params?.business || "";
@@ -508,6 +508,13 @@ export default function Sidebar() {
 
       {/* Menu */}
       <div className="min-h-0 flex-1 overflow-y-auto py-3">
+        {user?.is_platform_admin === true ? (
+          <div className="px-4 pb-3">
+            <Link href="/platform/dashboard" className="flex items-center gap-2 rounded-xl bg-[#0a4d8f] px-3 py-3 text-sm font-semibold text-white hover:bg-[#083a6d]">
+              <ShieldCheck className="h-4 w-4" /> Super Admin NovaGest
+            </Link>
+          </div>
+        ) : null}
         {visibleReferenceGroups.length > 0 ? (
           <nav aria-label={t("reference.quick_navigation")} className="space-y-3 px-4 pb-4">
             {visibleReferenceGroups.map(group => (

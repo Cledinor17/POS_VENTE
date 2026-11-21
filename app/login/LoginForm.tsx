@@ -41,7 +41,12 @@ export default function LoginForm() {
         return;
       }
 
-      const slug = data?.activeBusiness?.slug || data?.businesses?.[0]?.slug;
+      if (data.user.is_platform_admin === true) {
+        router.replace("/platform/dashboard");
+        return;
+      }
+
+      const slug = data?.activeBusiness?.slug;
       router.replace(slug ? `/${slug}/dashboard` : "/onboarding/business");
     } catch (error: unknown) {
       if (error instanceof ApiError && error.status === 403 && error.body && typeof error.body === "object") {
