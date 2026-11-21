@@ -26,7 +26,10 @@ function workerHarness() {
     self, caches, URL, Response,
     fetch: async (request) => {
       if (!connected) throw new TypeError("Network down");
-      return new Response("POS shell", { status: 200 });
+      const response = new Response("POS shell", { status: 200 });
+      // Browsers expose same-origin navigation responses as type="basic".
+      Object.defineProperty(response, "type", { value: "basic" });
+      return response;
     },
   });
   async function navigate(path) {
