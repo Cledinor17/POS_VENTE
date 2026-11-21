@@ -2,7 +2,7 @@ name: Frontend checks
 on:
   pull_request:
   push:
-    branches: ['integration/**']
+    branches: ['integration/**', 'feat/**']
 permissions:
   contents: read
 jobs:
