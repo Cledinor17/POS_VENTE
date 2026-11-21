@@ -15,6 +15,7 @@ export type BusinessSummary = {
   id?: number | string;
   slug: string;
   business_type?: string;
+  status?: string;
   name?: string;
   role?: string | null;
   pivot?: {

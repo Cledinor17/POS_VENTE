@@ -46,6 +46,7 @@ function minimalBusiness(business: BusinessSummary | null | undefined): Business
     id: business.id,
     slug: business.slug,
     name: business.name,
+    status: business.status,
     pivot: {
       role: business.pivot?.role,
       status: business.pivot?.status,

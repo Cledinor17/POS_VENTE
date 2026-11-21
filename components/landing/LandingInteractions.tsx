@@ -22,8 +22,9 @@ const languageLabels: Record<Locale, string> = {
 export function LandingAccountLinks() {
   const t = useTranslations("landing.nav");
   const { user, activeBusiness, businesses } = useAuth();
-  const slug = activeBusiness?.slug || businesses[0]?.slug;
-  const accountHref = user ? (slug ? `/${slug}/dashboard` : "/onboarding/business") : "/login";
+  const slug = activeBusiness?.slug || businesses.find(item => item.status !== "suspended" && item.pivot?.status === "active")?.slug;
+  const accountHref = user?.is_platform_admin === true ? "/platform/dashboard"
+    : user ? (slug ? `/${slug}/dashboard` : "/onboarding/business") : "/login";
   return (
     <div className="topbar-account-links">
       <Link href={accountHref} className="topbar-account-link">{t(user ? "account" : "login")}</Link>
