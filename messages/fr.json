@@ -1,4 +1,45 @@
 {
+  "address": {
+    "title": "Votre adresse",
+    "street": "Rue, numéro et quartier",
+    "country": "Pays",
+    "state": "Département / État / Province",
+    "city": "Ville / Commune",
+    "zip": "Code postal (facultatif)",
+    "choose_country": "Sélectionner un pays",
+    "choose_country_first": "Choisissez d’abord le pays",
+    "choose_or_type": "Choisir ou saisir",
+    "loading": "Chargement…",
+    "hint": "La ville proposée suit votre département, État ou province. Vérifiez-la ou saisissez votre localité si elle ne figure pas dans la liste.",
+    "error": "Les suggestions d’adresse sont momentanément indisponibles.",
+    "retry": "Réessayer"
+  },
+  "accountingHub": {
+    "description": "Retrouvez votre journal des opérations, vos périodes comptables, vos résultats et vos rapprochements bancaires dans ces onglets."
+  },
+  "reportHub": {
+    "description": "Retrouvez vos ventes, votre stock, vos caisses et vos résultats. Choisissez un rapport puis ajustez ses filtres pour consulter la période souhaitée.",
+    "chooseReport": "Choisir un rapport"
+  },
+  "settingsHub": {
+    "title": "Paramètres généraux",
+    "description": "Tous les réglages de votre entreprise, accessibles depuis ces onglets.",
+    "tabsLabel": "Configuration de l’entreprise",
+    "loading": "Chargement des réglages…",
+    "noAccess": "Vous n’avez pas accès aux réglages de cette entreprise.",
+    "tabs": {
+      "business": "Entreprise",
+      "branches": "Succursales",
+      "users": "Utilisateurs",
+      "roles": "Rôles et accès",
+      "printers": "Imprimantes",
+      "coupons": "Codes promo",
+      "periods": "Périodes comptables",
+      "audit": "Audit et sécurité",
+      "backup": "Sauvegardes",
+      "mobile": "Application mobile"
+    }
+  },
   "image_upload": {
     "size_hint": "Taille maximale : {maxSize}.",
     "too_large": "Cette image est trop volumineuse ({size}). Choisissez une image de {maxSize} maximum ou réduisez sa taille.",
@@ -84,6 +125,7 @@
     }
   },
   "nav": {
+    "reference": {"primary":"Principal","management":"Gestion","finance":"Finances","system":"Système","quick_navigation":"Accès rapides","full_navigation":"Navigation complète","dashboard":"Tableau de bord","pos_new_sale":"Caisse (POS)","tickets_sales":"Ventes & tickets","product_catalog":"Produits & stock","customers":"Clients & fidélité","suppliers":"Fournisseurs","accounting":"Comptabilité","payroll":"Paie & employés","reports":"Rapports","general_settings":"Paramètres","services":"Services","hotel_services":"Hôtel et services","hotel":"Hôtel","quotes_proforma":"Devis & proforma"},
     "dashboard": "Tableau de bord",
     "dollar_purchases": "Achat de dollars",
     "pos_new_sale": "Nouvelle vente (POS)",
@@ -106,7 +148,8 @@
     "expenses_journal": "Journal des depenses",
     "expenses_categories": "Categories de depenses",
     "accounting": "Comptabilite",
-    "accounting_periods": "Periodes comptables",
+    "accounting_journal": "Journal des opérations",
+    "accounting_periods": "Périodes comptables",
     "payroll": "Paie",
     "bank_reconciliation": "Rapprochement bancaire",
     "reports_departments": "Revenus par departement",
@@ -148,7 +191,7 @@
     "section_hotel_setup": "Parametrage hotel",
     "section_company": "Entreprise",
     "section_finance": "Finance",
-    "section_expenses": "Depenses",
+    "section_expenses": "Dépenses",
     "section_reports": "Rapports",
     "tagline": "Bon retour 👋 On vend, on encaisse, on avance.",
     "footer_brand": "POS System"
@@ -280,8 +323,9 @@
     "warning_ar_summary": "Resume creances"
   },
   "customers": {
-    "page_title": "Clients",
-    "page_subtitle": "Liste clients reliee au backend.",
+    "reference": {"table_code":"Code client","table_email":"E-mail","toolbar":"Recherche et actions clients","loyalty_rules":"Règles de fidélité","import":"Importer","table_phone":"Téléphone","table_loyalty":"Points fidélité","table_credit":"Crédit","points_balance":"{count} pts","credit_clear":"À jour","credit_error":"Les soldes des crédits sont indisponibles pour le moment. Rechargez la page pour réessayer.","credit_restricted":"La consultation des crédits nécessite l’accès aux rapports.","credit_loading":"Chargement du solde…"},
+    "page_title": "Clients & fidélité",
+    "page_subtitle": "Retrouvez vos clients, leurs points de fidélité et leurs crédits en un seul endroit.",
     "count_summary": "{total} client(s) | actifs sur page: {active}",
     "new_customer": "Nouveau client",
     "no_access": "Ce profil n'a pas encore d'acces au module clients.",
@@ -347,7 +391,7 @@
     "saving_create": "Ajout...",
     "submit_update": "Mettre a jour",
     "submit_create": "Ajouter",
-    "search_placeholder": "Rechercher (nom, email, phone...)",
+    "search_placeholder": "Nom, téléphone ou e-mail…",
     "filter_all": "Tous",
     "filter_active": "Actifs",
     "filter_inactive": "Inactifs",

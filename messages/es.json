@@ -1,4 +1,45 @@
 {
+  "address": {
+    "title": "Tu dirección",
+    "street": "Calle, número y barrio",
+    "country": "País",
+    "state": "Departamento / Estado / Provincia",
+    "city": "Ciudad / Municipio",
+    "zip": "Código postal (opcional)",
+    "choose_country": "Seleccionar un país",
+    "choose_country_first": "Selecciona primero el país",
+    "choose_or_type": "Elegir o escribir",
+    "loading": "Cargando…",
+    "hint": "La ciudad sugerida depende del departamento, estado o provincia. Revísala o escribe tu localidad si no aparece en la lista.",
+    "error": "Las sugerencias de dirección no están disponibles temporalmente.",
+    "retry": "Reintentar"
+  },
+  "accountingHub": {
+    "description": "Consulte el diario de operaciones, los periodos contables, los estados financieros y la conciliación bancaria desde estas pestañas."
+  },
+  "reportHub": {
+    "description": "Consulte sus ventas, existencias, cajas y resultados. Elija un informe y ajuste sus filtros para consultar el período deseado.",
+    "chooseReport": "Elegir un informe"
+  },
+  "settingsHub": {
+    "title": "Configuración general",
+    "description": "Todos los ajustes de tu empresa, accesibles desde estas pestañas.",
+    "tabsLabel": "Configuración de la empresa",
+    "loading": "Cargando ajustes…",
+    "noAccess": "No tienes acceso a la configuración de esta empresa.",
+    "tabs": {
+      "business": "Empresa",
+      "branches": "Sucursales",
+      "users": "Usuarios",
+      "roles": "Roles y accesos",
+      "printers": "Impresoras",
+      "coupons": "Códigos promocionales",
+      "periods": "Períodos contables",
+      "audit": "Auditoría y seguridad",
+      "backup": "Copias de seguridad",
+      "mobile": "Aplicación móvil"
+    }
+  },
   "image_upload": {
     "size_hint": "Tamaño máximo: {maxSize}.",
     "too_large": "Esta imagen es demasiado grande ({size}). Elija una imagen de {maxSize} como máximo o reduzca su tamaño.",
@@ -84,6 +125,7 @@
     }
   },
   "nav": {
+    "reference": {"primary":"Principal","management":"Gestión","finance":"Finanzas","system":"Sistema","quick_navigation":"Accesos rápidos","full_navigation":"Navegación completa","dashboard":"Panel de control","pos_new_sale":"Caja (POS)","tickets_sales":"Ventas y recibos","product_catalog":"Productos y stock","customers":"Clientes y fidelidad","suppliers":"Proveedores","accounting":"Contabilidad","payroll":"Nómina y empleados","reports":"Informes","general_settings":"Configuración","services":"Servicios","hotel_services":"Hotel y servicios","hotel":"Hotel","quotes_proforma":"Cotizaciones y proformas"},
     "dashboard": "Panel de control",
     "dollar_purchases": "Compra de dólares",
     "pos_new_sale": "Nueva venta (POS)",
@@ -107,6 +149,7 @@
     "expenses_categories": "Categorías de gastos",
     "accounting": "Contabilidad",
     "accounting_periods": "Periodos contables",
+    "accounting_journal": "Diario de operaciones",
     "payroll": "Nomina",
     "bank_reconciliation": "Conciliacion bancaria",
     "reports_departments": "Ingresos por departamento",
@@ -280,8 +323,9 @@
     "warning_ar_summary": "Resumen AR"
   },
   "customers": {
-    "page_title": "Clientes",
-    "page_subtitle": "Lista de clientes conectada al backend.",
+    "reference": {"table_code":"Código de cliente","table_email":"Correo electrónico","toolbar":"Búsqueda y acciones de clientes","loyalty_rules":"Reglas de fidelidad","import":"Importar","table_phone":"Teléfono","table_loyalty":"Puntos de fidelidad","table_credit":"Crédito","points_balance":"{count} pts","credit_clear":"Al día","credit_error":"Los saldos de crédito no están disponibles por el momento. Recarga la página para volver a intentarlo.","credit_restricted":"Se requiere acceso a los informes para ver los saldos de crédito.","credit_loading":"Cargando saldo…"},
+    "page_title": "Clientes y fidelidad",
+    "page_subtitle": "Encuentra a tus clientes, sus puntos de fidelidad y sus créditos pendientes en un solo lugar.",
     "count_summary": "{total} cliente(s) | activos en la página: {active}",
     "new_customer": "Nuevo cliente",
     "no_access": "Este perfil aún no tiene acceso al módulo de clientes.",
@@ -347,7 +391,7 @@
     "saving_create": "Agregando...",
     "submit_update": "Actualizar",
     "submit_create": "Agregar",
-    "search_placeholder": "Buscar (nombre, correo, teléfono...)",
+    "search_placeholder": "Nombre, teléfono o correo…",
     "filter_all": "Todos",
     "filter_active": "Activos",
     "filter_inactive": "Inactivos",

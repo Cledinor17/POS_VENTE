@@ -1165,6 +1165,11 @@ export default function PosPage() {
         "Caissier",
       );
       const sale: CompletedSale = {
+        customerName: selectedCustomer?.name,
+        loyaltyEnabled: Boolean(selectedCustomer) && (offline ? loyaltyEnabled : backendResult?.loyaltyEnabled === true),
+        loyaltyPointsEarned: backendResult?.loyaltyPointsEarned,
+        loyaltyPointsBalanceAfter: backendResult?.loyaltyPointsBalanceAfter ?? null,
+        loyaltyPending: offline && loyaltyEnabled && Boolean(selectedCustomer),
         saleId: backendResult?.saleId ?? "",
         receiptNo: offline
           ? `OFFLINE-${idempotencyKey.slice(0, 8)}`
@@ -1564,18 +1569,18 @@ export default function PosPage() {
                         </div>{" "}
                         
                       </div>{" "}
-                      <div className="flex min-w-0 items-center justify-between gap-1">
-                        <div className="min-w-0 pr-1">
-                          <div className="truncate text-[11px] font-bold text-slate-900 sm:text-xs">
+                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-1">
+                        <div className="min-w-0 max-w-full pr-1">
+                          <div className="whitespace-normal [overflow-wrap:anywhere] text-[11px] font-bold text-slate-900 sm:text-xs">
                             {formatMoney(product.price, product.priceCurrency)}
                           </div>
                           {product.priceCurrency !== saleCurrency ? (
-                            <div className="truncate text-[10px] text-slate-500">
+                            <div className="whitespace-normal [overflow-wrap:anywhere] text-[10px] text-slate-500">
                               Facture: {formatMoney(getSaleUnitPrice(product), saleCurrency)}
                             </div>
                           ) : null}
                         </div>{" "}
-                        <div className="inline-flex shrink-0 items-center gap-0.5 sm:gap-1">
+                        <div className="ml-auto inline-flex shrink-0 items-center gap-0.5 sm:gap-1">
                           <button
                             onClick={() =>
                               updateProductRequestedQty(product, requestedQty - 1)

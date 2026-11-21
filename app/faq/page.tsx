@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { faqs } from "@/components/landing/content";
 
 type FaqItem = {
   question: string;
@@ -12,6 +13,10 @@ type FaqSection = {
 };
 
 const FAQ_SECTIONS: FaqSection[] = [
+  {
+    title: "Découvrir la plateforme",
+    items: faqs.map(({ q, a }) => ({ question: q, answer: a })),
+  },
   {
     title: "Compte et connexion",
     items: [
@@ -133,16 +138,16 @@ export default function FaqPage() {
   return (
     <div className="min-h-[100dvh] bg-[radial-gradient(circle_at_top,_rgba(212,175,55,0.1),_transparent_26%),linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)]">
       <div className="mx-auto flex min-h-[100dvh] w-full max-w-3xl flex-col px-5 py-8 sm:px-8 sm:py-10">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <span className="text-lg font-semibold tracking-tight text-[#0f172a]">
             FC <span className="text-[#d4af37]">Manager</span>
           </span>
           <Link
-            href="/login"
+            href="/"
             className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             <ArrowLeft className="h-4 w-4" />
-            Retour a la connexion
+            Retour à l’accueil
           </Link>
         </div>
 

@@ -1,0 +1,41 @@
+{
+  "skip": "跳转到内容",
+  "topbar": {"tagline": "让日常业务管理更轻松的平台", "support": "直接支持：", "help": "查看帮助 →"},
+  "nav": {"home": "NovaGest — 首页", "label": "主导航", "solutions": "解决方案", "pos": "收银与库存", "applications": "应用模块", "pricing": "价格", "faq": "常见问题", "login": "登录", "register": "创建账户", "account": "我的空间", "open": "打开菜单", "close": "关闭菜单"},
+  "hero": {"badge": "一站式管理", "title": "管理。销售。<em>安心发展。</em>", "lead": "NovaGest 将销售、库存、财务和团队管理整合到流畅的界面中，支持本地货币，无论是否联网都能使用。", "try": "免费试用 →", "discover": "了解功能模块", "proof": "太子港和海地角已有超过 100 家机构使用。"},
+  "dashboard": {"dashboard": "仪表盘", "pos": "收银", "inventory": "库存", "invoicing": "开票", "reports": "报表", "workspace": "主工作空间 · Fredlin", "week": "本周", "revenue": "营业额", "profit": "净利润", "transactions": "交易", "today": "今日 +24", "trend": "每周趋势", "sales": "最近销售", "store": "门店", "register": "收银台 2", "online": "线上", "collected": "今日收款"},
+  "trust": ["HTG 与 USD 双币种", "支持完全离线使用", "法语与海地克里奥尔语", "多分店与云端管理"],
+  "solutionsHeading": {"badge": "行业解决方案", "title": "适用于各行各业的多功能平台", "description": "轻松启用符合您业务需求的模块，无需复杂的技术操作。"},
+  "carousel": {"role": "轮播", "slide": "幻灯片", "hint": "业务类型：使用键盘方向键或滑动卡片", "slideLabel": "第 {index} 项，共 {total} 项：{title}", "more": "了解更多 →", "moreLabel": "了解更多：{title}", "count": "第 {start}–{end} 项，共 {total} 种业务", "previous": "上一组业务", "next": "下一组业务", "pages": "轮播分页", "page": "显示第 {start} 至 {end} 项业务", "pauseLabel": "暂停自动滚动", "resumeLabel": "恢复自动滚动", "pause": "暂停", "resume": "继续"},
+  "solutions": {
+    "retail": {"title": "零售与商店", "text": "集收银、条码扫描、库存管理和客户赊账于一体。"},
+    "hotel": {"title": "酒店与客房", "text": "客房预订、入住和退房管理、住客登记及开票。"},
+    "restaurant": {"title": "餐厅", "text": "餐区与餐桌管理、厨房订单、收款和库存控制。"},
+    "bar_cafe": {"title": "酒吧与咖啡馆", "text": "餐桌跟踪、饮品及简餐订单、收银和库存管理。"},
+    "hardware_store": {"title": "五金店", "text": "材料和工具目录、报价、柜台销售及供应商跟踪。"},
+    "pharmacy": {"title": "药店", "text": "商品销售、库存和采购跟踪、收款及管理报表。"},
+    "supermarket": {"title": "超市与杂货店", "text": "条码扫描、收银、库存盘点和补货跟踪。"},
+    "salon_beauty": {"title": "美容院与水疗中心", "text": "服务目录、服务预约、产品销售及收款。"},
+    "garage": {"title": "汽修与维修店", "text": "零件和配件库存、报价、服务开票及付款跟踪。"},
+    "real_estate": {"title": "房地产中介", "text": "客户管理、报价和发票、收款跟踪与财务管理。"},
+    "fashion": {"title": "时尚与服装", "text": "服装和配饰目录、销售、退货、库存及客户忠诚计划。"},
+    "electronics": {"title": "电子与信息技术", "text": "设备和配件销售、客户报价、发票、采购及库存跟踪。"},
+    "professional_services": {"title": "专业服务", "text": "报价、服务开票、客户跟踪、付款及财务管理。"},
+    "other": {"title": "其他业务", "text": "收银、开票、客户和财务管理，可按需启用功能模块。"}
+  },
+  "pos": {"badge": "触屏收银系统", "title": "加快收银，掌控全局。", "description": "专为收银员和管理者设计：减少排队等待，实时自动更新库存。", "features": ["收据、DGI 发票、贷项通知单和预付款管理", "即时混合收款：海地古德（HTG）与美元（USD）", "即时扣减库存与低库存提醒", "自动备份，网络恢复后自动同步"], "demo": "体验收银演示 →"},
+  "preview": {"description": "收银系统预览：新销售、可搜索的商品目录和库存、包含 {count} 件商品且总额为 {total} 的购物车、散客及现金付款。演示数据。", "sale": "新销售", "cashier": "收银员：", "receipt": "上一张收据", "search": "扫描或搜索商品", "categories": "所有分类", "product": "商品", "stock": "库存：{count} · {category}", "add": "加入购物车", "cart": "购物车", "items": "{count} 件商品", "subtotal": "小计", "taxes": "税费", "total": "合计", "payment": "付款", "customer": "客户", "walkin": "散客", "discount": "折扣", "none": "无", "currency": "币种", "method": "付款方式", "cash": "现金", "due": "应收金额", "checkout": "结账", "hold": "挂起购物车", "caption": "收银界面预览 · 演示数据", "sandwich": "烤三明治", "juice": "百香果汁", "coffee": "本地咖啡", "salad": "新鲜沙拉", "snacks": "小食", "drinks": "饮品"},
+  "applicationsHeading": {"badge":"应用模块","title":"互联的模块，助您管理业务","description":"销售、库存、客户、预订和财务：将工具集中在同一工作空间，按经营需求选择模块。"},
+  "applicationsUi": {"tabs":"管理模块","try":"创建我的工作空间 →","preview":"模块概览","feature":"主要功能","screensLabel":"可用功能"},
+  "applications": {"commerce":{"name":"收银与库存","sub":"销售、采购与盘点","desc":"以 HTG 或 USD 收款，在同一工作空间管理商品目录并跟踪各分店库存。","points":["触屏收银、条码与收据","库存盘点与分店间调拨","供应商、采购订单与收货"],"highlight":"HTG / USD 销售","screens":["商品目录","购物车与收银","库存与采购"]},"billing":{"name":"客户与开票","sub":"报价、发票与付款","desc":"集中管理客户资料，准备报价单或形式发票，并将其转换为可跟踪付款的发票。","points":["报价单、形式发票与周期性发票","部分付款与客户应收款","购买记录与忠诚计划"],"highlight":"报价与发票","screens":["客户资料","报价单与形式发票","发票与付款"]},"hotel":{"name":"酒店与客房","sub":"预订与住宿管理","desc":"安排客房入住，管理入住和退房，并跟踪每次住宿的消费和付款。","points":["客房、分类与预订日历","入住、退房与住客账单","客房清洁与夜审报表"],"highlight":"住宿与预订","screens":["客房日历","预订与住客账单","入住与退房"]},"restaurant":{"name":"餐厅与酒吧","sub":"餐桌、订单与收款","desc":"从接单到付款，跟踪餐厅或酒吧的餐桌和订单。","points":["餐区与餐桌管理","订单、状态与开票","消费与库存跟踪"],"highlight":"餐桌与订单","screens":["餐区与餐桌","当前订单","开票与收银"]},"services":{"name":"服务与泳池","sub":"服务、预订与入场","desc":"根据经营场所已启用的模块，安排服务预订和泳池入场。","points":["服务目录与预订","泳池门票、入场与离场","泳池小屋管理与收据"],"highlight":"服务与入场","screens":["服务目录","预订","泳池与小屋"]},"finance":{"name":"财务与报表","sub":"费用、现金流与经营结果","desc":"通过会计分录与管理报表，跟踪费用、资金变动和经营结果。","points":["费用、日记账与会计分录","银行对账与会计期间结账","销售、库存与经营报表"],"highlight":"现金流与经营结果","screens":["费用与分录","银行与对账","管理报表"]}},
+  "pricing": {"badge":"透明的套餐","title":"价格清晰，无隐藏费用","description":"选择适合您业务规模的订阅，无长期合约限制。","note":"* 所有套餐均含每周 6 天支持、每日加密备份和持续更新。","popular":"热门","cost":"按需报价","custom":"根据您的需求定价","register":"创建账户 →","quote":"定制报价","perMonth":"/ 月","htgMonthly":"≈ {amount} HTG / 月","select":"选择此套餐","study":"申请方案评估"},
+  "plans": {
+    "basic": {"name": "Basic", "target": "适合个体商户或单一门店。", "features": ["1 个销售点", "最多 3 名用户", "触屏收银与收据", "商品目录与库存管理"]},
+    "standard": {"name": "Standard", "target": "用于有序管理日常业务。", "features": ["收银与商品目录", "库存管理", "HTG 和 USD 付款", "销售报表"]},
+    "business": {"name": "Business", "target": "适合发展中的企业与加盟店。", "features": ["最多 3 家分店", "不限用户数量", "持续离线模式", "高级利润率报表", "多个收银台同时使用"]},
+    "enterprise": {"name": "企业", "target": "适用于大型机构、酒店及区域批发商。", "features": ["不限经营场所数量", "定制 API 接入", "现场指导与安装", "SLA 与全天候专属支持"]}
+  },
+  "mobile": {"badge":"随时随地管理","title":"通过移动设备管理您的业务","description":"无论身在何处，都能通过智能手机和平板电脑跟踪销售、查看存款并掌握财务报表。","register":"先创建账户","android":{"name":"Android","description":"手机和 POS 终端","download":"下载 APK →","qrAlt":"下载 Android 应用的二维码"},"ios":{"name":"Apple iOS","description":"适配 iPhone 和 iPad","download":"App Store →","qrAlt":"应用在 App Store 上的二维码"},"web":"打开网页版应用 →","webQrAlt":"打开网页版应用的二维码","settings":{"title":"移动应用","summary":"在首页显示的 Android 和 App Store 链接。","description":"这些链接会在公共首页显示，适用于所有访客。","android":"Android 下载链接（APK）","androidHelp":"APK 文件或其下载页面的 HTTPS 地址。选填。","ios":"iPhone 和 iPad 的 App Store 链接","iosHelp":"您的应用在 apps.apple.com 上的 HTTPS 地址。选填。","fallback":"留空即可为该平台提供网页版应用。按钮和二维码会自动使用相应的访问地址。","save":"保存链接","saving":"正在保存…","saved":"链接已保存，并已在首页生效。","loadError":"无法加载链接，请重试。","saveError":"无法保存链接，请重试。","loading":"正在加载…","restricted":"此设置仅限平台管理员修改。","retry":"重试","preview":"查看首页 →"}},
+  "signup": {"title":"准备好让您的业务管理更专业了吗？","description":"加入众多企业管理者，每天节省收银和会计工作的时间。","action":"开始 14 天试用 →"},
+  "footer": {"description":"为加勒比地区企业打造的业务管理、收银和库存软件。","product":"产品","solutions":"行业解决方案","pos":"收银系统","pricing":"套餐方案","faq":"常见问题","platform":"平台","account":"客户中心","mobile":"移动访问","register":"创建账户","loginHelp":"登录帮助","contact":"联系我们","support":"帮助与支持","location":"海地海地角 / 太子港","rights":"保留所有权利。","tagline":"专为高效与简便而设计。"}
+}

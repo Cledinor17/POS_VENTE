@@ -16,6 +16,7 @@ export type SupplierItem = {
   balance: number;
   currency: string;
   createdAt: string | null;
+  orderedProductsCount: number | null;
 };
 
 export type SupplierListParams = {
@@ -113,6 +114,7 @@ function normalizeSupplier(raw: unknown): SupplierItem {
     balance: toNumber(obj.balance, 0),
     currency: toString(obj.currency, "HTG").toUpperCase() || "HTG",
     createdAt: toString(obj.created_at ?? obj.createdAt, "") || null,
+    orderedProductsCount: obj.ordered_products_count == null ? null : toNumber(obj.ordered_products_count),
   };
 }
 
@@ -162,6 +164,10 @@ export async function createSupplier(
     json: toPayload(input),
   });
   return normalizeSupplier(raw);
+}
+
+export async function getSupplier(business: string, supplierId: string): Promise<SupplierItem> {
+  return normalizeSupplier(await apiFetch<unknown>(`${basePath(business)}/${encodeURIComponent(supplierId)}`));
 }
 
 export async function updateSupplier(

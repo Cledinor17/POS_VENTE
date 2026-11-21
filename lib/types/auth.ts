@@ -6,12 +6,15 @@ export type AuthUser = {
   avatar_path?: string | null;
   avatar_url?: string | null;
   locale?: string | null;
+  is_platform_admin?: boolean;
+  address?: { line1?: string; country?: string; country_code?: string; state?: string; city?: string; zip?: string } | null;
   [key: string]: unknown;
 };
 
 export type BusinessSummary = {
   id?: number | string;
   slug: string;
+  business_type?: string;
   name?: string;
   role?: string | null;
   pivot?: {

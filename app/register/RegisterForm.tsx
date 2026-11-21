@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { ArrowRight, Lock, Mail, UserRound } from "lucide-react";
 import { registerAccount } from "@/lib/authApi";
 import { getErrorMessage } from "@/lib/errors";
+import AddressFields, { emptyAddress } from "@/components/AddressFields";
 
 export default function RegisterForm() {
   const t = useTranslations("auth.register");
@@ -17,6 +18,7 @@ export default function RegisterForm() {
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [address, setAddress] = useState(emptyAddress);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -29,6 +31,7 @@ export default function RegisterForm() {
         email,
         password,
         passwordConfirmation,
+        address,
       });
 
       const params = new URLSearchParams({ email: result.email });
@@ -101,6 +104,8 @@ export default function RegisterForm() {
               placeholder={t("confirm_placeholder")}
             />
           </div>
+
+          <AddressFields value={address} onChange={setAddress} required disabled={loading} />
 
           <button
             type="submit"

@@ -1,0 +1,32 @@
+{
+  "provider": "Unsplash",
+  "license": "https://unsplash.com/license",
+  "photos": [
+    {
+      "file": "shop-counter.webp",
+      "description": "Paiement par carte au comptoir d'un commerce",
+      "source": "https://images.unsplash.com/photo-1556740772-1a741367b93e"
+    },
+    {
+      "file": "store-payment.webp",
+      "description": "Vente et accueil d'une cliente en boutique",
+      "photographer": "Christiann Koepke",
+      "source": "https://unsplash.com/photos/dQyS2pMYtok",
+      "image": "https://images.unsplash.com/photo-1556741533-6e6a62bd8b49"
+    },
+    {
+      "file": "checkout-customer.webp",
+      "description": "Cliente utilisant un terminal de paiement",
+      "photographer": "Blake Wisz",
+      "source": "https://unsplash.com/photos/tE6th1h6Bfk",
+      "image": "https://images.unsplash.com/photo-1556740738-b6a63e27c4df"
+    },
+    {
+      "file": "retail-sale.webp",
+      "description": "Encaissement d'une vente de cafe au comptoir",
+      "photographer": "Patrick Tomasso",
+      "source": "https://unsplash.com/photos/fMntI8HAAB8",
+      "image": "https://images.unsplash.com/photo-1556745753-b2904692b3cd"
+    }
+  ]
+}

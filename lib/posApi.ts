@@ -88,6 +88,7 @@ export type PosCheckoutResult = {
   receiptQrPayload: string | null;
   receiptQrCodeDataUri: string | null;
   loyaltyPointsEarned: number;
+  loyaltyEnabled: boolean;
   loyaltyPointsRedeemed: number;
   loyaltyPointsBalanceAfter: number | null;
   couponCode: string | null;
@@ -339,6 +340,7 @@ function normalizeCheckoutResult(raw: unknown): PosCheckoutResult {
     receiptQrPayload: toString(obj.receipt_qr_payload ?? obj.receiptQrPayload, "") || null,
     receiptQrCodeDataUri: toString(obj.receipt_qr_code_data_uri ?? obj.receiptQrCodeDataUri, "") || null,
     loyaltyPointsEarned: toNumber(obj.loyalty_points_earned ?? obj.loyaltyPointsEarned, 0),
+    loyaltyEnabled: obj.loyalty_enabled === true,
     loyaltyPointsRedeemed: toNumber(obj.loyalty_points_redeemed ?? obj.loyaltyPointsRedeemed, 0),
     loyaltyPointsBalanceAfter:
       obj.loyalty_points_balance_after != null || obj.loyaltyPointsBalanceAfter != null
@@ -460,6 +462,9 @@ function normalizeSaleDetail(raw: unknown): PosSaleDetail {
     payments: paymentsRaw.map(normalizeSaleDetailPayment),
     receipt: receipt ? {
       reprint: true,
+      loyaltyEnabled: receipt.loyalty_enabled === true,
+      loyaltyPointsEarned: toNumber(receipt.loyalty_points_earned),
+      loyaltyPointsBalanceAfter: receipt.loyalty_points_balance_after == null ? null : toNumber(receipt.loyalty_points_balance_after),
       saleId: base.id,
       receiptNo: base.receiptNo,
       createdAt: base.createdAt,

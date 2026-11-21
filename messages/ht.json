@@ -1,4 +1,45 @@
 {
+  "address": {
+    "title": "Adrès ou",
+    "street": "Ri, nimewo ak katye",
+    "country": "Peyi",
+    "state": "Depatman / Eta / Pwovens",
+    "city": "Vil / Komin",
+    "zip": "Kòd postal (si ou genyen)",
+    "choose_country": "Chwazi yon peyi",
+    "choose_country_first": "Chwazi peyi a anvan",
+    "choose_or_type": "Chwazi oswa ekri",
+    "loading": "Ap chaje…",
+    "hint": "Vil yo pwopoze a depann de depatman, eta oswa pwovens ou. Verifye li oswa ekri lokalite ou si li pa nan lis la.",
+    "error": "Sijesyon adrès yo pa disponib pou kounye a.",
+    "retry": "Eseye ankò"
+  },
+  "accountingHub": {
+    "description": "Jwenn jounal operasyon yo, peryòd kontab yo, rezilta finansye yo ak rekonsilyasyon bankè yo nan onglet sa yo."
+  },
+  "reportHub": {
+    "description": "Gade lavant, estòk, sesyon kès ak rezilta finansye ou. Chwazi yon rapò epi ajiste filtè li yo pou peryòd ou vle a.",
+    "chooseReport": "Chwazi yon rapò"
+  },
+  "settingsHub": {
+    "title": "Paramèt jeneral",
+    "description": "Tout paramèt biznis ou disponib nan onglet sa yo.",
+    "tabsLabel": "Konfigirasyon biznis la",
+    "loading": "Paramèt yo ap chaje…",
+    "noAccess": "Ou pa gen aksè ak paramèt biznis sa a.",
+    "tabs": {
+      "business": "Biznis",
+      "branches": "Sikisal",
+      "users": "Itilizatè",
+      "roles": "Wòl ak aksè",
+      "printers": "Enprimant",
+      "coupons": "Kòd pwomosyon",
+      "periods": "Peryòd kontab",
+      "audit": "Odit ak sekirite",
+      "backup": "Sovgad",
+      "mobile": "Aplikasyon mobil"
+    }
+  },
   "image_upload": {
     "size_hint": "Gwosè maksimòm: {maxSize}.",
     "too_large": "Imaj sa a twò gwo ({size}). Chwazi yon imaj ki pa depase {maxSize} oswa diminye gwosè li.",
@@ -84,6 +125,7 @@
     }
   },
   "nav": {
+    "reference": {"primary":"Prensipal","management":"Jesyon","finance":"Finans","system":"Sistèm","quick_navigation":"Aksè rapid","full_navigation":"Tout meni yo","dashboard":"Tablo bò","pos_new_sale":"Kès (POS)","tickets_sales":"Lavant & tikè","product_catalog":"Pwodwi & estòk","customers":"Kliyan & fidelite","suppliers":"Founisè","accounting":"Kontablite","payroll":"Pewòl & anplwaye","reports":"Rapò","general_settings":"Paramèt","services":"Sèvis","hotel_services":"Otèl ak sèvis","hotel":"Otèl","quotes_proforma":"Devi ak proforma"},
     "dashboard": "Tablo de bò",
     "dollar_purchases": "Achte dola",
     "pos_new_sale": "Nouvo vant (POS)",
@@ -107,6 +149,7 @@
     "expenses_categories": "Kategori depans",
     "accounting": "Kontabilite",
     "accounting_periods": "Peryòd kontab",
+    "accounting_journal": "Jounal operasyon yo",
     "payroll": "Peman salè",
     "bank_reconciliation": "Rapwochman bank",
     "reports_departments": "Revni pa depatman",
@@ -280,8 +323,9 @@
     "warning_ar_summary": "Rezime kreyans"
   },
   "customers": {
-    "page_title": "Kliyan",
-    "page_subtitle": "Lis kliyan konekte ak backend lan.",
+    "reference": {"table_code":"Kòd kliyan","table_email":"Imèl","toolbar":"Rechèch ak aksyon kliyan","loyalty_rules":"Règ fidelite","import":"Enpòte","table_phone":"Telefòn","table_loyalty":"Pwen fidelite","table_credit":"Kredi","points_balance":"{count} pwen","credit_clear":"Pa gen dèt","credit_error":"Balans kredi yo pa disponib pou kounye a. Rechaje paj la pou eseye ankò.","credit_restricted":"Ou bezwen aksè nan rapò yo pou wè balans kredi yo.","credit_loading":"Balans lan ap chaje…"},
+    "page_title": "Kliyan & fidelite",
+    "page_subtitle": "Jwenn kliyan ou yo, pwen fidelite yo ak kredi yo nan yon sèl kote.",
     "count_summary": "{total} kliyan | aktif sou paj la: {active}",
     "new_customer": "Nouvo kliyan",
     "no_access": "Pwofil sa a poko gen aksè nan modil kliyan an.",
@@ -347,7 +391,7 @@
     "saving_create": "K ap ajoute...",
     "submit_update": "Mete ajou",
     "submit_create": "Ajoute",
-    "search_placeholder": "Chèche (non, imèl, telefòn...)",
+    "search_placeholder": "Non, telefòn oswa imèl…",
     "filter_all": "Tout",
     "filter_active": "Aktif",
     "filter_inactive": "Inaktif",

@@ -8,9 +8,8 @@ const API_ORIGIN = (() => {
   }
 })();
 
-export const DEFAULT_PRODUCT_AVATAR_PATH = API_ORIGIN
-  ? `${API_ORIGIN}/storage/products/default.png`
-  : "/storage/products/default.png";
+// Bundle the fallback with the frontend; uploaded API storage is not deployed by Git.
+export const DEFAULT_PRODUCT_AVATAR_PATH = "/images/product-default.png";
 
 export function resolveProductImageUrl(imagePath: string | null | undefined): string {
   if (!imagePath) return DEFAULT_PRODUCT_AVATAR_PATH;

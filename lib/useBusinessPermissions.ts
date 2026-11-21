@@ -24,6 +24,7 @@ export function useBusinessPermissions(businessSlug: string) {
   return {
     loading,
     currentBusinessEntry,
+    businessType: currentBusinessEntry?.slug === businessSlug ? currentBusinessEntry.business_type ?? "other" : "other",
     permissions,
   };
 }

@@ -7,11 +7,15 @@ import { ApiError } from "@/lib/api";
 import {
   BUSINESS_TYPES,
   createBusiness,
+  getCatalogPresets,
   SUPPORTED_CURRENCIES,
   type BusinessType,
+  type CatalogPresetCounts,
 } from "@/lib/businessApi";
+import AddressFields, { normalizeAddress, type AddressValue } from "@/components/AddressFields";
 import { RequireAuth } from "@/components/RequireAuth";
 import PhoneField from "@/components/PhoneField";
+import DataSpaceFields, { dataSpaceError, emptyDataSpace } from "@/components/settings/DataSpaceFields";
 import { useAuth } from "@/context/AuthContext";
 import { Building2, MapPinned, Sparkles, Wallet } from "lucide-react";
 
@@ -122,11 +126,6 @@ type FormState = {
   exchangeRateValue: string;
   timezone: string;
   invoiceFooter: string;
-  line1: string;
-  city: string;
-  state: string;
-  zip: string;
-  country: string;
 };
 
 const initialForm: FormState = {
@@ -141,11 +140,6 @@ const initialForm: FormState = {
   exchangeRateValue: "",
   timezone: "",
   invoiceFooter: "",
-  line1: "",
-  city: "",
-  state: "",
-  zip: "",
-  country: "",
 };
 
 function getErrorMessage(error: unknown): string {
@@ -156,13 +150,18 @@ function getErrorMessage(error: unknown): string {
 
 export default function BusinessOnboardingPage() {
   const router = useRouter();
-  const { businesses, refresh } = useAuth();
+  const { user, businesses, refresh } = useAuth();
+  const [editedAddress, setEditedAddress] = useState<AddressValue | null>(null);
+  const address = editedAddress ?? normalizeAddress(user?.address);
+  const [catalogPresets, setCatalogPresets] = useState<Record<string, CatalogPresetCounts>>({});
+  const [seedCatalog, setSeedCatalog] = useState(false);
   const [form, setForm] = useState<FormState>(() => ({
     ...initialForm,
     timezone: typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Port-au-Prince" : "America/Port-au-Prince",
   }));
   const [businessType, setBusinessType] = useState<BusinessType>("other");
   const [error, setError] = useState("");
+  const [dataSpace, setDataSpace] = useState(emptyDataSpace);
   const [loading, setLoading] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
@@ -172,6 +171,18 @@ export default function BusinessOnboardingPage() {
       router.replace(`/${businesses[0].slug}/dashboard`);
     }
   }, [businesses, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getCatalogPresets()
+      .then((presets) => { if (!cancelled) setCatalogPresets(presets); })
+      .catch(() => { /* le compteur n'est qu'une indication */ });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  const presetCounts = catalogPresets[businessType];
 
   useEffect(() => {
     if (!logoFile) {
@@ -188,6 +199,9 @@ export default function BusinessOnboardingPage() {
     event.preventDefault();
     setError("");
 
+    const spaceError = dataSpaceError(dataSpace);
+    if (spaceError) { setError(spaceError); return; }
+
     const exchangeRateValue = Number(form.exchangeRateValue);
     if (!form.exchangeRateValue.trim() || !Number.isFinite(exchangeRateValue) || exchangeRateValue <= 0) {
       setError("Le taux de change est obligatoire (ex: 132.5 pour 1 USD).");
@@ -198,6 +212,8 @@ export default function BusinessOnboardingPage() {
 
     try {
       const business = await createBusiness({
+        ...dataSpace,
+        backup_name: dataSpace.backup_name.trim(),
         name: form.name.trim(),
         slug: form.slug.trim() || undefined,
         legal_name: form.legalName.trim() || undefined,
@@ -211,13 +227,14 @@ export default function BusinessOnboardingPage() {
         timezone: form.timezone.trim() || undefined,
         invoice_footer: form.invoiceFooter.trim() || undefined,
         business_type: businessType,
+        seed_catalog: seedCatalog,
         ...BUSINESS_TYPE_PRESETS[businessType].flags,
         address: {
-          line1: form.line1.trim() || undefined,
-          city: form.city.trim() || undefined,
-          state: form.state.trim() || undefined,
-          zip: form.zip.trim() || undefined,
-          country: form.country.trim() || undefined,
+          line1: address.line1.trim() || undefined,
+          city: address.city.trim() || undefined,
+          state: address.state.trim() || undefined,
+          zip: address.zip.trim() || undefined,
+          country: address.country.trim() || undefined,
         },
         logoFile,
       });
@@ -308,6 +325,25 @@ export default function BusinessOnboardingPage() {
                     ))}
                   </select>
                   <p className="mt-1.5 text-xs text-slate-500">{BUSINESS_TYPE_PRESETS[businessType].desc}</p>
+
+                  <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <input
+                      type="checkbox"
+                      checked={seedCatalog}
+                      onChange={(event) => setSeedCatalog(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#0b4f88] focus:ring-[#0b4f88]"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-slate-700">
+                        Pre-remplir ma base de produits
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-500">
+                        {presetCounts
+                          ? `Cree ${presetCounts.categories} categories et ${presetCounts.products} produits types de cette activite, a stock zero. Renseignez vos prix et votre stock avant de vendre.`
+                          : "Cree les categories et produits types de cette activite, a stock zero. Renseignez vos prix et votre stock avant de vendre."}
+                      </span>
+                    </span>
+                  </label>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -437,16 +473,7 @@ export default function BusinessOnboardingPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Adresse</label>
-                  <input
-                    type="text"
-                    value={form.line1}
-                    onChange={(event) => setForm((prev) => ({ ...prev, line1: event.target.value }))}
-                    className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
-                    placeholder="Rue, numero, zone"
-                  />
-                </div>
+                <AddressFields value={address} onChange={setEditedAddress} disabled={loading} />
 
                 <div>
                   <label className="text-sm font-medium text-slate-700">Logo de l&apos;entreprise</label>
@@ -484,52 +511,6 @@ export default function BusinessOnboardingPage() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-4">
-                  <div className="md:col-span-2">
-                    <label className="text-sm font-medium text-slate-700">Ville</label>
-                    <input
-                      type="text"
-                      value={form.city}
-                      onChange={(event) => setForm((prev) => ({ ...prev, city: event.target.value }))}
-                      className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
-                      placeholder="Ville"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Etat / zone</label>
-                    <input
-                      type="text"
-                      value={form.state}
-                      onChange={(event) => setForm((prev) => ({ ...prev, state: event.target.value }))}
-                      className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
-                      placeholder="Etat"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Code postal</label>
-                    <input
-                      type="text"
-                      value={form.zip}
-                      onChange={(event) => setForm((prev) => ({ ...prev, zip: event.target.value }))}
-                      className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
-                      placeholder="ZIP"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Pays</label>
-                  <input
-                    type="text"
-                    value={form.country}
-                    onChange={(event) => setForm((prev) => ({ ...prev, country: event.target.value }))}
-                    className="mt-1 w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-[#0b4f88]"
-                    placeholder="Pays"
-                  />
-                </div>
-
                 <div>
                   <label className="text-sm font-medium text-slate-700">Note de pied de page</label>
                   <textarea
@@ -540,6 +521,12 @@ export default function BusinessOnboardingPage() {
                     placeholder="Merci pour votre confiance. Cette note apparaitra sur les factures et tickets."
                   />
                 </div>
+
+                <section className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <h2 className="text-lg font-bold text-slate-900">Votre espace de données</h2>
+                  <p className="text-sm text-slate-600">Choisissez le nom de votre fichier Excel de sauvegarde et un mot de passe pour le télécharger ou récupérer les données de votre entreprise.</p>
+                  <DataSpaceFields value={dataSpace} onChange={setDataSpace} disabled={loading} />
+                </section>
 
                 <button
                   type="submit"

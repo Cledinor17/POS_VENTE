@@ -1,0 +1,937 @@
+"use client";
+import type { SettingsPanelProps } from "../types";
+
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { ApiError } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { usePermissionGuard } from "@/lib/usePermissionGuard";
+import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
+import PermissionChecklist from "@/components/PermissionChecklist";
+import LoginActivityModal from "@/components/LoginActivityModal";
+import {
+  createBusinessUser,
+  listBusinessUsers,
+  removeBusinessUser,
+  updateBusinessUser,
+  type BusinessRoleOption,
+  type BusinessUserItem,
+} from "@/lib/businessUsersApi";
+import { listMyBranches, type MyBranchItem } from "@/lib/branchesApi";
+import {
+  ALL_PERMISSIONS,
+  STATUS_OPTIONS,
+  getDefaultPermissionsForRole,
+  hasPermission,
+  normalizeBusinessPermissions,
+  roleLabel as sharedRoleLabel,
+  summarizePermissions,
+  type BusinessPermission,
+  type BusinessRole,
+  type BusinessUserStatus,
+} from "@/lib/businessAccess";
+
+const DEFAULT_ROLE: BusinessRole = "staff";
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error) return error.message;
+  return "Une erreur est survenue.";
+}
+
+function normalizeRole(value: string): BusinessRole {
+  return value.trim() !== "" ? value : DEFAULT_ROLE;
+}
+
+function normalizeStatus(value: string): BusinessUserStatus {
+  return value === "disabled" ? "disabled" : "active";
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("fr-FR");
+}
+
+export default function UsersSettingsPanel({ embedded = false, active = true, onOpenRoles }: SettingsPanelProps = {}) {
+  const Heading = embedded ? "h2" : "h1";
+  const { allowed, loading: permLoading } = usePermissionGuard("users.read");
+  const params = useParams<{ business: string }>();
+  const businessSlug = params?.business ?? "";
+  const { businessType } = useBusinessPermissions(businessSlug);
+  const { businesses, activeBusiness, permissions: fallbackPermissions, refresh } = useAuth();
+
+  const [items, setItems] = useState<BusinessUserItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [busyRowId, setBusyRowId] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [page, setPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [reloadSeq, setReloadSeq] = useState(0);
+  const [availableRoles, setAvailableRoles] = useState<BusinessRoleOption[]>([]);
+  const [availablePermissions, setAvailablePermissions] = useState<BusinessPermission[]>([
+    ...ALL_PERMISSIONS,
+  ]);
+
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<BusinessRole>(DEFAULT_ROLE);
+  const [createPermissions, setCreatePermissions] = useState<BusinessPermission[]>(
+    getDefaultPermissionsForRole(DEFAULT_ROLE),
+  );
+
+  const [accessModalUser, setAccessModalUser] = useState<BusinessUserItem | null>(null);
+  const [loginActivityUser, setLoginActivityUser] = useState<BusinessUserItem | null>(null);
+  const [accessPermissions, setAccessPermissions] = useState<BusinessPermission[]>([]);
+  const [branches, setBranches] = useState<MyBranchItem[]>([]);
+  const [accessBranchIds, setAccessBranchIds] = useState<string[]>([]);
+  const [createBranchIds, setCreateBranchIds] = useState<string[]>([]);
+
+  const [rowRoleById, setRowRoleById] = useState<Record<string, BusinessRole>>({});
+  const [rowStatusById, setRowStatusById] = useState<Record<string, BusinessUserStatus>>({});
+  const [rowPermissionsById, setRowPermissionsById] = useState<Record<string, BusinessPermission[]>>({});
+
+  const defaultPermissionsFor = useCallback(
+    (role: BusinessRole): BusinessPermission[] => {
+      const found = availableRoles.find((item) => item.slug === role);
+      return found ? [...found.permissions] : getDefaultPermissionsForRole(role);
+    },
+    [availableRoles],
+  );
+
+  function roleLabel(role: BusinessRole): string {
+    if (businessType !== "hotel" && role === "housekeeping") return "Personnel d’entretien";
+    return sharedRoleLabel(role, availableRoles);
+  }
+
+  function displayedRoles(selectedRole: BusinessRole) {
+    return availableRoles.filter(option => businessType === "hotel" || option.slug !== "housekeeping" || option.slug === selectedRole);
+  }
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function load() {
+      if (!businessSlug || !active) return;
+      setLoading(true);
+      setError("");
+
+      try {
+        const res = await listBusinessUsers(businessSlug, { page, perPage: 20 });
+        if (!mounted) return;
+        setItems(res.items);
+        setLastPage(res.lastPage);
+        setTotal(res.total);
+        setAvailableRoles(res.roles);
+        setAvailablePermissions(
+          normalizeBusinessPermissions(res.permissions.length > 0 ? res.permissions : ALL_PERMISSIONS),
+        );
+      } catch (e) {
+        if (mounted) setError(getErrorMessage(e));
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug, page, reloadSeq, active]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadBranches() {
+      if (!businessSlug || !active) return;
+      try {
+        const list = await listMyBranches(businessSlug);
+        if (mounted) setBranches(list.filter((item) => item.isActive));
+      } catch {
+        if (mounted) setBranches([]);
+      }
+    }
+
+    void loadBranches();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug, active]);
+
+  useEffect(() => {
+    setRowRoleById((prev) => {
+      const next = { ...prev };
+      for (const item of items) {
+        next[item.id] = next[item.id] || normalizeRole(item.role);
+      }
+      return next;
+    });
+
+    setRowStatusById((prev) => {
+      const next = { ...prev };
+      for (const item of items) {
+        next[item.id] = next[item.id] || normalizeStatus(item.status);
+      }
+      return next;
+    });
+
+    setRowPermissionsById((prev) => {
+      const next = { ...prev };
+      for (const item of items) {
+        next[item.id] = next[item.id] || normalizeBusinessPermissions(item.permissions);
+      }
+      return next;
+    });
+  }, [items]);
+
+  useEffect(() => {
+    if (!active || (!userModalOpen && !accessModalUser)) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setUserModalOpen(false);
+        setName("");
+        setEmail("");
+        setPassword("");
+        setRole(DEFAULT_ROLE);
+        setCreatePermissions(defaultPermissionsFor(DEFAULT_ROLE));
+        setAccessModalUser(null);
+        setAccessPermissions([]);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [active, userModalOpen, accessModalUser, defaultPermissionsFor]);
+
+  const activeCount = useMemo(
+    () => items.filter((item) => item.status === "active").length,
+    [items],
+  );
+  const currentBusinessEntry = useMemo(
+    () => businesses.find((item) => item.slug === businessSlug) ?? activeBusiness ?? null,
+    [activeBusiness, businesses, businessSlug],
+  );
+  const currentPermissions = useMemo(() => {
+    const scoped = currentBusinessEntry?.pivot?.permissions;
+    if (Array.isArray(scoped)) {
+      return scoped.filter((value: unknown): value is string => typeof value === "string");
+    }
+    return fallbackPermissions;
+  }, [currentBusinessEntry, fallbackPermissions]);
+  const canManageUsers = hasPermission(currentPermissions, "users.manage");
+
+  function resetUserForm(nextRole: BusinessRole = DEFAULT_ROLE) {
+    setName("");
+    setEmail("");
+    setPassword("");
+    setRole(nextRole);
+    setCreatePermissions(defaultPermissionsFor(nextRole));
+    setCreateBranchIds(branches.filter((item) => item.isMain).map((item) => item.id));
+  }
+
+  function closeUserModal() {
+    setUserModalOpen(false);
+    resetUserForm();
+  }
+
+  function openUserModal() {
+    resetUserForm();
+    setError("");
+    setInfo("");
+    if (!canManageUsers) return;
+    setUserModalOpen(true);
+  }
+
+  function closeAccessModal() {
+    setAccessModalUser(null);
+    setAccessPermissions([]);
+    setAccessBranchIds([]);
+  }
+
+  function openAccessModal(item: BusinessUserItem) {
+    setError("");
+    setInfo("");
+    setAccessModalUser(item);
+    setAccessPermissions(
+      normalizeBusinessPermissions(rowPermissionsById[item.id] ?? item.permissions),
+    );
+    setAccessBranchIds([...item.branchIds]);
+  }
+
+  function toggleBranch(branchId: string, setter: (updater: (prev: string[]) => string[]) => void) {
+    setter((prev) =>
+      prev.includes(branchId) ? prev.filter((item) => item !== branchId) : [...prev, branchId],
+    );
+  }
+
+  function toggleCreatePermission(permission: BusinessPermission) {
+    setCreatePermissions((prev) =>
+      prev.includes(permission) ? prev.filter((item) => item !== permission) : [...prev, permission],
+    );
+  }
+
+  function toggleAccessPermission(permission: BusinessPermission) {
+    setAccessPermissions((prev) =>
+      prev.includes(permission) ? prev.filter((item) => item !== permission) : [...prev, permission],
+    );
+  }
+
+  function handleRoleChangeForRow(userId: string, nextRoleRaw: string) {
+    const nextRole = normalizeRole(nextRoleRaw);
+    setRowRoleById((prev) => ({ ...prev, [userId]: nextRole }));
+    setRowPermissionsById((prev) => ({
+      ...prev,
+      [userId]: defaultPermissionsFor(nextRole),
+    }));
+  }
+
+  async function handleCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!businessSlug) return;
+
+    if (!name.trim()) {
+      setError("Le nom est obligatoire.");
+      return;
+    }
+
+    if (!email.trim()) {
+      setError("L'email est obligatoire.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setInfo("");
+
+    try {
+      await createBusinessUser(businessSlug, {
+        name: name.trim(),
+        email: email.trim(),
+        password: password.trim() || undefined,
+        role,
+        permissions: normalizeBusinessPermissions(createPermissions),
+        branchIds: createBranchIds,
+      });
+
+      closeUserModal();
+      await refresh();
+      setInfo("Utilisateur ajoute avec ses droits d'acces.");
+      setPage(1);
+      setReloadSeq((prev) => prev + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleUpdate(item: BusinessUserItem) {
+    if (!businessSlug || !canManageUsers) return;
+
+    const nextRole = normalizeRole(rowRoleById[item.id] || item.role);
+    const nextStatus = normalizeStatus(rowStatusById[item.id] || item.status);
+    const nextPermissions = normalizeBusinessPermissions(
+      rowPermissionsById[item.id] ?? item.permissions,
+    );
+
+    setBusyRowId(item.id);
+    setError("");
+    setInfo("");
+
+    try {
+      await updateBusinessUser(businessSlug, item.id, {
+        role: nextRole,
+        status: nextStatus,
+        permissions: nextPermissions,
+      });
+      await refresh();
+      setInfo("Utilisateur mis a jour.");
+      setReloadSeq((prev) => prev + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setBusyRowId("");
+    }
+  }
+
+  async function handleSaveAccessModal() {
+    if (!businessSlug || !accessModalUser || !canManageUsers) return;
+
+    const item = accessModalUser;
+    const nextRole = normalizeRole(rowRoleById[item.id] || item.role);
+    const nextStatus = normalizeStatus(rowStatusById[item.id] || item.status);
+    const nextPermissions = normalizeBusinessPermissions(accessPermissions);
+
+    setBusyRowId(item.id);
+    setError("");
+    setInfo("");
+
+    try {
+      await updateBusinessUser(businessSlug, item.id, {
+        role: nextRole,
+        status: nextStatus,
+        permissions: nextPermissions,
+        branchIds: accessBranchIds,
+      });
+      await refresh();
+      setRowPermissionsById((prev) => ({
+        ...prev,
+        [item.id]: nextPermissions,
+      }));
+      setInfo("Acces utilisateur mis a jour.");
+      closeAccessModal();
+      setReloadSeq((prev) => prev + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setBusyRowId("");
+    }
+  }
+
+  async function handleRemove(item: BusinessUserItem) {
+    if (!businessSlug || !canManageUsers) return;
+    if (!window.confirm(`Retirer ${item.name} de ce business ?`)) return;
+
+    setBusyRowId(item.id);
+    setError("");
+    setInfo("");
+
+    try {
+      await removeBusinessUser(businessSlug, item.id);
+      await refresh();
+      setInfo("Utilisateur retire du business.");
+      setReloadSeq((prev) => prev + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setBusyRowId("");
+    }
+  }
+
+  if (permLoading || !allowed) return null;
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <Heading className="text-2xl font-bold text-slate-900">Utilisateurs</Heading>
+            <p className="mt-1 text-slate-500">
+              Attribue les acces par utilisateur selon le role, puis ajuste-les a tout moment.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm text-slate-500">
+              {total} utilisateur(s) | actifs sur page: {activeCount}
+            </div>
+            {canManageUsers ? (
+              <button
+                type="button"
+                onClick={openUserModal}
+                className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                Nouvel utilisateur
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {error ? (
+        <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </section>
+      ) : null}
+
+      {info ? (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {info}
+        </section>
+      ) : null}
+
+      <section className="space-y-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+        {loading ? (
+          <div className="py-8 text-center text-slate-500">Chargement des utilisateurs...</div>
+        ) : items.length === 0 ? (
+          <div className="py-8 text-center text-slate-500">Aucun utilisateur trouve.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1080px] text-sm">
+              <thead>
+                <tr className="border-b text-left text-slate-500">
+                  <th className="py-3 pr-3 font-semibold">Utilisateur</th>
+                  <th className="py-3 pr-3 font-semibold">Role</th>
+                  <th className="py-3 pr-3 font-semibold">Statut</th>
+                  <th className="py-3 pr-3 font-semibold">Acces</th>
+                  <th className="py-3 pr-3 font-semibold">Ajoute le</th>
+                  <th className="py-3 font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => {
+                  const busy = busyRowId === item.id;
+                  const rowRole = normalizeRole(rowRoleById[item.id] || item.role);
+                  const rowStatus = normalizeStatus(rowStatusById[item.id] || item.status);
+                  const rowPermissions = normalizeBusinessPermissions(
+                    rowPermissionsById[item.id] ?? item.permissions,
+                  );
+                  const locked = item.role === "owner";
+
+                  return (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="py-3 pr-3">
+                        <div className="font-semibold text-slate-800">{item.name}</div>
+                        <div className="text-xs text-slate-500">{item.email}</div>
+                      </td>
+
+                      <td className="py-3 pr-3">
+                        <select
+                          value={rowRole}
+                          onChange={(event) => handleRoleChangeForRow(item.id, event.target.value)}
+                          className="rounded-lg border border-slate-300 px-2.5 py-1.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                          disabled={busy || locked || !canManageUsers}
+                        >
+                          {displayedRoles(rowRole).map((option) => (
+                            <option key={option.slug} value={option.slug}>
+                              {roleLabel(option.slug)}
+                            </option>
+                          ))}
+                          {locked ? <option value="owner">Proprietaire</option> : null}
+                        </select>
+                      </td>
+
+                      <td className="py-3 pr-3">
+                        <select
+                          value={rowStatus}
+                          onChange={(event) =>
+                            setRowStatusById((prev) => ({
+                              ...prev,
+                              [item.id]: normalizeStatus(event.target.value),
+                            }))
+                          }
+                          className="rounded-lg border border-slate-300 px-2.5 py-1.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                          disabled={busy || locked || !canManageUsers}
+                        >
+                          {STATUS_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option === "active" ? "Actif" : "Desactive"}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td className="py-3 pr-3">
+                        <div className="space-y-1">
+                          <div className="font-medium text-slate-800">
+                            {summarizePermissions(rowPermissions)}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                item.hasCustomPermissions
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {item.hasCustomPermissions ? "Personnalise" : "Par role"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => openAccessModal(item)}
+                              disabled={busy || locked || !canManageUsers}
+                              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            >
+                              Configurer acces
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3 pr-3 text-slate-600">{formatDate(item.createdAt)}</td>
+
+                      <td className="py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setLoginActivityUser(item)}
+                            disabled={busy}
+                            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            title="Connexions"
+                            aria-label="Connexions"
+                          >
+                            <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              void handleUpdate(item);
+                            }}
+                            disabled={busy || locked || !canManageUsers}
+                            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            title="Enregistrer"
+                            aria-label="Enregistrer"
+                          >
+                            <i className="fa-solid fa-floppy-disk" aria-hidden="true" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              void handleRemove(item);
+                            }}
+                            disabled={busy || locked || !canManageUsers}
+                            className="rounded-lg border border-rose-300 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                            title="Retirer"
+                            aria-label="Retirer"
+                          >
+                            <i className="fa-solid fa-user-minus" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-slate-500">
+            Page {page}/{Math.max(1, lastPage)}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page <= 1 || loading}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Precedent
+            </button>
+            <button
+              onClick={() => setPage((prev) => Math.min(lastPage, prev + 1))}
+              disabled={page >= lastPage || loading}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Suivant
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {userModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={closeUserModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Ajouter un utilisateur"
+            className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 className="font-bold text-slate-900">Ajouter un utilisateur</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Choisis un role par defaut puis ajuste ce que la personne peut voir ou modifier.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeUserModal}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+                {error ? (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {error}
+                  </div>
+                ) : null}
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <input
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Nom *"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+
+                  <input
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="Email *"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="Mot de passe (optionnel)"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+
+                  <select
+                    value={role}
+                    onChange={(event) => {
+                      const nextRole = normalizeRole(event.target.value);
+                      setRole(nextRole);
+                      setCreatePermissions(defaultPermissionsFor(nextRole));
+                    }}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  >
+                    {displayedRoles(role).map((option) => (
+                      <option key={option.slug} value={option.slug}>
+                        {roleLabel(option.slug)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      Role choisi: {roleLabel(role)}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Par defaut: {summarizePermissions(createPermissions)} | Lecture = consulter |
+                      Ajout = creer | Modification = mettre a jour | Controle = actions avancees |
+                      Sensible = rabais/remboursement/annulation
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setCreatePermissions(defaultPermissionsFor(role))}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-white"
+                  >
+                    Reinitialiser selon le role
+                  </button>
+                </div>
+
+                <div className="text-right">
+                  {onOpenRoles ? <button
+                    type="button"
+                    onClick={onOpenRoles}
+                    className="text-xs font-semibold text-indigo-600 hover:underline"
+                  >
+                    + Creer un role personnalise
+                  </button> : <Link
+                    href={`/${businessSlug}/roles`}
+                    className="text-xs font-semibold text-indigo-600 hover:underline"
+                  >
+                    + Creer un role personnalise
+                  </Link>}
+                </div>
+
+                {branches.length > 1 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-sm font-semibold text-slate-900">Succursales autorisees</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      La personne ne pourra travailler que dans les succursales cochees. Les roles
+                      administratifs (proprietaire, gerant...) ont acces a toutes les succursales.
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {branches.map((branch) => {
+                        const checked = createBranchIds.includes(branch.id);
+                        return (
+                          <label
+                            key={branch.id}
+                            className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                              checked
+                                ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleBranch(branch.id, setCreateBranchIds)}
+                            />
+                            {branch.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                <PermissionChecklist
+                  businessType={businessType}
+                  selected={createPermissions}
+                  onToggle={toggleCreatePermission}
+                  allowedPermissions={availablePermissions}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 border-t border-slate-100 p-5 sm:grid-cols-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full rounded-xl brand-primary-btn py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? "Ajout..." : "Ajouter"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeUserModal}
+                  disabled={saving}
+                  className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {accessModalUser ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={closeAccessModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Configurer les acces"
+            className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 className="font-bold text-slate-900">Configurer les acces</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  {accessModalUser.name} | {roleLabel(rowRoleById[accessModalUser.id] || accessModalUser.role)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAccessModal}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+              {error ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {error}
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {summarizePermissions(accessPermissions)}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Ajuste ce que cet utilisateur peut consulter, creer, modifier ou controler.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccessPermissions(
+                      defaultPermissionsFor(
+                        normalizeRole(rowRoleById[accessModalUser.id] || accessModalUser.role),
+                      ),
+                    )
+                  }
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-white"
+                >
+                  Reinitialiser selon le role
+                </button>
+              </div>
+
+              {branches.length > 1 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-sm font-semibold text-slate-900">Succursales autorisees</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    La personne ne pourra travailler que dans les succursales cochees. Les roles
+                    administratifs (proprietaire, gerant...) ont acces a toutes les succursales.
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {branches.map((branch) => {
+                      const checked = accessBranchIds.includes(branch.id);
+                      return (
+                        <label
+                          key={branch.id}
+                          className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                            checked
+                              ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleBranch(branch.id, setAccessBranchIds)}
+                          />
+                          {branch.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              <PermissionChecklist
+                businessType={businessType}
+                selected={accessPermissions}
+                onToggle={toggleAccessPermission}
+                allowedPermissions={availablePermissions}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 border-t border-slate-100 p-5 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSaveAccessModal();
+                }}
+                disabled={busyRowId === accessModalUser.id}
+                className="w-full rounded-xl brand-primary-btn py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {busyRowId === accessModalUser.id ? "Enregistrement..." : "Enregistrer les acces"}
+              </button>
+              <button
+                type="button"
+                onClick={closeAccessModal}
+                disabled={busyRowId === accessModalUser.id}
+                className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {loginActivityUser && businessSlug ? (
+        <LoginActivityModal
+          mode="user"
+          business={businessSlug}
+          userId={loginActivityUser.id}
+          userName={loginActivityUser.name}
+          onClose={() => setLoginActivityUser(null)}
+        />
+      ) : null}
+    </div>
+  );
+}

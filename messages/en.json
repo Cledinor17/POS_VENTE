@@ -1,4 +1,45 @@
 {
+  "address": {
+    "title": "Your address",
+    "street": "Street, number and neighborhood",
+    "country": "Country",
+    "state": "Department / State / Province",
+    "city": "City / Municipality",
+    "zip": "Postal code (optional)",
+    "choose_country": "Select a country",
+    "choose_country_first": "Choose a country first",
+    "choose_or_type": "Choose or type",
+    "loading": "Loading…",
+    "hint": "The suggested city follows your department, state or province. Check it or enter your locality if it is missing from the list.",
+    "error": "Address suggestions are temporarily unavailable.",
+    "retry": "Try again"
+  },
+  "accountingHub": {
+    "description": "Access your transaction journal, accounting periods, financial statements and bank reconciliation from these tabs."
+  },
+  "reportHub": {
+    "description": "Review sales, stock, cash sessions and financial results. Choose a report and adjust its filters for the period you need.",
+    "chooseReport": "Choose a report"
+  },
+  "settingsHub": {
+    "title": "General settings",
+    "description": "Manage your business settings from these tabs.",
+    "tabsLabel": "Business configuration",
+    "loading": "Loading settings…",
+    "noAccess": "You do not have access to this business’s settings.",
+    "tabs": {
+      "business": "Business",
+      "branches": "Branches",
+      "users": "Users",
+      "roles": "Roles and access",
+      "printers": "Printers",
+      "coupons": "Promo codes",
+      "periods": "Accounting periods",
+      "audit": "Audit and security",
+      "backup": "Backups",
+      "mobile": "Mobile app"
+    }
+  },
   "image_upload": {
     "size_hint": "Maximum size: {maxSize}.",
     "too_large": "This image is too large ({size}). Choose an image of {maxSize} or less, or reduce its size.",
@@ -84,6 +125,7 @@
     }
   },
   "nav": {
+    "reference": {"primary":"Main","management":"Management","finance":"Finance","system":"System","quick_navigation":"Quick access","full_navigation":"Full navigation","dashboard":"Dashboard","pos_new_sale":"Checkout (POS)","tickets_sales":"Sales & receipts","product_catalog":"Products & stock","customers":"Customers & loyalty","suppliers":"Suppliers","accounting":"Accounting","payroll":"Payroll & employees","reports":"Reports","general_settings":"Settings","services":"Services","hotel_services":"Hotel & services","hotel":"Hotel","quotes_proforma":"Quotes & proformas"},
     "dashboard": "Dashboard",
     "dollar_purchases": "Buy dollars",
     "pos_new_sale": "New sale (POS)",
@@ -107,6 +149,7 @@
     "expenses_categories": "Expense categories",
     "accounting": "Accounting",
     "accounting_periods": "Accounting periods",
+    "accounting_journal": "Transaction journal",
     "payroll": "Payroll",
     "bank_reconciliation": "Bank reconciliation",
     "reports_departments": "Revenue by department",
@@ -280,8 +323,9 @@
     "warning_ar_summary": "AR summary"
   },
   "customers": {
-    "page_title": "Customers",
-    "page_subtitle": "Customer list connected to the backend.",
+    "reference": {"table_code":"Customer code","table_email":"Email","toolbar":"Customer search and actions","loyalty_rules":"Loyalty rules","import":"Import","table_phone":"Phone","table_loyalty":"Loyalty points","table_credit":"Credit","points_balance":"{count} pts","credit_clear":"Up to date","credit_error":"Credit balances are currently unavailable. Reload the page to try again.","credit_restricted":"Viewing credit balances requires reports access.","credit_loading":"Loading balance…"},
+    "page_title": "Customers & loyalty",
+    "page_subtitle": "Find your customers, their loyalty points and outstanding credit in one place.",
     "count_summary": "{total} customer(s) | active on page: {active}",
     "new_customer": "New customer",
     "no_access": "This profile does not yet have access to the customers module.",
@@ -347,7 +391,7 @@
     "saving_create": "Adding...",
     "submit_update": "Update",
     "submit_create": "Add",
-    "search_placeholder": "Search (name, email, phone...)",
+    "search_placeholder": "Name, phone or email…",
     "filter_all": "All",
     "filter_active": "Active",
     "filter_inactive": "Inactive",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { getBusinessSettings, getPosSettings } from "../lib/businessApi";
 import { useAuth } from "../context/AuthContext";
@@ -18,7 +18,6 @@ import {
   Tags,
   Warehouse,
   Users,
-  User,
   Truck,
   FileText,
   Landmark,
@@ -40,7 +39,6 @@ import {
   ClipboardList,
   RotateCcw,
   Wallet,
-  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,8 +46,10 @@ type NavItem = {
   labelKey: string;
   href: (b: string) => string;
   icon?: LucideIcon;
+  emoji?: string;
   badgeKey?: string;
   exact?: boolean;
+  activePaths?: (b: string) => string[];
   permissions?: BusinessPermission | BusinessPermission[];
 };
 
@@ -61,36 +61,43 @@ function normalizeHrefPath(href: string): string {
   return href.split(/[?#]/, 1)[0] || href;
 }
 
+function matchesNavItem(item: NavItem, business: string, pathname: string | null): boolean {
+  const paths = [item.href(business), ...(item.activePaths?.(business) ?? [])].map(normalizeHrefPath);
+  return paths.some(path => pathname === path || (!item.exact && Boolean(pathname?.startsWith(`${path}/`))));
+}
+
 function NavLink({ item, business, label, badge }: { item: NavItem; business: string; label: string; badge?: string }) {
   const pathname = usePathname();
   const href = item.href(business);
-  const hrefPath = normalizeHrefPath(href);
-  const active = item.exact
-    ? pathname === hrefPath
-    : pathname === hrefPath || pathname?.startsWith(hrefPath + "/");
+  const active = matchesNavItem(item, business, pathname);
 
   const Icon = item.icon;
 
   return (
     <Link
       href={href}
+      aria-current={active ? "page" : undefined}
       className={cx(
-        "group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200 hover:translate-x-0.5",
+        "group flex items-center gap-3 rounded-xl border px-3 py-2 text-sm transition-all duration-200 hover:translate-x-0.5",
         active
           ? "bg-[#0a4d8f] text-white border-[#083a6d] shadow-md"
           : "border-transparent text-slate-700 hover:border-[#0a4d8f] hover:bg-[#0d63b8] hover:text-white hover:shadow-sm"
       )}
     >
-      {Icon ? (
+      {item.emoji ? (
+        <span aria-hidden="true" className="grid h-6 w-6 shrink-0 place-items-center text-lg leading-none">
+          {item.emoji}
+        </span>
+      ) : Icon ? (
         <Icon
           className={cx(
-            "h-4 w-4 transition-colors",
+            "h-4 w-4 shrink-0 transition-colors",
             active ? "text-white" : "text-slate-500 group-hover:text-orange-200"
           )}
         />
       ) : null}
 
-      <span className="font-medium">{label}</span>
+      <span className="min-w-0 break-words font-medium">{label}</span>
 
       {badge ? (
         <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-[#f59e0b] text-white">
@@ -101,7 +108,7 @@ function NavLink({ item, business, label, badge }: { item: NavItem; business: st
   );
 }
 
-function Section({
+function CollapsibleNavMenu({
   title,
   icon: Icon,
   children,
@@ -112,100 +119,29 @@ function Section({
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
-  const [interactiveOpen, setInteractiveOpen] = useState(false);
-  const open = defaultOpen || interactiveOpen;
+  const [open, setOpen] = useState(defaultOpen);
+  const panelId = useId();
 
   return (
-    <div
-      className="group"
-      onMouseEnter={() => setInteractiveOpen(true)}
-      onMouseLeave={() => setInteractiveOpen(false)}
-    >
+    <div>
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => {
-          if (defaultOpen) return;
-          setInteractiveOpen((prev) => !prev);
-        }}
-        className="flex w-full items-center gap-2 px-2 py-2 text-xs font-semibold text-slate-500 transition-colors hover:text-[#0d63b8]"
+        aria-controls={panelId}
+        onClick={() => setOpen((value) => !value)}
+        className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-sm text-slate-700 transition-colors hover:border-[#0a4d8f] hover:bg-[#0d63b8] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d63b8]"
       >
-        <Icon className="h-4 w-4 text-slate-400 transition-colors group-hover:text-[#f59e0b]" />
-        <span className="uppercase tracking-wide">{title}</span>
-        <ChevronDown
-          className={cx(
-            "ml-auto h-4 w-4 text-slate-400 transition-transform duration-200 group-hover:text-[#0d63b8]",
-            open && "rotate-180"
-          )}
-        />
+        <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500 group-hover:text-orange-200" />
+        <span className="font-medium">{title}</span>
+        <ChevronDown aria-hidden="true" className={cx("ml-auto h-4 w-4 transition-transform duration-200", open && "rotate-180")} />
       </button>
-      <div
-        className={cx(
-          "grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
-          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-        )}
-      >
-        <div className="min-h-0 overflow-hidden">
-          <div className="space-y-1 px-2 pb-2">{children}</div>
-        </div>
+      <div id={panelId} hidden={!open} className="ml-5 mt-0.5 space-y-0.5 border-l border-slate-200 pl-2">
+        {children}
       </div>
     </div>
   );
 }
 
-function SubSection({
-  title,
-  icon: Icon,
-  children,
-  defaultOpen = false,
-}: {
-  title: string;
-  icon?: LucideIcon;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const [interactiveOpen, setInteractiveOpen] = useState(false);
-  const open = defaultOpen || interactiveOpen;
-
-  return (
-    <div
-      className="group pl-2"
-      onMouseEnter={() => setInteractiveOpen(true)}
-      onMouseLeave={() => setInteractiveOpen(false)}
-    >
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => {
-          if (defaultOpen) return;
-          setInteractiveOpen((prev) => !prev);
-        }}
-        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:text-[#0d63b8]"
-      >
-        {Icon ? (
-          <Icon className="h-4 w-4 text-slate-400 transition-colors group-hover:text-[#f59e0b]" />
-        ) : null}
-        <span>{title}</span>
-        <ChevronDown
-          className={cx(
-            "ml-auto h-4 w-4 text-slate-400 transition-transform duration-200 group-hover:text-[#0d63b8]",
-            open && "rotate-180"
-          )}
-        />
-      </button>
-      <div
-        className={cx(
-          "grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
-          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-        )}
-      >
-        <div className="min-h-0 overflow-hidden">
-          <div className="mt-1 space-y-1 pl-4">{children}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function Sidebar() {
   const t = useTranslations("nav");
@@ -216,6 +152,8 @@ export default function Sidebar() {
   const [businessLogoUrl, setBusinessLogoUrl] = useState("");
   const [failedLogoUrl, setFailedLogoUrl] = useState("");
   const [modules, setModules] = useState({
+    businessSlug: "",
+    businessType: "",
     hotel: false,
     restaurant: false,
     pool: false,
@@ -228,6 +166,8 @@ export default function Sidebar() {
     () => businesses.find((item) => item.slug === business) ?? activeBusiness ?? null,
     [activeBusiness, businesses, business],
   );
+  const businessName = (currentBusinessEntry?.slug === business ? currentBusinessEntry.name?.trim() : "")
+    || business || t("general_settings");
   const currentPermissions = useMemo(() => {
     const scoped = currentBusinessEntry?.pivot?.permissions;
     if (Array.isArray(scoped)) {
@@ -252,6 +192,8 @@ export default function Sidebar() {
 
         setDollarPurchaseEnabled(data.dollar_purchase_enabled);
         setModules({
+          businessSlug: business,
+          businessType: data.business_type,
           hotel: data.has_hotel !== false,
           restaurant: data.has_restaurant !== false,
           pool: data.has_pool !== false,
@@ -332,12 +274,6 @@ export default function Sidebar() {
     { labelKey: "customers", href: (b) => `/${b}/customers`, icon: Users, permissions: "customers.read" },
   ];
 
-  const staffAdmin: NavItem[] = [
-    { labelKey: "users", href: (b) => `/${b}/users`, icon: User, permissions: "users.read" },
-    { labelKey: "roles", href: (b) => `/${b}/roles`, icon: KeyRound, permissions: "users.manage" },
-    { labelKey: "employees", href: (b) => `/${b}/employees`, icon: Users, permissions: "users.read" },
-  ];
-
   const businessAdmin: NavItem[] = [
     { labelKey: "my_business", href: (b) => `/${b}/business`, icon: Building2, permissions: "business.read" },
     { labelKey: "branches", href: (b) => `/${b}/settings/branches`, icon: Store, permissions: "business.read" },
@@ -364,19 +300,10 @@ export default function Sidebar() {
   ];
 
   const financeAdmin: NavItem[] = [
-    { labelKey: "accounting", href: (b) => `/${b}/accounting`, icon: Landmark, permissions: "accounting.read" },
+    { labelKey: "accounting", href: (b) => `/${b}/accounting`, activePaths: (b) => [`/${b}/bank`], icon: Landmark, permissions: "accounting.read" },
     { labelKey: "accounting_periods", href: (b) => `/${b}/accounting/periods`, icon: CalendarDays, permissions: "accounting.read" },
     { labelKey: "payroll", href: (b) => `/${b}/payroll`, icon: Wallet, permissions: "users.read" },
     { labelKey: "bank_reconciliation", href: (b) => `/${b}/bank`, icon: Landmark, permissions: "accounting.read" },
-  ];
-
-  const reportsAdmin: NavItem[] = [
-    { labelKey: "reports_departments", href: (b) => `/${b}/reports/departments`, icon: BarChart3, permissions: "reports.read" },
-    { labelKey: "reports_sales", href: (b) => `/${b}/reports/sales`, icon: BarChart3, permissions: "reports.read" },
-    { labelKey: "reports_inventory", href: (b) => `/${b}/reports/inventory`, icon: BarChart3, permissions: "reports.read" },
-    { labelKey: "reports_cash_sessions", href: (b) => `/${b}/reports/cash-sessions`, icon: Wallet, permissions: "reports.read" },
-    { labelKey: "reports_ar", href: (b) => `/${b}/reports/ar`, icon: Receipt, permissions: "reports.read" },
-    { labelKey: "reports_finance", href: (b) => `/${b}/reports/finance`, icon: Landmark, permissions: "reports.read" },
   ];
 
   const hotelRoomSetup: NavItem[] = [
@@ -409,11 +336,11 @@ export default function Sidebar() {
   const supplies: NavItem[] = [
     { labelKey: "amenities", href: (b) => `/${b}/hotel/amenities`, icon: Sparkles, permissions: "supplies.read" },
     { labelKey: "necessities", href: (b) => `/${b}/hotel/necessities`, icon: PackageOpen, permissions: "supplies.read" },
-    { labelKey: "product_catalog", href: (b) => `/${b}/products`, icon: Package, permissions: "supplies.read" },
+    { labelKey: "product_catalog", href: (b) => `/${b}/products`, activePaths: (b) => [`/${b}/categories`, `/${b}/inventory`], icon: Package, permissions: ["catalog.read", "supplies.read", "supplies.manage", "products.create", "products.edit", "inventory.read"] },
     { labelKey: "categories", href: (b) => `/${b}/categories`, icon: Tags, permissions: "supplies.read" },
     { labelKey: "inventory", href: (b) => `/${b}/inventory`, icon: Warehouse, permissions: "inventory.read" },
     { labelKey: "stock_transfers", href: (b) => `/${b}/inventory/transfers`, icon: ArrowLeftRight, permissions: "inventory.read" },
-    { labelKey: "suppliers", href: (b) => `/${b}/suppliers`, icon: Truck, permissions: "supplies.read" },
+    { labelKey: "suppliers", href: (b) => `/${b}/suppliers`, activePaths: (b) => [`/${b}/purchase-orders`], icon: Truck, permissions: "supplies.read" },
     { labelKey: "purchase_orders", href: (b) => `/${b}/purchase-orders`, icon: ClipboardList, permissions: "supplies.read" },
   ];
 
@@ -422,11 +349,7 @@ export default function Sidebar() {
   }
 
   function isActiveItem(item: NavItem): boolean {
-    const hrefPath = normalizeHrefPath(item.href(business));
-    if (item.exact || item.labelKey === "pos_new_sale") {
-      return pathname === hrefPath;
-    }
-    return pathname === hrefPath || pathname?.startsWith(`${hrefPath}/`);
+    return matchesNavItem(item, business, pathname);
   }
 
   function isActiveGroup(items: NavItem[]): boolean {
@@ -439,17 +362,19 @@ export default function Sidebar() {
         key={it.labelKey}
         item={it}
         business={business}
-        label={t(it.labelKey)}
+        label={it.labelKey === "general_settings" ? businessName : t(it.labelKey)}
         badge={it.badgeKey ? t(it.badgeKey) : undefined}
       />
     ));
   }
 
+  const hasCurrentModules = modules.businessSlug === business;
+  const isHotelBusiness = hasCurrentModules && modules.businessType === "hotel";
+  const hasHotelModule = isHotelBusiness && modules.hotel;
   const visibleDashboard = visibleItems(dashboard);
-  const visibleBilling = visibleItems(billing);
-  const visibleBillingOrders = modules.hotel ? visibleItems(billingOrders) : [];
+  const visibleBillingOrders = hasHotelModule ? visibleItems(billingOrders) : [];
   const visibleGuests = visibleItems(guests);
-  const visibleHotelOperations = modules.hotel
+  const visibleHotelOperations = hasHotelModule
     ? visibleItems(
         hotelOperations.filter((it) => {
           if (it.href("x").includes("/moments")) return modules.moment;
@@ -457,26 +382,105 @@ export default function Sidebar() {
         })
       )
     : [];
-  const visibleRestaurant = modules.restaurant ? visibleItems(restaurantItems) : [];
-  const visiblePool = modules.pool ? visibleItems(poolItems) : [];
-  const visibleServices = modules.services ? visibleItems(servicesItems) : [];
+  const visibleRestaurant = hasCurrentModules && modules.restaurant ? visibleItems(restaurantItems) : [];
+  const visibleQuickOrders = hasCurrentModules && ["restaurant", "hotel", "bar_cafe"].includes(modules.businessType)
+    ? ["restaurant_orders", "restaurant_tables"]
+        .flatMap((key) => visibleRestaurant.filter((item) => item.labelKey === key))
+        .map((item) => ({ ...item, labelKey: item.labelKey === "restaurant_orders" ? "section_orders" : item.labelKey }))
+    : [];
+  const visiblePool = isHotelBusiness && modules.pool
+    ? visibleItems(poolItems)
+    : [];
+  const visibleServices = hasCurrentModules && modules.services ? visibleItems(servicesItems) : [];
   const visibleSupplies = visibleItems(
     supplies.filter((it) => {
       const href = it.href("x");
-      if (href.includes("/hotel/amenities") || href.includes("/hotel/necessities")) return modules.hotel;
+      if (href.includes("/hotel/amenities") || href.includes("/hotel/necessities")) return hasHotelModule;
       return true;
     })
   );
-  const visibleStaffAdmin = visibleItems(staffAdmin);
-  const visibleHotelRoomSetup = modules.hotel ? visibleItems(hotelRoomSetup) : [];
+  const visibleHotelRoomSetup = hasHotelModule ? visibleItems(hotelRoomSetup) : [];
   const visibleBusinessAdmin = visibleItems(businessAdmin);
   const visibleExpenseAdmin = visibleItems(expenseAdmin);
-  const visibleFinanceAdmin = visibleItems(financeAdmin);
-  const visibleReportsAdmin = visibleItems(reportsAdmin);
+  const visibleHotelServices: NavItem[] = isHotelBusiness ? [
+    ...visibleHotelOperations,
+    ...visibleHotelRoomSetup,
+    ...visibleBillingOrders,
+    ...visibleSupplies.filter((item) => item.href("x").includes("/hotel/")),
+    ...(visibleQuickOrders.length > 0 ? [] : visibleRestaurant),
+    ...visibleServices,
+  ] : [];
+
+  // Reuse the existing routes, permission requirements and enabled modules.
+  const referenceSources = [
+    ...dashboard, ...billing, ...guests, ...supplies, ...financeAdmin, ...businessAdmin, ...visibleServices,
+    { labelKey: "reports", href: (b: string) => `/${b}/reports`, icon: BarChart3, permissions: "reports.read" as BusinessPermission },
+  ];
+  const referenceGroups = [
+    { titleKey: "primary", items: [["dashboard", "📊"], ["pos_new_sale", "💵"], ["tickets_sales", "🧾"], ["quotes_proforma", "📄"]] },
+    { titleKey: "management", items: [["product_catalog", "📦"], ["customers", "🎁"], ["suppliers", "🚚"], ...(!isHotelBusiness && visibleServices.length > 0 ? [["services", "✨"]] : [])] },
+    { titleKey: "hotel_services", items: [] },
+    { titleKey: "finance", items: [["accounting", "📒"], ["payroll", "👥"], ["reports", "📈"]] },
+    { titleKey: "system", items: [["general_settings", "⚙️"]] },
+  ].map(group => ({
+    titleKey: group.titleKey,
+    items: group.titleKey === "hotel_services" ? visibleHotelServices : group.items.flatMap(([sourceKey, emoji]) => {
+      const source = referenceSources.find(item => item.labelKey === sourceKey);
+      if (!source) return [];
+      return visibleItems([{
+        ...source,
+        labelKey: `reference.${sourceKey}`,
+        emoji,
+        badgeKey: undefined,
+        exact: sourceKey === "pos_new_sale" ? true : source.exact,
+      }]);
+    }),
+  }));
+
+  const generalSettingsItems = visibleBusinessAdmin
+    .filter((item) => item.labelKey === "general_settings")
+    .map((item) => ({ ...item, exact: true }));
+  // Match exact destinations: the reports overview does not replace individual reports.
+  const representedPaths = new Set([
+    ...referenceGroups.filter((group) => group.titleKey !== "system").flatMap((group) => group.items),
+    ...visibleQuickOrders,
+    ...visiblePool,
+    ...visibleExpenseAdmin,
+    ...generalSettingsItems,
+  ].map((item) => normalizeHrefPath(item.href(business))));
+  // These destinations are now tabs in their respective business sections.
+  for (const path of ["categories", "inventory", "inventory/transfers", "purchase-orders", "bank"]) {
+    representedPaths.add(`/${business}/${path}`);
+  }
+  const settingsGroups = [
+    { titleKey: "dashboard", icon: LayoutDashboard, items: visibleDashboard },
+    { titleKey: "section_customers", icon: Users, items: visibleGuests },
+    { titleKey: "section_reservations_services", icon: BedDouble, items: visibleHotelOperations },
+    { titleKey: "section_restaurant", icon: UtensilsCrossed, items: visibleRestaurant },
+    { titleKey: "section_pool", icon: Waves, items: visiblePool },
+    { titleKey: "section_services", icon: Sparkles, items: visibleServices },
+    { titleKey: "section_stock_purchases", icon: Package, items: visibleSupplies },
+    { titleKey: "section_hotel_setup", icon: Layers, items: visibleHotelRoomSetup },
+  ].map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      const path = normalizeHrefPath(item.href(business));
+      if (representedPaths.has(path)) return false;
+      representedPaths.add(path);
+      return true;
+    }),
+  })).filter((group) => group.items.length > 0);
+  const settingsItems = [...generalSettingsItems, ...settingsGroups.flatMap((group) => group.items)];
+  const visibleReferenceGroups = referenceGroups.filter((group) => group.titleKey === "system"
+    ? settingsItems.length > 0
+    : group.items.length > 0
+      || (group.titleKey === "primary" && (visibleQuickOrders.length > 0 || visiblePool.length > 0))
+      || (group.titleKey === "management" && visibleExpenseAdmin.length > 0));
+
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full min-h-0 flex flex-col">
       {/* Header sidebar */}
-      <div className="px-4 py-4">
+      <div className="shrink-0 border-b border-slate-200/70 px-4 py-4">
         <div className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-2xl overflow-hidden bg-gradient-to-br from-[#0d63b8] to-[#f59e0b] text-white flex items-center justify-center shadow-sm">
             {businessLogoUrl && failedLogoUrl !== businessLogoUrl ? (
@@ -503,130 +507,52 @@ export default function Sidebar() {
       </div>
 
       {/* Menu */}
-      <div className="flex-1 overflow-y-auto py-3">
-        <div className="px-2 space-y-3">
-          {visibleDashboard.length > 0 ? (
-            <div className="space-y-1 px-2">{renderNavLinks(visibleDashboard)}</div>
-          ) : null}
+      <div className="min-h-0 flex-1 overflow-y-auto py-3">
+        {visibleReferenceGroups.length > 0 ? (
+          <nav aria-label={t("reference.quick_navigation")} className="space-y-3 px-4 pb-4">
+            {visibleReferenceGroups.map(group => (
+              <section key={group.titleKey}>
+                <h2 className="px-3 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                  {t(`reference.${group.titleKey}`)}
+                </h2>
+                {group.titleKey === "hotel_services" ? (
+                  <CollapsibleNavMenu key={business} title={t("reference.hotel")} icon={BedDouble} defaultOpen={isActiveGroup(group.items)}>
+                    {renderNavLinks(group.items)}
+                  </CollapsibleNavMenu>
+                ) : group.titleKey === "system" ? (
+                  <CollapsibleNavMenu key={business} title={t("reference.general_settings")} icon={Settings} defaultOpen={isActiveGroup(settingsItems)}>
+                    {renderNavLinks(generalSettingsItems)}
+                    {settingsGroups.map((settingsGroup) => (
+                      <CollapsibleNavMenu key={settingsGroup.titleKey} title={t(settingsGroup.titleKey)} icon={settingsGroup.icon} defaultOpen={isActiveGroup(settingsGroup.items)}>
+                        {renderNavLinks(settingsGroup.items)}
+                      </CollapsibleNavMenu>
+                    ))}
+                  </CollapsibleNavMenu>
+                ) : (
+                  <div className="space-y-0.5">
+                    {renderNavLinks(group.items)}
+                    {group.titleKey === "management" && visibleExpenseAdmin.length > 0 ? (
+                      <CollapsibleNavMenu key={business} title={t("section_expenses")} icon={Receipt} defaultOpen={isActiveGroup(visibleExpenseAdmin)}>
+                        {renderNavLinks(visibleExpenseAdmin)}
+                      </CollapsibleNavMenu>
+                    ) : null}
+                    {group.titleKey === "primary" && visibleQuickOrders.length > 0 ? (
+                      <CollapsibleNavMenu key={business} title={t("section_orders")} icon={ClipboardList} defaultOpen={isActiveGroup(visibleQuickOrders)}>
+                        {renderNavLinks(visibleQuickOrders)}
+                      </CollapsibleNavMenu>
+                    ) : null}
+                    {group.titleKey === "primary" ? renderNavLinks(visiblePool) : null}
+                  </div>
+                )}
+              </section>
+            ))}
+          </nav>
+        ) : null}
 
-          {visibleBilling.length > 0 || visibleBillingOrders.length > 0 ? (
-            <Section
-              title={t("section_billing")}
-              icon={Receipt}
-              defaultOpen={isActiveGroup(billing) || isActiveGroup(billingOrders)}
-            >
-              {renderNavLinks(visibleBilling)}
-              {visibleBillingOrders.length > 0 ? (
-                <SubSection title={t("section_orders")} icon={Receipt} defaultOpen={isActiveGroup(billingOrders)}>
-                  {renderNavLinks(visibleBillingOrders)}
-                </SubSection>
-              ) : null}
-            </Section>
-          ) : null}
-
-          {visibleGuests.length > 0 ? (
-            <Section title={t("section_customers")} icon={Users} defaultOpen={isActiveGroup(guests)}>
-              {renderNavLinks(visibleGuests)}
-            </Section>
-          ) : null}
-
-          {visibleHotelOperations.length > 0 ? (
-            <Section
-              title={t("section_reservations_services")}
-              icon={BedDouble}
-              defaultOpen={isActiveGroup(hotelOperations)}
-            >
-              {renderNavLinks(visibleHotelOperations)}
-            </Section>
-          ) : null}
-
-          {visibleRestaurant.length > 0 ? (
-            <Section
-              title={t("section_restaurant")}
-              icon={UtensilsCrossed}
-              defaultOpen={isActiveGroup(restaurantItems)}
-            >
-              {renderNavLinks(visibleRestaurant)}
-            </Section>
-          ) : null}
-
-          {visiblePool.length > 0 ? (
-            <Section title={t("section_pool")} icon={Waves} defaultOpen={isActiveGroup(poolItems)}>
-              {renderNavLinks(visiblePool)}
-            </Section>
-          ) : null}
-
-          {visibleServices.length > 0 ? (
-            <Section title={t("section_services")} icon={Sparkles} defaultOpen={isActiveGroup(servicesItems)}>
-              {renderNavLinks(visibleServices)}
-            </Section>
-          ) : null}
-
-          {visibleSupplies.length > 0 ? (
-            <Section title={t("section_stock_purchases")} icon={Package} defaultOpen={isActiveGroup(supplies)}>
-              {renderNavLinks(visibleSupplies)}
-            </Section>
-          ) : null}
-
-          {visibleStaffAdmin.length > 0 ||
-          visibleHotelRoomSetup.length > 0 ||
-          visibleBusinessAdmin.length > 0 ||
-          visibleExpenseAdmin.length > 0 ||
-          visibleFinanceAdmin.length > 0 ||
-          visibleReportsAdmin.length > 0 ? (
-            <Section
-              title={t("section_admin")}
-              icon={Settings}
-              defaultOpen={
-                isActiveGroup(staffAdmin) ||
-                isActiveGroup(hotelRoomSetup) ||
-                isActiveGroup(businessAdmin) ||
-                isActiveGroup(expenseAdmin) ||
-                isActiveGroup(financeAdmin) ||
-                isActiveGroup(reportsAdmin)
-              }
-            >
-              {visibleStaffAdmin.length > 0 ? (
-                <SubSection title={t("section_team")} icon={Users} defaultOpen={isActiveGroup(staffAdmin)}>
-                  {renderNavLinks(visibleStaffAdmin)}
-                </SubSection>
-              ) : null}
-              {visibleHotelRoomSetup.length > 0 ? (
-                <SubSection title={t("section_hotel_setup")} icon={Layers} defaultOpen={isActiveGroup(hotelRoomSetup)}>
-                  {renderNavLinks(visibleHotelRoomSetup)}
-                </SubSection>
-              ) : null}
-              {visibleBusinessAdmin.length > 0 ? (
-                <SubSection title={t("section_company")} icon={Building2} defaultOpen={isActiveGroup(businessAdmin)}>
-                  {renderNavLinks(visibleBusinessAdmin)}
-                </SubSection>
-              ) : null}
-              {visibleExpenseAdmin.length > 0 || visibleFinanceAdmin.length > 0 ? (
-                <SubSection
-                  title={t("section_finance")}
-                  icon={Landmark}
-                  defaultOpen={isActiveGroup(expenseAdmin) || isActiveGroup(financeAdmin)}
-                >
-                  {visibleExpenseAdmin.length > 0 ? (
-                    <SubSection title={t("section_expenses")} icon={Receipt} defaultOpen={isActiveGroup(expenseAdmin)}>
-                      {renderNavLinks(visibleExpenseAdmin)}
-                    </SubSection>
-                  ) : null}
-                  {renderNavLinks(visibleFinanceAdmin)}
-                </SubSection>
-              ) : null}
-              {visibleReportsAdmin.length > 0 ? (
-                <SubSection title={t("section_reports")} icon={BarChart3} defaultOpen={isActiveGroup(reportsAdmin)}>
-                  {renderNavLinks(visibleReportsAdmin)}
-                </SubSection>
-              ) : null}
-            </Section>
-          ) : null}
-        </div>
       </div>
 
       {/* Footer */}
-      <div className="p-3 text-xs text-slate-500">
+      <div className="shrink-0 border-t border-slate-200/70 p-3 text-xs text-slate-500">
         <div className="flex items-center justify-between">
           <span>{t("footer_brand")}</span>
           <span className="font-semibold text-[#0d63b8]">v1</span>

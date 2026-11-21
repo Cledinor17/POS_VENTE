@@ -17,7 +17,7 @@ function toNum(v: unknown, fb = 0): number {
   return fb;
 }
 
-export type DepartmentKey = "hotel" | "restaurant" | "bar" | "pool" | "services";
+export type DepartmentKey = "hotel" | "restaurant" | "bar" | "pool" | "services" | "other";
 
 export const DEPT_ICON_MAP: Record<DepartmentKey, string> = {
   hotel: "BedDouble",
@@ -25,6 +25,7 @@ export const DEPT_ICON_MAP: Record<DepartmentKey, string> = {
   bar: "Wine",
   pool: "Waves",
   services: "Sparkles",
+  other: "BarChart3",
 };
 
 export type DepartmentStat = {

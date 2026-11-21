@@ -44,6 +44,7 @@ export type PurchaseOrderListParams = {
   perPage?: number;
   q?: string;
   status?: string;
+  supplierId?: string;
 };
 
 export type PurchaseOrderListResult = {
@@ -226,12 +227,20 @@ export async function listPurchaseOrders(
   if (params.perPage && params.perPage > 0) qp.set("per_page", String(params.perPage));
   if (params.q && params.q.trim().length > 0) qp.set("q", params.q.trim());
   if (params.status && params.status.trim().length > 0) qp.set("status", params.status.trim());
+  if (params.supplierId) qp.set("supplier_id", params.supplierId);
 
   const query = qp.toString();
   const path = query ? `${basePath(business)}?${query}` : basePath(business);
   const raw = await apiFetch<unknown>(path);
   const items = getCollection(raw).map(normalizePurchaseOrder);
   const meta = getMeta(raw, items.length);
+  // Older API versions ignore supplier_id: never present their unfiltered list as a supplier history.
+  if (params.supplierId && (
+    !isObject(raw) || !isObject(raw.meta) || toString(raw.meta.supplier_id) !== params.supplierId ||
+    items.some((item) => item.supplierId !== params.supplierId)
+  )) {
+    throw new Error("L’historique de ce fournisseur est indisponible. Veuillez contacter l’administrateur.");
+  }
 
   return {
     items,

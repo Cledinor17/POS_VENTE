@@ -49,10 +49,12 @@ export default function PermissionChecklist({
   selected,
   onToggle,
   allowedPermissions,
+  businessType = "other",
 }: {
   selected: BusinessPermission[];
   onToggle: (permission: BusinessPermission) => void;
   allowedPermissions: BusinessPermission[];
+  businessType?: string;
 }) {
   const allowed = useMemo(() => new Set(allowedPermissions), [allowedPermissions]);
   const active = useMemo(() => new Set(selected), [selected]);
@@ -60,13 +62,14 @@ export default function PermissionChecklist({
   return (
     <div className="space-y-4">
       {PERMISSION_GROUPS.map((group) => {
-        const visiblePermissions = group.permissions.filter((permission) => allowed.has(permission));
+        const visiblePermissions = group.permissions.filter((permission) => allowed.has(permission)
+          && (businessType === "hotel" || !/^(hotel\.|reservations\.|moments\.|housekeeping\.|room_setup\.|pool\.)/.test(permission)));
         if (visiblePermissions.length === 0) return null;
 
         return (
           <div key={group.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="mb-3">
-              <h3 className="text-sm font-semibold text-slate-900">{group.title}</h3>
+              <h3 className="text-sm font-semibold text-slate-900">{businessType !== "hotel" && group.title === "Clients et sejours" ? "Clients" : group.title}</h3>
             </div>
 
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -84,7 +87,7 @@ export default function PermissionChecklist({
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-slate-800">
-                        {PERMISSION_LABELS[permission]}
+                        {businessType !== "hotel" && permission === "services.manage" ? "Gérer le catalogue et les réservations de services" : PERMISSION_LABELS[permission]}
                       </span>
                       <span
                         className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${

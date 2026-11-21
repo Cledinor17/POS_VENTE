@@ -1,4 +1,45 @@
 {
+  "address": {
+    "title": "您的地址",
+    "street": "街道、门牌号和街区",
+    "country": "国家",
+    "state": "省 / 州 / 行政区",
+    "city": "城市 / 市镇",
+    "zip": "邮政编码（可选）",
+    "choose_country": "选择国家",
+    "choose_country_first": "请先选择国家",
+    "choose_or_type": "选择或输入",
+    "loading": "加载中…",
+    "hint": "建议的城市随所选省、州或行政区变化。请核对；如果列表中没有您的所在地，可手动输入。",
+    "error": "地址建议暂时不可用。",
+    "retry": "重试"
+  },
+  "accountingHub": {
+    "description": "通过这些选项卡查看交易日记账、会计期间、财务报表和银行对账。"
+  },
+  "reportHub": {
+    "description": "查看销售、库存、收银班次和财务结果。选择报告并调整筛选条件，查看所需时间段的数据。",
+    "chooseReport": "选择报告"
+  },
+  "settingsHub": {
+    "title": "常规设置",
+    "description": "通过这些选项卡管理您的全部企业设置。",
+    "tabsLabel": "企业配置",
+    "loading": "正在加载设置…",
+    "noAccess": "您无权访问此企业的设置。",
+    "tabs": {
+      "business": "企业",
+      "branches": "分店",
+      "users": "用户",
+      "roles": "角色与权限",
+      "printers": "打印机",
+      "coupons": "优惠码",
+      "periods": "会计期间",
+      "audit": "审计与安全",
+      "backup": "备份",
+      "mobile": "移动应用"
+    }
+  },
   "image_upload": {
     "size_hint": "文件大小上限：{maxSize}。",
     "too_large": "此图片过大（{size}）。请选择不超过 {maxSize} 的图片，或缩小图片后重试。",
@@ -84,6 +125,7 @@
     }
   },
   "nav": {
+    "reference": {"primary":"主要菜单","management":"业务管理","finance":"财务","system":"系统","quick_navigation":"快捷访问","full_navigation":"完整导航","dashboard":"仪表盘","pos_new_sale":"收银（POS）","tickets_sales":"销售与小票","product_catalog":"商品与库存","customers":"客户与会员积分","suppliers":"供应商","accounting":"会计","payroll":"工资与员工","reports":"报表","general_settings":"设置","services":"服务项目","hotel_services":"酒店与服务","hotel":"酒店","quotes_proforma":"报价单"},
     "dashboard": "仪表盘",
     "dollar_purchases": "购买美元",
     "pos_new_sale": "新建销售（收银台）",
@@ -107,6 +149,7 @@
     "expenses_categories": "支出分类",
     "accounting": "会计",
     "accounting_periods": "会计期间",
+    "accounting_journal": "交易日记账",
     "payroll": "工资单",
     "bank_reconciliation": "银行对账",
     "reports_departments": "部门营收",
@@ -280,8 +323,9 @@
     "warning_ar_summary": "应收账款摘要"
   },
   "customers": {
-    "page_title": "客户",
-    "page_subtitle": "已连接后端的客户列表。",
+    "reference": {"table_code":"客户编号","table_email":"电子邮箱","toolbar":"客户搜索与操作","loyalty_rules":"积分规则","import":"导入","table_phone":"电话","table_loyalty":"忠诚度积分","table_credit":"欠款","points_balance":"{count} 积分","credit_clear":"无欠款","credit_error":"暂时无法获取欠款余额，请重新加载页面再试。","credit_restricted":"查看欠款余额需要报表访问权限。","credit_loading":"正在加载余额…"},
+    "page_title": "客户与忠诚度",
+    "page_subtitle": "在同一页面查看客户、忠诚度积分和未结清欠款。",
     "count_summary": "{total} 位客户 | 本页显示：{active}",
     "new_customer": "新建客户",
     "no_access": "此账户尚无权限访问客户模块。",
@@ -347,7 +391,7 @@
     "saving_create": "正在添加...",
     "submit_update": "更新",
     "submit_create": "添加",
-    "search_placeholder": "搜索（姓名、邮箱、电话...）",
+    "search_placeholder": "姓名、电话或电子邮箱…",
     "filter_all": "全部",
     "filter_active": "在用",
     "filter_inactive": "停用",

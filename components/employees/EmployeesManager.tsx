@@ -1,0 +1,1255 @@
+"use client";
+
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
+import { Upload } from "lucide-react";
+import { ApiError } from "@/lib/api";
+import ImportModal, { type ImportColumnHelp } from "@/components/ImportModal";
+import PhoneField from "@/components/PhoneField";
+import { formatPhoneDisplay } from "@/lib/phone";
+import {
+  createEmployee,
+  createEmployeePayment,
+  deleteEmployee,
+  listEmployeePayments,
+  listEmployees,
+  updateEmployee,
+  type EmployeeItem,
+  type EmployeePaymentItem,
+} from "@/lib/employeesApi";
+import {
+  createDeduction,
+  deleteDeduction,
+  listDeductions,
+  type EmployeeDeductionItem,
+} from "@/lib/payrollApi";
+
+const EMPLOYEE_IMPORT_COLUMNS: ImportColumnHelp[] = [
+  { name: "name", required: true, description: "Nom de l'employe." },
+  { name: "email", required: false, description: "Sert a mettre a jour un employe existant." },
+  { name: "phone", required: false, description: "Numero de telephone." },
+  { name: "job_title", required: false, description: "Poste." },
+  { name: "salary_amount", required: false, description: "Montant du salaire (defaut: 0)." },
+  { name: "salary_currency", required: false, description: "Devise du salaire (defaut: devise de l'entreprise)." },
+  { name: "pay_frequency", required: false, description: "Frequence de paie (defaut: monthly)." },
+  { name: "hired_at", required: false, description: "Date d'embauche (AAAA-MM-JJ)." },
+  { name: "is_active", required: false, description: "1/0 (defaut: 1)." },
+  { name: "notes", required: false, description: "Notes libres." },
+];
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error) return error.message;
+  return "Une erreur est survenue.";
+}
+
+function formatMoney(amount: number, currency: string | null): string {
+  const nextCurrency = (currency || "USD").trim().toUpperCase();
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: nextCurrency,
+      minimumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${nextCurrency || "USD"}`;
+  }
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "-";
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (parts) return `${parts[3]}/${parts[2]}/${parts[1]}`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("fr-FR");
+}
+
+function getEmployeePaymentDefaults(employee: EmployeeItem | null | undefined) {
+  if (!employee) {
+    return {
+      amount: "",
+      currency: "",
+    };
+  }
+
+  const salaryAmount = Number(employee.salaryAmount);
+
+  return {
+    amount: Number.isFinite(salaryAmount) && salaryAmount > 0 ? String(salaryAmount) : "",
+    currency: employee.salaryCurrency ?? "",
+  };
+}
+
+const PAY_FREQUENCIES: Array<"monthly" | "biweekly" | "weekly" | "hourly"> = [
+  "monthly",
+  "biweekly",
+  "weekly",
+  "hourly",
+];
+
+const PAY_FREQUENCY_LABELS: Record<string, string> = {
+  monthly: "Mensuelle", biweekly: "Toutes les deux semaines", weekly: "Hebdomadaire", hourly: "Horaire",
+};
+
+export default function EmployeesManager({ embedded = false }: { embedded?: boolean } = {}) {
+  const params = useParams<{ business: string }>();
+  const businessSlug = params?.business ?? "";
+
+  const [items, setItems] = useState<EmployeeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [page, setPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [queryInput, setQueryInput] = useState("");
+  const [query, setQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"" | "1" | "0">("");
+  const [reloadSeq, setReloadSeq] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
+
+  const [editingId, setEditingId] = useState("");
+  const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [salaryAmount, setSalaryAmount] = useState("");
+  const [salaryCurrency, setSalaryCurrency] = useState("");
+  const [payFrequency, setPayFrequency] = useState<"monthly" | "biweekly" | "weekly" | "hourly">("monthly");
+  const [hiredAt, setHiredAt] = useState("");
+  const [isActive, setIsActive] = useState(true);
+  const [notes, setNotes] = useState("");
+
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [paymentItems, setPaymentItems] = useState<EmployeePaymentItem[]>([]);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentReloadSeq, setPaymentReloadSeq] = useState(0);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentCurrency, setPaymentCurrency] = useState("");
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const paymentAmountInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [deductionItems, setDeductionItems] = useState<EmployeeDeductionItem[]>([]);
+  const [deductionLoading, setDeductionLoading] = useState(false);
+  const [deductionSaving, setDeductionSaving] = useState(false);
+  const [deductionReloadSeq, setDeductionReloadSeq] = useState(0);
+  const [deductionLabel, setDeductionLabel] = useState("");
+  const [deductionType, setDeductionType] = useState<"fixed" | "percent">("fixed");
+  const [deductionAmount, setDeductionAmount] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function load() {
+      if (!businessSlug) return;
+      setLoading(true);
+      setError("");
+
+      try {
+        const res = await listEmployees(businessSlug, {
+          page,
+          perPage: 20,
+          q: query || undefined,
+          isActive: activeFilter === "" ? undefined : activeFilter === "1",
+        });
+
+        if (!mounted) return;
+        setItems(res.items);
+        setLastPage(res.lastPage);
+        setTotal(res.total);
+      } catch (e) {
+        if (mounted) setError(getErrorMessage(e));
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug, page, query, activeFilter, reloadSeq]);
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setSelectedEmployeeId("");
+      return;
+    }
+
+    const exists = items.some((item) => item.id === selectedEmployeeId);
+    if (!selectedEmployeeId || !exists) {
+      setSelectedEmployeeId(items[0].id);
+    }
+  }, [items, selectedEmployeeId]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadPayments() {
+      if (!businessSlug || !selectedEmployeeId) {
+        setPaymentItems([]);
+        return;
+      }
+
+      setPaymentLoading(true);
+      try {
+        const res = await listEmployeePayments(businessSlug, selectedEmployeeId, {
+          page: 1,
+          perPage: 20,
+        });
+        if (!mounted) return;
+        setPaymentItems(res.items);
+      } catch (e) {
+        if (mounted) setError(getErrorMessage(e));
+      } finally {
+        if (mounted) setPaymentLoading(false);
+      }
+    }
+
+    void loadPayments();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug, selectedEmployeeId, paymentReloadSeq]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadDeductions() {
+      if (!businessSlug || !selectedEmployeeId) {
+        setDeductionItems([]);
+        return;
+      }
+
+      setDeductionLoading(true);
+      try {
+        const res = await listDeductions(businessSlug, selectedEmployeeId);
+        if (!mounted) return;
+        setDeductionItems(res);
+      } catch (e) {
+        if (mounted) setError(getErrorMessage(e));
+      } finally {
+        if (mounted) setDeductionLoading(false);
+      }
+    }
+
+    void loadDeductions();
+    return () => {
+      mounted = false;
+    };
+  }, [businessSlug, selectedEmployeeId, deductionReloadSeq]);
+
+  async function onAddDeduction(e: FormEvent) {
+    e.preventDefault();
+    if (!businessSlug || !selectedEmployeeId) return;
+    const amount = Number(deductionAmount);
+    if (!deductionLabel.trim() || !Number.isFinite(amount) || amount < 0) return;
+
+    setDeductionSaving(true);
+    setError("");
+    try {
+      await createDeduction(businessSlug, selectedEmployeeId, {
+        label: deductionLabel.trim(),
+        type: deductionType,
+        amount,
+      });
+      setDeductionLabel("");
+      setDeductionAmount("");
+      setDeductionType("fixed");
+      setDeductionReloadSeq((v) => v + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setDeductionSaving(false);
+    }
+  }
+
+  async function onDeleteDeduction(deductionId: string) {
+    if (!businessSlug || !selectedEmployeeId) return;
+    if (!window.confirm("Supprimer cette deduction ?")) return;
+    setError("");
+    try {
+      await deleteDeduction(businessSlug, selectedEmployeeId, deductionId);
+      setDeductionReloadSeq((v) => v + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    }
+  }
+
+  const activeCount = useMemo(
+    () => items.filter((item) => item.isActive).length,
+    [items],
+  );
+
+  const selectedEmployee = useMemo(
+    () => items.find((item) => item.id === selectedEmployeeId) ?? null,
+    [items, selectedEmployeeId],
+  );
+
+  useEffect(() => {
+    if (!paymentModalOpen || !selectedEmployee) return;
+    const defaults = getEmployeePaymentDefaults(selectedEmployee);
+    setPaymentAmount((current) => current || defaults.amount);
+    setPaymentCurrency((current) => current || defaults.currency);
+  }, [paymentModalOpen, selectedEmployee]);
+
+  useEffect(() => {
+    if (!employeeModalOpen && !paymentModalOpen && !paymentConfirmOpen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (paymentConfirmOpen) {
+          setPaymentConfirmOpen(false);
+          return;
+        }
+        if (paymentModalOpen) {
+          const defaults = getEmployeePaymentDefaults(selectedEmployee);
+          setPaymentModalOpen(false);
+          setPaymentConfirmOpen(false);
+          setPaymentAmount(defaults.amount);
+          setPaymentMethod("");
+          setPaymentReference("");
+          setPaymentNotes("");
+          setPaymentDate(new Date().toISOString().slice(0, 10));
+          setPaymentCurrency(defaults.currency);
+          return;
+        }
+        setEmployeeModalOpen(false);
+        setEditingId("");
+        setName("");
+        setEmail("");
+        setPhone("");
+        setJobTitle("");
+        setSalaryAmount("");
+        setSalaryCurrency("");
+        setPayFrequency("monthly");
+        setHiredAt("");
+        setIsActive(true);
+        setNotes("");
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [employeeModalOpen, paymentModalOpen, paymentConfirmOpen, selectedEmployee]);
+
+  useEffect(() => {
+    if (!paymentModalOpen) return;
+    const timeout = window.setTimeout(() => {
+      paymentAmountInputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [paymentModalOpen]);
+
+  function resetEmployeeForm() {
+    setEditingId("");
+    setName("");
+    setEmail("");
+    setPhone("");
+    setJobTitle("");
+    setSalaryAmount("");
+    setSalaryCurrency("");
+    setPayFrequency("monthly");
+    setHiredAt("");
+    setIsActive(true);
+    setNotes("");
+  }
+
+  function closeEmployeeModal() {
+    setEmployeeModalOpen(false);
+    resetEmployeeForm();
+  }
+
+  function resetPaymentForm() {
+    const defaults = getEmployeePaymentDefaults(selectedEmployee);
+    setPaymentAmount(defaults.amount);
+    setPaymentMethod("");
+    setPaymentReference("");
+    setPaymentNotes("");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentCurrency(defaults.currency);
+  }
+
+  function openNewEmployeeModal() {
+    resetEmployeeForm();
+    setError("");
+    setInfo("");
+    setEmployeeModalOpen(true);
+  }
+
+  function closePaymentModal() {
+    setPaymentModalOpen(false);
+    setPaymentConfirmOpen(false);
+    resetPaymentForm();
+  }
+
+  function closePaymentConfirmModal() {
+    setPaymentConfirmOpen(false);
+  }
+
+  function openPaymentModal(employee?: EmployeeItem) {
+    const targetEmployee = employee ?? selectedEmployee;
+    const defaults = getEmployeePaymentDefaults(targetEmployee);
+
+    if (employee) {
+      setSelectedEmployeeId(employee.id);
+    }
+
+    setPaymentAmount(defaults.amount);
+    setPaymentCurrency(defaults.currency);
+    setPaymentMethod("");
+    setPaymentReference("");
+    setPaymentNotes("");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setError("");
+    setInfo(
+      employee
+        ? `Paiement pret pour ${employee.name}.`
+        : "Paiement employe pret.",
+    );
+    setPaymentModalOpen(true);
+  }
+
+  async function handleEmployeeSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!businessSlug) return;
+
+    if (!name.trim()) {
+      setError("Le nom de l'employe est obligatoire.");
+      return;
+    }
+
+    const parsedSalary = salaryAmount.trim().length > 0 ? Number(salaryAmount) : 0;
+    if (!Number.isFinite(parsedSalary) || parsedSalary < 0) {
+      setError("Salaire invalide.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setInfo("");
+
+    try {
+      if (editingId) {
+        await updateEmployee(businessSlug, editingId, {
+          name: name.trim(),
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
+          jobTitle: jobTitle.trim() || undefined,
+          salaryAmount: parsedSalary,
+          salaryCurrency: salaryCurrency.trim() || undefined,
+          payFrequency,
+          hiredAt: hiredAt || undefined,
+          isActive,
+          notes: notes.trim() || undefined,
+        });
+        setInfo("Employe mis a jour.");
+      } else {
+        await createEmployee(businessSlug, {
+          name: name.trim(),
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
+          jobTitle: jobTitle.trim() || undefined,
+          salaryAmount: parsedSalary,
+          salaryCurrency: salaryCurrency.trim() || undefined,
+          payFrequency,
+          hiredAt: hiredAt || undefined,
+          isActive,
+          notes: notes.trim() || undefined,
+        });
+        setInfo("Employe ajoute.");
+      }
+
+      resetEmployeeForm();
+      setEmployeeModalOpen(false);
+      setPage(1);
+      setReloadSeq((prev) => prev + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function beginEdit(item: EmployeeItem) {
+    setEditingId(item.id);
+    setName(item.name);
+    setEmail(item.email ?? "");
+    setPhone(item.phone ?? "");
+    setJobTitle(item.jobTitle ?? "");
+    setSalaryAmount(String(item.salaryAmount ?? 0));
+    setSalaryCurrency(item.salaryCurrency ?? "");
+    setPayFrequency(
+      item.payFrequency === "monthly" ||
+        item.payFrequency === "biweekly" ||
+        item.payFrequency === "weekly" ||
+        item.payFrequency === "hourly"
+        ? item.payFrequency
+        : "monthly",
+    );
+    setHiredAt(item.hiredAt ?? "");
+    setIsActive(item.isActive);
+    setNotes(item.notes ?? "");
+    setError("");
+    setInfo("");
+    setEmployeeModalOpen(true);
+  }
+
+  async function handleDelete(item: EmployeeItem) {
+    if (!businessSlug) return;
+    if (!window.confirm(`Supprimer ${item.name} ?`)) return;
+
+    setBusyId(item.id);
+    setError("");
+    setInfo("");
+
+    try {
+      await deleteEmployee(businessSlug, item.id);
+      setInfo("Employe supprime.");
+      setReloadSeq((prev) => prev + 1);
+      if (selectedEmployeeId === item.id) {
+        setSelectedEmployeeId("");
+      }
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function handlePaymentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!businessSlug || !selectedEmployeeId) return;
+
+    const amountValue = Number(paymentAmount);
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      setError("Montant de paiement invalide.");
+      return;
+    }
+
+    setPaymentConfirmOpen(true);
+  }
+
+  async function confirmPaymentSubmit() {
+    if (!businessSlug || !selectedEmployeeId) return;
+
+    const amountValue = Number(paymentAmount);
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      setError("Montant de paiement invalide.");
+      setPaymentConfirmOpen(false);
+      return;
+    }
+
+    setPaymentSaving(true);
+    setError("");
+    setInfo("");
+
+    try {
+      await createEmployeePayment(businessSlug, selectedEmployeeId, {
+        amount: amountValue,
+        currency: paymentCurrency.trim() || undefined,
+        paidAt: paymentDate || undefined,
+        method: paymentMethod.trim() || undefined,
+        reference: paymentReference.trim() || undefined,
+        notes: paymentNotes.trim() || undefined,
+      });
+
+      resetPaymentForm();
+      setPaymentConfirmOpen(false);
+      setPaymentModalOpen(false);
+      setInfo("Paiement employe enregistre.");
+      setPaymentReloadSeq((prev) => prev + 1);
+      setReloadSeq((prev) => prev + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setPaymentSaving(false);
+    }
+  }
+
+  function preparePaymentForEmployee(item: EmployeeItem) {
+    openPaymentModal(item);
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            {embedded ? <h2 className="text-2xl font-bold text-slate-900">Employés</h2> : <h1 className="text-2xl font-bold text-slate-900">Employés</h1>}
+            <p className="text-slate-500 mt-1">
+              Gere les employes et enregistre les paiements de salaire.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm text-slate-500">
+              {total} employe(s) | actifs sur page: {activeCount}
+            </div>
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Upload className="h-4 w-4" />
+              Importer
+            </button>
+            <button
+              type="button"
+              onClick={openNewEmployeeModal}
+              className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Nouvel employe
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {error ? (
+        <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </section>
+      ) : null}
+
+      {info ? (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {info}
+        </section>
+      ) : null}
+
+      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_170px_auto] gap-3">
+            <input
+              value={queryInput}
+              onChange={(event) => setQueryInput(event.target.value)}
+              placeholder="Rechercher (nom, email, phone, poste)"
+              className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+            <select
+              value={activeFilter}
+              onChange={(event) => {
+                setActiveFilter(event.target.value as "" | "1" | "0");
+                setPage(1);
+              }}
+              className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="">Tous</option>
+              <option value="1">Actifs</option>
+              <option value="0">Inactifs</option>
+            </select>
+            <button
+              onClick={() => {
+                setQuery(queryInput.trim());
+                setPage(1);
+              }}
+              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Filtrer
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="py-8 text-center text-slate-500">
+              Chargement des employes...
+            </div>
+          ) : items.length === 0 ? (
+            <div className="py-8 text-center text-slate-500">
+              Aucun employe trouve.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1280px] whitespace-nowrap text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                    <th className="py-3 pr-3 font-semibold">Employé</th>
+                    <th className="py-3 pr-3 font-semibold">Poste</th>
+                    <th className="py-3 pr-3 font-semibold">E-mail</th>
+                    <th className="py-3 pr-3 font-semibold">Téléphone</th>
+                    <th className="py-3 pr-3 font-semibold">Embauche</th>
+                    <th className="py-3 pr-3 font-semibold">Salaire</th>
+                    <th className="py-3 pr-3 font-semibold">Fréquence</th>
+                    <th className="py-3 pr-3 font-semibold">Total payé</th>
+                    <th className="py-3 pr-3 font-semibold">Statut</th>
+                    <th className="py-3 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => {
+                    const busy = busyId === item.id;
+                    return (
+                      <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
+                        <td className="py-3 pr-3 font-semibold text-slate-800">{item.name}</td>
+                        <td className="py-3 pr-3 text-slate-600">{item.jobTitle || "-"}</td>
+                        <td className="py-3 pr-3 text-slate-600">{item.email || "-"}</td>
+                        <td className="py-3 pr-3 text-slate-600">{formatPhoneDisplay(item.phone) || "-"}</td>
+                        <td className="py-3 pr-3 text-slate-600">{formatDate(item.hiredAt)}</td>
+                        <td className="py-3 pr-3 text-slate-700">
+                          {formatMoney(item.salaryAmount, item.salaryCurrency)}
+                        </td>
+                        <td className="py-3 pr-3 text-slate-600">{PAY_FREQUENCY_LABELS[item.payFrequency] ?? item.payFrequency}</td>
+                        <td className="py-3 pr-3 text-slate-700">
+                          {formatMoney(item.totalPaidAmount, item.salaryCurrency)}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <span
+                            className={
+                              item.isActive
+                                ? "inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700"
+                                : "inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"
+                            }
+                          >
+                            {item.isActive ? "Actif" : "Inactif"}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => { setSelectedEmployeeId(item.id); document.getElementById("employee-payments")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} title="Détail de l’employé" aria-label={`Détail de ${item.name}`} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                              <i className="fa-solid fa-eye" aria-hidden="true" />
+                            </button>
+                            <button
+                              onClick={() => beginEdit(item)}
+                              disabled={busy}
+                              title="Modifier"
+                              aria-label="Modifier"
+                              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            >
+                              <i className="fa-solid fa-pen-to-square" aria-hidden="true" />
+                            </button>
+                            <button
+                              onClick={() => preparePaymentForEmployee(item)}
+                              disabled={busy}
+                              title="Ajouter paiement"
+                              aria-label="Ajouter paiement"
+                              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            >
+                              <i className="fa-solid fa-money-check-dollar" aria-hidden="true" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                void handleDelete(item);
+                              }}
+                              disabled={busy}
+                              title="Supprimer"
+                              aria-label="Supprimer"
+                              className="rounded-lg border border-rose-300 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                            >
+                              <i className="fa-solid fa-trash" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-slate-500">
+              Page {page}/{Math.max(1, lastPage)}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page <= 1 || loading}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Precedent
+              </button>
+              <button
+                onClick={() => setPage((prev) => Math.min(lastPage, prev + 1))}
+                disabled={page >= lastPage || loading}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Suivant
+              </button>
+            </div>
+          </div>
+      </section>
+
+      <section id="employee-payments" className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 scroll-mt-24">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-bold text-slate-900">
+              Historique paiements
+              {selectedEmployee ? ` - ${selectedEmployee.name}` : ""}
+            </h2>
+            <div className="flex flex-wrap items-center gap-3">
+              {selectedEmployee ? (
+                <div className="text-xs text-slate-500">
+                  Embauche: {formatDate(selectedEmployee.hiredAt)}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => openPaymentModal()}
+                disabled={!selectedEmployeeId}
+                className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Ajouter paiement
+              </button>
+            </div>
+          </div>
+
+          {paymentLoading ? (
+            <div className="py-8 text-center text-slate-500">
+              Chargement des paiements...
+            </div>
+          ) : paymentItems.length === 0 ? (
+            <div className="py-8 text-center text-slate-500">
+              Aucun paiement pour cet employe.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b">
+                    <th className="py-3 pr-3 font-semibold">Date</th>
+                    <th className="py-3 pr-3 font-semibold">Montant</th>
+                    <th className="py-3 pr-3 font-semibold">Methode</th>
+                    <th className="py-3 pr-3 font-semibold">Reference</th>
+                    <th className="py-3 font-semibold">Par</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentItems.map((item) => (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="py-3 pr-3 text-slate-700">{formatDate(item.paidAt)}</td>
+                      <td className="py-3 pr-3 text-slate-800 font-semibold">
+                        {formatMoney(item.amount, item.currency)}
+                      </td>
+                      <td className="py-3 pr-3 text-slate-600">{item.method || "-"}</td>
+                      <td className="py-3 pr-3 text-slate-600">{item.reference || "-"}</td>
+                      <td className="py-3 text-slate-600">{item.recordedByName || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </section>
+
+      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+          <h2 className="font-bold text-slate-900">
+            Deductions
+            {selectedEmployee ? ` - ${selectedEmployee.name}` : ""}
+          </h2>
+
+          {!selectedEmployeeId ? (
+            <div className="py-4 text-center text-slate-500">Selectionnez un employe.</div>
+          ) : (
+            <>
+              <form onSubmit={onAddDeduction} className="flex flex-wrap items-end gap-3">
+                <label className="space-y-0.5 text-xs">
+                  <span className="text-slate-500">Libelle</span>
+                  <input
+                    type="text"
+                    required
+                    value={deductionLabel}
+                    onChange={(e) => setDeductionLabel(e.target.value)}
+                    placeholder="Assurance, avance..."
+                    className="block w-48 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  />
+                </label>
+                <label className="space-y-0.5 text-xs">
+                  <span className="text-slate-500">Type</span>
+                  <select
+                    value={deductionType}
+                    onChange={(e) => setDeductionType(e.target.value === "percent" ? "percent" : "fixed")}
+                    className="block w-32 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  >
+                    <option value="fixed">Montant fixe</option>
+                    <option value="percent">Pourcentage</option>
+                  </select>
+                </label>
+                <label className="space-y-0.5 text-xs">
+                  <span className="text-slate-500">{deductionType === "percent" ? "Taux (%)" : "Montant"}</span>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    step="0.01"
+                    value={deductionAmount}
+                    onChange={(e) => setDeductionAmount(e.target.value)}
+                    className="block w-32 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={deductionSaving}
+                  className="rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Ajouter
+                </button>
+              </form>
+
+              {deductionLoading ? (
+                <div className="py-4 text-center text-slate-500">Chargement...</div>
+              ) : deductionItems.length === 0 ? (
+                <div className="py-4 text-center text-slate-500">Aucune deduction configuree.</div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {deductionItems.map((d) => (
+                    <li key={d.id} className="flex items-center justify-between py-2 text-sm">
+                      <span className="text-slate-700">
+                        {d.label} — {d.type === "percent" ? `${d.amount}%` : formatMoney(d.amount, selectedEmployee?.salaryCurrency ?? null)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteDeduction(d.id)}
+                        className="text-xs font-semibold text-rose-600 hover:text-rose-800"
+                      >
+                        Retirer
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+      </section>
+
+      {employeeModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={closeEmployeeModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={editingId ? "Modifier employe" : "Nouvel employe"}
+            className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h2 className="font-bold text-slate-900">
+                {editingId ? "Modifier employe" : "Nouvel employe"}
+              </h2>
+              <button
+                type="button"
+                onClick={closeEmployeeModal}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleEmployeeSubmit}
+              className="max-h-[85vh] overflow-y-auto p-5 space-y-3"
+            >
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Nom *"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <input
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="Email"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <PhoneField value={phone} onChange={setPhone} />
+
+              <input
+                value={jobTitle}
+                onChange={(event) => setJobTitle(event.target.value)}
+                placeholder="Poste"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={salaryAmount}
+                  onChange={(event) => setSalaryAmount(event.target.value)}
+                  placeholder="Salaire"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                <input
+                  value={salaryCurrency}
+                  onChange={(event) => setSalaryCurrency(event.target.value.toUpperCase())}
+                  placeholder="Devise"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={payFrequency}
+                  onChange={(event) =>
+                    setPayFrequency(
+                      event.target.value as "monthly" | "biweekly" | "weekly" | "hourly",
+                    )
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                >
+                  {PAY_FREQUENCIES.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={hiredAt}
+                  onChange={(event) => setHiredAt(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isActive}
+                  onChange={(event) => setIsActive(event.target.checked)}
+                />
+                Employe actif
+              </label>
+
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                rows={3}
+                placeholder="Notes"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full rounded-xl brand-primary-btn text-white py-2.5 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving
+                    ? editingId
+                      ? "Mise a jour..."
+                      : "Ajout..."
+                    : editingId
+                      ? "Mettre a jour"
+                      : "Ajouter"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeEmployeeModal}
+                  disabled={saving}
+                  className="cancel-default w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {editingId ? "Annuler modification" : "Annuler"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {paymentModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={closePaymentModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Paiement employe"
+            className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 className="font-bold text-slate-900">Paiement employe</h2>
+                {selectedEmployee ? (
+                  <div className="mt-1 text-xs text-slate-500">{selectedEmployee.name}</div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={closePaymentModal}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <form
+              onSubmit={handlePaymentSubmit}
+              className="max-h-[85vh] overflow-y-auto p-5 space-y-3"
+            >
+              <select
+                value={selectedEmployeeId}
+                onChange={(event) => {
+                  const nextEmployeeId = event.target.value;
+                  const nextEmployee =
+                    items.find((item) => item.id === nextEmployeeId) ?? null;
+                  const defaults = getEmployeePaymentDefaults(nextEmployee);
+
+                  setSelectedEmployeeId(nextEmployeeId);
+                  setPaymentAmount(defaults.amount);
+                  setPaymentCurrency(defaults.currency);
+                }}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option value="">Selectionner un employe</option>
+                {items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                ref={paymentAmountInputRef}
+                type="number"
+                min="0"
+                step="0.01"
+                value={paymentAmount}
+                onChange={(event) => setPaymentAmount(event.target.value)}
+                placeholder="Montant *"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={paymentCurrency}
+                  onChange={(event) => setPaymentCurrency(event.target.value.toUpperCase())}
+                  placeholder="Devise"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={(event) => setPaymentDate(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <input
+                value={paymentMethod}
+                onChange={(event) => setPaymentMethod(event.target.value)}
+                placeholder="Methode (cash, bank, mobile...)"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <input
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.target.value)}
+                placeholder="Reference"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <textarea
+                value={paymentNotes}
+                onChange={(event) => setPaymentNotes(event.target.value)}
+                rows={3}
+                placeholder="Notes"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="submit"
+                  disabled={paymentSaving || !selectedEmployeeId}
+                  className="w-full rounded-xl brand-primary-btn text-white py-2.5 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {paymentSaving ? "Enregistrement..." : "Enregistrer paiement"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  disabled={paymentSaving}
+                  className="cancel-default w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {paymentConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 p-4"
+          onClick={closePaymentConfirmModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirmer le paiement employe"
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="font-bold text-slate-900">Confirmation</h2>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <p className="text-sm text-slate-700">
+                Voulez-vous enregistrer ce paiement pour{" "}
+                <span className="font-semibold text-slate-900">
+                  {selectedEmployee?.name || "cet employe"}
+                </span>{" "}
+                ?
+              </p>
+              <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                Montant:{" "}
+                <span className="font-semibold text-slate-900">
+                  {formatMoney(Number(paymentAmount || 0), paymentCurrency || selectedEmployee?.salaryCurrency || "USD")}
+                </span>
+                {paymentMethod.trim() ? ` | Methode: ${paymentMethod.trim()}` : ""}
+                {paymentDate ? ` | Date: ${formatDate(paymentDate)}` : ""}
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void confirmPaymentSubmit();
+                  }}
+                  disabled={paymentSaving}
+                  className="w-full rounded-xl brand-primary-btn py-2.5 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {paymentSaving ? "Enregistrement..." : "Oui"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePaymentConfirmModal}
+                  disabled={paymentSaving}
+                  className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Non
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {businessSlug ? (
+        <ImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          business={businessSlug}
+          entityPath="employees"
+          title="Importer des employes"
+          templateFilename="modele_employes.csv"
+          columnsHelp={EMPLOYEE_IMPORT_COLUMNS}
+          onImported={() => setReloadSeq((n) => n + 1)}
+        />
+      ) : null}
+    </div>
+  );
+}

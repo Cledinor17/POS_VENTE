@@ -1,60 +1,23 @@
-"use client";
+﻿import type { Metadata } from "next";
+import PublicLandingPage from "@/components/landing/PublicLandingPage";
+import { loadMobileDownloads, mobileDownloadCards } from "@/lib/mobileDownloadsServer";
+import "@/components/landing/landing.css";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { RequireAuth } from "@/components/RequireAuth";
-import { useAuth } from "@/context/AuthContext";
-import { logout } from "@/lib/authApi";
+export const metadata: Metadata = {
+  title: "NovaGest — Gérez, vendez et développez votre activité",
+  description: "Plateforme cloud et hors-ligne de caisse, stock et gestion conçue pour les commerces, restaurants et entreprises d’Haïti et des Caraïbes.",
+};
 
-export default function AppLandingPage() {
-  const router = useRouter();
-  const { activeBusiness, businesses, loading, clear } = useAuth();
-
-  useEffect(() => {
-    if (loading) return;
-
-    const slug = activeBusiness?.slug || businesses[0]?.slug;
-    if (!slug) {
-      router.replace("/onboarding/business");
-      return;
-    }
-
-    router.replace(`/${slug}/dashboard`);
-  }, [activeBusiness, businesses, loading, router]);
-
-  async function onLogout() {
-    try {
-      await logout();
-    } finally {
-      clear();
-      router.replace("/login");
-    }
-  }
-
-  const slug = activeBusiness?.slug || businesses[0]?.slug;
-
+export default async function HomePage() {
+  const mobileDownloads = mobileDownloadCards(await loadMobileDownloads());
   return (
-    <RequireAuth>
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          {slug ? (
-            <p className="text-slate-700">Redirection en cours...</p>
-          ) : (
-            <div className="space-y-4">
-              <h1 className="text-xl font-semibold text-slate-900">Preparation de votre espace</h1>
-              <p className="text-slate-600">
-                Votre compte est authentifie. Redirection vers la creation de votre business...
-              </p>
-              <button
-                className="rounded-xl border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-50"
-                onClick={onLogout}
-              >
-                Logout
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </RequireAuth>
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      {/* These fonts belong only to the supplied public landing design. */}
+      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" />
+      <PublicLandingPage mobileDownloads={mobileDownloads} />
+    </>
   );
 }

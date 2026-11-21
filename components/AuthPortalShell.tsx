@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Languages } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useAppLocale } from "@/context/LocaleContext";
@@ -30,7 +31,8 @@ export default function AuthPortalShell({
 
   return (
     <div className="min-h-[100dvh] w-full bg-[linear-gradient(135deg,#f8fafc_0%,#eef2f7_55%,#fff7ed_100%)]">
-      <div className="flex items-center justify-end gap-2 border-b border-slate-200/70 bg-white/90 px-5 py-2.5 backdrop-blur sm:px-8">
+      <div className="flex items-center gap-2 border-b border-slate-200/70 bg-white/90 px-5 py-2.5 backdrop-blur sm:px-8">
+        <Link href="/" className="mr-auto text-sm font-medium text-slate-600 hover:text-slate-900">← Accueil</Link>
         <Languages className="h-4 w-4 shrink-0 text-slate-500" />
         <select
           value={locale}

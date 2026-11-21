@@ -1,5 +1,6 @@
 import { apiFetch, setToken } from "./api";
 import { assertImageSize } from "./imageUpload";
+import type { AddressValue } from "@/components/AddressFields";
 import type {
   AuthUser,
   BusinessSummary,
@@ -50,6 +51,7 @@ export async function registerAccount(input: {
   email: string;
   password: string;
   passwordConfirmation: string;
+  address?: AddressValue;
 }): Promise<RegistrationStartResponse> {
   return apiFetch<RegistrationStartResponse>("/api/auth/register", {
     method: "POST",
@@ -58,6 +60,7 @@ export async function registerAccount(input: {
       email: input.email,
       password: input.password,
       password_confirmation: input.passwordConfirmation,
+      address: input.address,
     },
   });
 }

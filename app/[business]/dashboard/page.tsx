@@ -410,12 +410,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-blue-200 bg-gradient-to-r from-[#0b4f88] via-[#0d63b8] to-[#f59e0b] p-5 text-white shadow-sm">
+      <section className="rounded-3xl border border-blue-200 bg-gradient-to-r from-[#0b4f88] via-[#0d63b8] to-[#9a4b00] p-5 text-white shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">{t("title")}</h1>
-            <p className="mt-1 text-sm text-slate-200">{t("subtitle")}</p>
-            <p className="mt-2 text-xs text-slate-300">
+            <p className="mt-1 text-sm text-white">{t("subtitle")}</p>
+            <p className="mt-2 text-xs text-white">
               {t("last_update", {
                 value: lastUpdatedAt ? parseDate(lastUpdatedAt)?.toLocaleString(locale) ?? "" : t("last_update_pending"),
               })}

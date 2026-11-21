@@ -66,6 +66,9 @@ export const BUSINESS_TYPES = [
 export type BusinessType = (typeof BUSINESS_TYPES)[number];
 
 type BusinessMultipartPayload = {
+  backup_name?: string;
+  backup_password?: string;
+  backup_password_confirmation?: string;
   name?: string;
   slug?: string;
   legal_name?: string;
@@ -95,10 +98,20 @@ type BusinessMultipartPayload = {
   logoFile?: File | null;
 };
 
+// Cocher "pre-remplir mon catalogue" a la creation : le backend cree les
+// categories et produits types de l'activite choisie. Absent ou faux => rien
+// n'est cree, comme avant.
+type SeedCatalogPayload = {
+  seed_catalog?: boolean;
+};
+
 type BusinessSettingsPayload = BusinessMultipartPayload;
 
-export type CreateBusinessInput = BusinessMultipartPayload & {
+export type CreateBusinessInput = BusinessMultipartPayload & SeedCatalogPayload & {
   name: string;
+  backup_name: string;
+  backup_password: string;
+  backup_password_confirmation: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -157,11 +170,12 @@ function normalizeBusiness(raw: unknown): BusinessSettings {
   };
 }
 
-function buildBusinessFormData(payload: BusinessMultipartPayload): FormData {
+function buildBusinessFormData(payload: BusinessMultipartPayload & SeedCatalogPayload): FormData {
   const formData = new FormData();
   const address = payload.address ?? {};
 
   const scalarKeys: Array<keyof BusinessSettingsPayload> = [
+    "backup_name", "backup_password", "backup_password_confirmation",
     "name",
     "slug",
     "legal_name",
@@ -189,6 +203,13 @@ function buildBusinessFormData(payload: BusinessMultipartPayload): FormData {
     if (payload[key] !== undefined) {
       formData.append(key, payload[key] ? "1" : "0");
     }
+  }
+
+  // Seule la creation l'envoie ; les mises a jour de parametres ne portent
+  // pas ce champ, d'ou le test explicite plutot qu'une cle de boolKeys.
+  const seedCatalog = (payload as SeedCatalogPayload).seed_catalog;
+  if (seedCatalog !== undefined) {
+    formData.append("seed_catalog", seedCatalog ? "1" : "0");
   }
 
   for (const key of scalarKeys) {
@@ -265,6 +286,29 @@ export async function updateBusinessSettings(
 
   const body = asRecord(raw);
   return normalizeBusiness(body.data ?? body);
+}
+
+export type CatalogPresetCounts = {
+  categories: number;
+  products: number;
+};
+
+// Ce que la case "pre-remplir mon catalogue" creera, par type d'activite.
+// Route publique : le formulaire l'interroge avant que le business existe.
+export async function getCatalogPresets(): Promise<Record<string, CatalogPresetCounts>> {
+  const raw = await apiFetch<{ data: unknown }>("/api/catalog-presets");
+  const data = asRecord(raw.data);
+  const counts: Record<string, CatalogPresetCounts> = {};
+
+  for (const [type, value] of Object.entries(data)) {
+    const entry = asRecord(value);
+    counts[type] = {
+      categories: Number(entry.categories) || 0,
+      products: Number(entry.products) || 0,
+    };
+  }
+
+  return counts;
 }
 
 export async function getPosSettings(business: string): Promise<BusinessSettings> {

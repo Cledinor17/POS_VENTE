@@ -2,7 +2,7 @@
 import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Ban, Eye, Printer, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
+import { Printer, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
 import SensitiveActionApprovalModal, {
   type SensitiveActionApproval,
 } from "@/components/SensitiveActionApprovalModal";
@@ -690,121 +690,71 @@ export default function SalesPage() {
             Aucun ticket trouve.
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {" "}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1400px] whitespace-nowrap text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th scope="col" className="px-4 py-3 font-semibold">Reçu</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Date et heure</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Client</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Caissier</th>
+                  <th scope="col" className="px-4 py-3 text-right font-semibold">Total</th>
+                  <th scope="col" className="px-4 py-3 text-right font-semibold">Payé</th>
+                  <th scope="col" className="px-4 py-3 text-right font-semibold">Solde</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Paiement</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Statut</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
             {items.map((sale) => {
               const statusMeta = getStatusMeta(sale.status);
               const isBusy = actionLoadingId === sale.id;
               return (
-                <article key={sale.id} className="p-4 space-y-3">
-                  {" "}
-                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                    {" "}
-                    <div>
-                      {" "}
-                      <div className="text-sm font-bold text-slate-900">
-                        {sale.receiptNo}
-                      </div>{" "}
-                      <div className="text-xs text-slate-500">
-                        {" "}
-                        {new Date(sale.createdAt).toLocaleString(
-                          "fr-FR",
-                        )} - {sale.customerName} - Caisse:{" "}
-                        {formatActor(sale.createdByName, sale.createdBy)}{" "}
-                      </div>{" "}
-                    </div>{" "}
+                <tr key={sale.id} className="hover:bg-slate-50/70">
+                  <td className="px-4 py-3 font-bold text-slate-900">{sale.receiptNo}</td>
+                  <td className="px-4 py-3 text-slate-500">{new Date(sale.createdAt).toLocaleString("fr-FR")}</td>
+                  <td className="px-4 py-3 text-slate-700">{sale.customerName}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatActor(sale.createdByName, sale.createdBy)}</td>
+                  <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800">{formatMoney(sale.total, sale.currency)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-slate-700">{formatMoney(sale.amountPaid, sale.currency)}</td>
+                  <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800">{formatMoney(sale.balanceDue, sale.currency)}</td>
+                  <td className="px-4 py-3 text-slate-700">{formatPaymentMethod(sale.paymentMethod)}</td>
+                  <td className="px-4 py-3">
                     <span
-                      className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusMeta.className}`}
+                      className={`inline-flex text-xs font-semibold px-2.5 py-1 rounded-full ${statusMeta.className}`}
                     >
-                      {" "}
-                      {statusMeta.label}{" "}
-                    </span>{" "}
-                  </div>{" "}
-                  <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
-                    {" "}
-                    <div>
-                      {" "}
-                      <div className="text-xs text-slate-500">
-                        Articles
-                      </div>{" "}
-                      <div className="font-semibold text-slate-800">
-                        {sale.itemsCount}
-                      </div>{" "}
-                    </div>{" "}
-                    <div>
-                      {" "}
-                      <div className="text-xs text-slate-500">Total</div>{" "}
-                      <div className="font-semibold text-slate-800">
-                        {formatMoney(sale.total, sale.currency)}
-                      </div>{" "}
-                    </div>{" "}
-                    <div>
-                      {" "}
-                      <div className="text-xs text-slate-500">Paye</div>{" "}
-                      <div className="font-semibold text-slate-800">
-                        {formatMoney(sale.amountPaid, sale.currency)}
-                      </div>{" "}
-                    </div>{" "}
-                    <div>
-                      {" "}
-                      <div className="text-xs text-slate-500">Solde</div>{" "}
-                      <div className="font-semibold text-slate-800">
-                        {formatMoney(sale.balanceDue, sale.currency)}
-                      </div>{" "}
-                    </div>{" "}
-                    <div>
-                      {" "}
-                      <div className="text-xs text-slate-500">
-                        Paiement
-                      </div>{" "}
-                      <div className="font-semibold text-slate-800">
-                        {formatPaymentMethod(sale.paymentMethod)}
-                      </div>{" "}
-                    </div>{" "}
-                    <div className="flex flex-wrap items-end gap-2 justify-start md:justify-end">
-                      {" "}
-                      <button
-                        onClick={() => void reprintSale(sale.id)}
-                        disabled={printLoadingId !== null || isBusy}
-                        aria-label={`Réimprimer le ticket ${sale.receiptNo}`}
-                        className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                      >
-                        <Printer className="h-3.5 w-3.5" />
-                        {printLoadingId === sale.id ? "Preparation..." : "Réimprimer"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          void openSaleDetail(sale.id);
-                        }}
-                        disabled={detailLoadingId === sale.id || isBusy}
-                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                      >
-                        {" "}
-                        <Eye className="h-3.5 w-3.5" /> Detail{" "}
-                      </button>{" "}
-                      <button
-                        onClick={() => openRefundSale(sale)}
-                        disabled={!sale.canRefund || isBusy}
-                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {" "}
-                        Rembourser{" "}
-                      </button>{" "}
-                      <button
-                        onClick={() => {
-                          void handleVoidSale(sale);
-                        }}
-                        disabled={!sale.canVoid || isBusy}
-                        className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                      >
-                        {" "}
-                        <Ban className="h-3.5 w-3.5" /> Annuler{" "}
-                      </button>{" "}
-                    </div>{" "}
-                  </div>{" "}
-                </article>
+                      {statusMeta.label}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select
+                      value=""
+                      disabled={isBusy}
+                      aria-label={`Actions du ticket ${sale.receiptNo}`}
+                      onChange={(event) => {
+                        const action = event.currentTarget.value;
+                        event.currentTarget.value = "";
+                        if (isBusy) return;
+                        if (action === "print" && printLoadingId === null) void reprintSale(sale.id);
+                        if (action === "detail" && detailLoadingId !== sale.id) void openSaleDetail(sale.id);
+                        if (action === "refund" && sale.canRefund) openRefundSale(sale);
+                        if (action === "void" && sale.canVoid) void handleVoidSale(sale);
+                      }}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="" disabled>{isBusy ? "Traitement…" : printLoadingId === sale.id ? "Préparation…" : detailLoadingId === sale.id ? "Chargement…" : "Actions"}</option>
+                      <option value="print" disabled={printLoadingId !== null}>Réimprimer</option>
+                      <option value="detail" disabled={detailLoadingId === sale.id}>Détail</option>
+                      <option value="refund" disabled={!sale.canRefund}>Rembourser</option>
+                      <option value="void" disabled={!sale.canVoid}>Annuler</option>
+                    </select>
+                  </td>
+                </tr>
               );
-            })}{" "}
+            })}
+              </tbody>
+            </table>
           </div>
         )}{" "}
         <div className="px-4 py-3 border-t flex items-center justify-between">

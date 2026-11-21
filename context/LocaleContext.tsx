@@ -12,8 +12,18 @@ import ht from "@/messages/ht.json";
 import es from "@/messages/es.json";
 import zh from "@/messages/zh.json";
 import ar from "@/messages/ar.json";
+import landingFr from "@/messages/landing/fr.json";
+import landingEn from "@/messages/landing/en.json";
+import landingHt from "@/messages/landing/ht.json";
+import landingEs from "@/messages/landing/es.json";
+import landingZh from "@/messages/landing/zh.json";
+import landingAr from "@/messages/landing/ar.json";
 
-const MESSAGES: Record<Locale, Record<string, unknown>> = { fr, en, ht, es, zh, ar };
+const MESSAGES: Record<Locale, Record<string, unknown>> = {
+  fr: { ...fr, landing: landingFr }, en: { ...en, landing: landingEn },
+  ht: { ...ht, landing: landingHt }, es: { ...es, landing: landingEs },
+  zh: { ...zh, landing: landingZh }, ar: { ...ar, landing: landingAr },
+};
 
 type LocaleContextValue = {
   locale: Locale;

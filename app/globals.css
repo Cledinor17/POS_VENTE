@@ -112,3 +112,45 @@ button.border-slate-300.text-slate-700:not(.cancel-default):disabled {
   box-shadow: none;
   transform: none;
 }
+
+/* Management UI only: retain the existing palette, layout and print sizing. */
+@media screen {
+  .app-accessible-ui :is(
+    .text-\[8px\], .text-\[9px\], .text-\[10px\], .text-\[11px\]
+  ) {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .app-accessible-ui :is(button, input[type="button"], input[type="submit"], [role="button"]),
+  .app-accessible-ui nav a,
+  .app-accessible-ui a[class*="rounded"][class*="px-"] {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+
+  .app-accessible-ui :is(.text-slate-400, .text-gray-400) {
+    color: #475569;
+  }
+
+  .app-accessible-ui :is(input, textarea)::placeholder {
+    color: #475569;
+    opacity: 1;
+  }
+
+  .app-accessible-ui :is(
+    .brand-secondary-btn,
+    .bg-\[\#f59e0b\].text-white,
+    .bg-amber-500.text-white,
+    button.bg-orange-500
+  ) {
+    color: #0f172a;
+  }
+
+  .app-accessible-ui :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid #0a4d8f !important;
+    outline-offset: 3px;
+    /* The white inner ring keeps focus visible on dark/blue surfaces too. */
+    box-shadow: 0 0 0 2px #ffffff !important;
+  }
+}

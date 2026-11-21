@@ -2,14 +2,17 @@
 import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Upload } from "lucide-react";
+import { Gift, Plus, Search, Star, Upload } from "lucide-react";
 import IdentityDocumentField from "@/components/IdentityDocumentField";
 import ImportModal, { type ImportColumnHelp } from "@/components/ImportModal";
 import PhoneField from "@/components/PhoneField";
 import { hasPermission } from "@/lib/businessAccess";
 import { getErrorMessage } from "@/lib/errors";
 import { formatPhoneDisplay } from "@/lib/phone";
+import { formatMoney } from "@/lib/currency";
+import { getArSummary, type ArSummaryResult } from "@/lib/reportsApi";
 import {
   createCustomer,
   extractCustomerIdentityDocument,
@@ -199,11 +202,37 @@ export default function CustomersPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [formStep, setFormStep] = useState(0);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [creditSummary, setCreditSummary] = useState<{ business: string; data: ArSummaryResult } | null>(null);
+  const [creditError, setCreditError] = useState(false);
   const canReadCustomers = hasPermission(currentPermissions, ["customers.read", "customers.manage"]);
   const canCreateCustomers = hasPermission(currentPermissions, ["customers.create", "customers.manage"]);
   const canEditCustomers = hasPermission(currentPermissions, ["customers.edit", "customers.manage"]);
   const hasCustomerAccess = canReadCustomers || canCreateCustomers || canEditCustomers;
   const isCustomersReadOnly = canReadCustomers && !canCreateCustomers && !canEditCustomers;
+  const canReadCredit = canReadCustomers && hasPermission(currentPermissions, "reports.read");
+  const canReadLoyaltySettings = hasCustomerAccess && hasPermission(currentPermissions, "business.read");
+  const visibleCredit = canReadCredit && creditSummary?.business === businessSlug ? creditSummary.data : null;
+  const creditByCustomer = useMemo(
+    () => new Map(visibleCredit?.rows.map((row) => [row.customerId, row.balance]) ?? []),
+    [visibleCredit],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadCredit() {
+      if (!businessSlug || permissionsLoading || !canReadCredit) return;
+      setCreditSummary(null);
+      setCreditError(false);
+      try {
+        const data = await getArSummary(businessSlug);
+        if (mounted) setCreditSummary({ business: businessSlug, data });
+      } catch {
+        if (mounted) setCreditError(true);
+      }
+    }
+    void loadCredit();
+    return () => { mounted = false; };
+  }, [businessSlug, canReadCredit, permissionsLoading]);
 
   useEffect(() => {
     let mounted = true;
@@ -503,28 +532,69 @@ export default function CustomersPage() {
             <div className="text-sm text-slate-500">
               {t("count_summary", { total, active: activeCount })}
             </div>
-            {canCreateCustomers ? (
-              <button
-                type="button"
-                onClick={() => setImportOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                <Upload className="h-4 w-4" />
-                Importer
-              </button>
-            ) : null}
-            {canCreateCustomers ? (
-              <button
-                type="button"
-                onClick={openCreateModal}
-                className="rounded-xl brand-primary-btn px-4 py-2 text-sm font-semibold text-white"
-              >
-                {t("new_customer")}
-              </button>
-            ) : null}
           </div>
         </div>
       </section>
+      {hasCustomerAccess ? (
+        <section aria-label={t("reference.toolbar")} className="flex flex-wrap items-center gap-3">
+          {canReadCustomers ? (
+            <form
+              className="flex min-w-0 flex-1 flex-wrap items-center gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setQuery(queryInput.trim());
+                setPage(1);
+              }}
+            >
+              <div className="relative min-w-[200px] flex-1">
+                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={queryInput}
+                  onChange={(event) => setQueryInput(event.target.value)}
+                  placeholder={t("search_placeholder")}
+                  aria-label={t("search_placeholder")}
+                  className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <select
+                value={activeFilter}
+                aria-label={t("table_status")}
+                onChange={(event) => {
+                  setActiveFilter(event.target.value as "" | "1" | "0");
+                  setPage(1);
+                }}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">{t("filter_all")}</option>
+                <option value="1">{t("filter_active")}</option>
+                <option value="0">{t("filter_inactive")}</option>
+              </select>
+              <button type="submit" className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                {t("filter_button")}
+              </button>
+            </form>
+          ) : null}
+          {canCreateCustomers ? (
+            <button type="button" onClick={openCreateModal} className="inline-flex items-center gap-2 rounded-xl brand-primary-btn px-4 py-2.5 text-sm font-semibold text-white">
+              <Plus aria-hidden="true" className="h-4 w-4" />
+              {t("new_customer")}
+            </button>
+          ) : null}
+          {canReadLoyaltySettings ? (
+            <Link href={`/${businessSlug}/business#loyalty`} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <Gift aria-hidden="true" className="h-4 w-4 text-orange-500" />
+              {t("reference.loyalty_rules")}
+            </Link>
+          ) : null}
+          {canCreateCustomers ? (
+            <button type="button" onClick={() => setImportOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <Upload aria-hidden="true" className="h-4 w-4" />
+              {t("reference.import")}
+            </button>
+          ) : null}
+        </section>
+      ) : null}
       {!permissionsLoading && !hasCustomerAccess ? (
         <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {t("no_access")}
@@ -930,34 +1000,11 @@ export default function CustomersPage() {
         ) : null}
         {canReadCustomers ? (
           <>
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_170px_auto] gap-3">
-            <input
-              value={queryInput}
-              onChange={(event) => setQueryInput(event.target.value)}
-              placeholder={t("search_placeholder")}
-              className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-            <select
-              value={activeFilter}
-              onChange={(event) => {
-                setActiveFilter(event.target.value as "" | "1" | "0");
-                setPage(1);
-              }}
-              className="rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            >
-              <option value="">{t("filter_all")}</option> <option value="1">{t("filter_active")}</option>
-              <option value="0">{t("filter_inactive")}</option>
-            </select>
-            <button
-              onClick={() => {
-                setQuery(queryInput.trim());
-                setPage(1);
-              }}
-              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              {t("filter_button")}
-            </button>
-          </div>
+          {canReadCredit && creditError ? (
+            <p role="status" className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {t("reference.credit_error")}
+            </p>
+          ) : null}
           {loading ? (
             <div className="py-8 text-center text-slate-500">
               {t("loading")}
@@ -968,12 +1015,15 @@ export default function CustomersPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[1100px] whitespace-nowrap text-sm">
                 <thead>
-                  <tr className="text-left text-slate-500 border-b">
+                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                    <th className="py-3 pr-3 font-semibold">{t("reference.table_code")}</th>
                     <th className="py-3 pr-3 font-semibold">{t("table_customer")}</th>
-                    <th className="py-3 pr-3 font-semibold">{t("table_contact")}</th>
-                    <th className="py-3 pr-3 font-semibold">{t("table_points")}</th>
+                    <th className="py-3 pr-3 font-semibold">{t("reference.table_phone")}</th>
+                    <th className="py-3 pr-3 font-semibold">{t("reference.table_email")}</th>
+                    <th className="py-3 pr-3 font-semibold">{t("reference.table_loyalty")}</th>
+                    <th className="py-3 pr-3 font-semibold">{t("reference.table_credit")}</th>
                     <th className="py-3 pr-3 font-semibold">{t("table_status")}</th>
                     <th className="py-3 font-semibold">{t("table_actions")}</th>
                   </tr>
@@ -981,36 +1031,50 @@ export default function CustomersPage() {
                 <tbody>
                   {items.map((item) => {
                     const busy = busyId === item.id;
+                    const creditBalance = visibleCredit ? creditByCustomer.get(item.id) ?? 0 : null;
                     return (
-                      <tr key={item.id} className="border-b last:border-0">
+                      <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
+                        <td className="py-3 pr-3 font-medium text-slate-600">{item.code || "-"}</td>
                         <td className="py-3 pr-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0d63b8] to-[#f59e0b] text-sm font-bold text-white">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0d63b8] to-[#f59e0b] text-xs font-bold text-white">
                               {getCustomerInitials(item, t("default_customer_name"))}
                             </div>
-                            <div>
-                              <div className="font-semibold text-slate-800">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-800">
                                 {getCustomerDisplayName(item, t("default_customer_name"))}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                {item.companyName || item.code || "-"}
-                              </div>
+                              </span>
+                              {item.companyName && item.companyName !== getCustomerDisplayName(item, t("default_customer_name")) ? (
+                                <span className="text-xs text-slate-500">({item.companyName})</span>
+                              ) : null}
                             </div>
                           </div>
                         </td>
                         <td className="py-3 pr-3 text-slate-600">
-                          <div>{item.email || "-"}</div>
-                          <div className="text-xs">{formatPhoneDisplay(item.phone) || "-"}</div>
+                          {formatPhoneDisplay(item.phone) || "-"}
                         </td>
-                        <td className="py-3 pr-3 text-slate-600">{item.loyaltyPointsBalance}</td>
+                        <td className="py-3 pr-3 text-slate-600">
+                          {item.email || "-"}
+                        </td>
                         <td className="py-3 pr-3">
-                          <span
-                            className={
-                              item.isActive
-                                ? "inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700"
-                                : "inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"
-                            }
-                          >
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                            <Star aria-hidden="true" className="h-3.5 w-3.5 fill-orange-400 text-orange-400" />
+                            {t("reference.points_balance", { count: item.loyaltyPointsBalance })}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-3">
+                          {creditBalance === null ? (
+                            <span className="text-xs text-slate-400" title={!canReadCredit ? t("reference.credit_restricted") : creditError ? t("reference.credit_error") : t("reference.credit_loading")}>
+                              {canReadCredit && !creditError ? "…" : "—"}
+                            </span>
+                          ) : (
+                            <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${creditBalance > 0 ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                              {creditBalance > 0 ? formatMoney(creditBalance, visibleCredit?.currency) : t("reference.credit_clear")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${item.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                             {item.isActive ? t("status_active") : t("status_inactive")}
                           </span>
                         </td>

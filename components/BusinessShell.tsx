@@ -133,7 +133,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
 
   return (
     <RequireAuth>
-      <div className="min-h-screen app-shell-bg">
+      <div className="min-h-screen app-shell-bg app-accessible-ui">
         {/* Sidebar FIXE (desktop) */}
         <aside
           className={`${desktopSidebarOpen ? "hidden md:block" : "hidden md:hidden"} fixed left-0 top-0 z-30 h-screen w-72 app-sidebar-surface`}
