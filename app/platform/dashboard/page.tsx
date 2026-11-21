@@ -61,7 +61,7 @@ function Status({ status }: { status: string }) {
 export default function PlatformDashboard() {
   const router = useRouter();
   const { user, loading: authLoading, clear } = useAuth();
-  const permitted = user?.is_platform_admin === true && Boolean(user.email_verified_at);
+  const permitted = user?.is_platform_admin === true && Boolean(user?.email_verified_at);
 
   const [summary, setSummary] = useState<PlatformSummary | null>(null);
   const [businesses, setBusinesses] = useState<PlatformBusiness[]>([]);

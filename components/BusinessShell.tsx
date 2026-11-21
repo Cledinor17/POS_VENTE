@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import BranchSwitcher from "./BranchSwitcher";
@@ -28,7 +29,7 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
   const params = useParams<{ business: string }>();
   const business = params?.business || "";
 
-  const { user, clear } = useAuth();
+  const { user, businesses, clear } = useAuth();
   const { branches } = useBranch();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
@@ -130,6 +131,22 @@ export default function BusinessShell({ children }: { children: React.ReactNode 
     document
       .getElementById("pos-cart-section")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // Friendly lockout after the API confirms a platform suspension. Enforcement
+  // is still server-side, including for old sessions and direct API clients.
+  if (businesses.some(item => item.slug === business && item.status === "suspended")) {
+    return (
+      <RequireAuth>
+        <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+          <section className="w-full max-w-lg rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-sm">
+            <h1 className="text-2xl font-bold text-slate-900">Entreprise suspendue</h1>
+            <p className="mt-3 text-sm text-slate-600">Les opérations sont temporairement bloquées par l’administration NovaGest. Vos données restent conservées. Contactez le support pour demander une réactivation.</p>
+            <Link href="/" className="mt-6 inline-flex rounded-lg bg-[#0a4d8f] px-5 py-3 font-semibold text-white">Retour à l’accueil</Link>
+          </section>
+        </main>
+      </RequireAuth>
+    );
   }
 
   return (

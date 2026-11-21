@@ -17,7 +17,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npx eslint lib/api.ts lib/offlineAccess.ts lib/brandAssets.ts components/BusinessBrandMetadata.tsx tests/offlineAccess.test.mjs tests/serviceWorkerOffline.test.mjs tests/brandAssets.test.mjs
+      - run: npx eslint lib/api.ts lib/offlineAccess.ts lib/brandAssets.ts lib/platformApi.ts components/BusinessBrandMetadata.tsx app/platform/dashboard/page.tsx tests/offlineAccess.test.mjs tests/serviceWorkerOffline.test.mjs tests/brandAssets.test.mjs tests/platformApi.test.mjs
       # Pre-existing lint errors in unrelated pages are reported separately.
       # They must be addressed before a full lint-clean release.
       - run: npm run lint
