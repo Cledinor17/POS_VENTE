@@ -24,7 +24,7 @@ function workerHarness() {
   };
   runInNewContext(readFileSync(new URL("../public/sw.js", import.meta.url), "utf8"), {
     self, caches, URL, Response,
-    fetch: async (request) => {
+    fetch: async () => {
       if (!connected) throw new TypeError("Network down");
       const response = new Response("POS shell", { status: 200 });
       // Browsers expose same-origin navigation responses as type="basic".
