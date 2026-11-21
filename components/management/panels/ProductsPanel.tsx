@@ -3,7 +3,7 @@ import type { ManagementPanelProps } from "../types";
 import { useSearchFromUrl } from "@/lib/useSearchFromUrl";
 import Link from "next/link";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Ban, Pencil, Power, PowerOff, ScanBarcode, Trash2, Upload } from "lucide-react";
 import { ApiError } from "@/lib/api";
@@ -15,7 +15,7 @@ import {
 import {
   deleteProduct,
   getProduct,
-  getProducts,
+  getProductPage,
   updateProduct,
   type CatalogProduct,
   type ProductStatus,
@@ -83,7 +83,18 @@ export default function ProductsPanel({ active = true, onSelectTab }: Management
   const [allProducts, setAllProducts] = useState<CatalogProduct[]>([]);
   const [query, setQuery] = useState("");
   useSearchFromUrl(setQuery);
+  const [searchQuery, setSearchQuery] = useState("");
   const [status, setStatus] = useState<"all" | ProductStatus>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const requestRef = useRef(0);
+  // Debounce server searches and always return to the first result page.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(query.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  useEffect(() => { setCurrentPage(1); }, [query, status, business]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<string>("");
@@ -100,22 +111,36 @@ export default function ProductsPanel({ active = true, onSelectTab }: Management
   const [barcodeProduct, setBarcodeProduct] = useState<CatalogProduct | null>(null);
   const loadProducts = useCallback(async () => {
     if (!business || permissionsLoading) return;
+    const requestId = ++requestRef.current;
     if (!canReadCatalog) {
       setAllProducts([]);
+      setTotalProducts(0);
       setLoading(false);
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const items = await getProducts(business);
-      setAllProducts(items);
+      const result = await getProductPage(business, {
+        page: currentPage,
+        perPage: 10,
+        q: searchQuery,
+        status,
+      });
+      if (requestId !== requestRef.current) return;
+      if (currentPage > result.lastPage) {
+        setCurrentPage(result.lastPage);
+        return;
+      }
+      setAllProducts(result.items);
+      setLastPage(result.lastPage);
+      setTotalProducts(result.total);
     } catch (e) {
-      setError(getErrorMessage(e));
+      if (requestId === requestRef.current) setError(getErrorMessage(e));
     } finally {
-      setLoading(false);
+      if (requestId === requestRef.current) setLoading(false);
     }
-  }, [business, canReadCatalog, permissionsLoading]);
+  }, [business, canReadCatalog, currentPage, permissionsLoading, searchQuery, status]);
   useEffect(() => {
     if (active) void loadProducts();
   }, [loadProducts, active]);
@@ -137,6 +162,8 @@ export default function ProductsPanel({ active = true, onSelectTab }: Management
       setAllProducts((prev) =>
         prev.filter((product) => String(product.id) !== id),
       );
+      if (allProducts.length === 1 && currentPage > 1) setCurrentPage(currentPage - 1);
+      else void loadProducts();
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -163,24 +190,15 @@ export default function ProductsPanel({ active = true, onSelectTab }: Management
       setAllProducts((prev) =>
         prev.map((product) => (String(product.id) === id ? updated : product)),
       );
+      void loadProducts();
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
       setUpdatingId("");
     }
   }
-  const products = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return allProducts.filter((item) => {
-      const matchQuery =
-        normalized.length === 0 ||
-        item.name.toLowerCase().includes(normalized) ||
-        item.sku.toLowerCase().includes(normalized) ||
-        item.category.toLowerCase().includes(normalized);
-      const matchStatus = status === "all" || item.status === status;
-      return matchQuery && matchStatus;
-    });
-  }, [allProducts, query, status]);
+  // Search and status filtering are performed by Laravel before pagination.
+  const products = allProducts;
   const lowStockCount = allProducts.filter(
     (item) => item.stock > 0 && item.stock <= 10,
   ).length;
@@ -237,7 +255,7 @@ export default function ProductsPanel({ active = true, onSelectTab }: Management
           title="Importer des produits"
           templateFilename="modele_produits.csv"
           columnsHelp={PRODUCT_IMPORT_COLUMNS}
-          onImported={() => void loadProducts()}
+          onImported={() => { if (currentPage === 1) void loadProducts(); else setCurrentPage(1); }}
         />
       ) : null}
       <ProductBarcodeModal
@@ -268,17 +286,17 @@ export default function ProductsPanel({ active = true, onSelectTab }: Management
       ) : null}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
-          label="Total produits"
-          value={String(allProducts.length)}
+          label={query.trim() || status !== "all" ? "Produits correspondants" : "Total produits"}
+          value={String(totalProducts)}
           tone="text-indigo-700"
         />
         <StatCard
-          label="Stock faible"
+          label="Stock faible (page)"
           value={String(lowStockCount)}
           tone="text-amber-700"
         />
         <StatCard
-          label="Ruptures"
+          label="Ruptures (page)"
           value={String(outOfStockCount)}
           tone="text-rose-700"
         />
@@ -478,6 +496,32 @@ export default function ProductsPanel({ active = true, onSelectTab }: Management
             </table>
           </div>
         )}
+        {!loading && totalProducts > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+            <span>
+              Produits {((currentPage - 1) * 10) + 1}–{Math.min(currentPage * 10, totalProducts)} sur {totalProducts}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
+                className="rounded-lg border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Precedent
+              </button>
+              <span aria-live="polite">Page {currentPage} / {lastPage}</span>
+              <button
+                type="button"
+                disabled={currentPage >= lastPage}
+                onClick={() => setCurrentPage((previous) => Math.min(lastPage, previous + 1))}
+                className="rounded-lg border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Suivant
+              </button>
+            </div>
+          </div>
+        ) : null}
           </>
         ) : null}
       </section>
