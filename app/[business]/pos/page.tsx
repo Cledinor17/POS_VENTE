@@ -38,7 +38,7 @@ import { getPosSettings, type BusinessSettings } from "@/lib/businessApi";
 import { hasPermission } from "@/lib/businessAccess";
 import { listCustomers, type CustomerItem } from "@/lib/customersApi";
 import { addHotelReservationPayment, getHotelReservations, type HotelReservation } from "@/lib/hotelApi";
-import { createHotelOrder, updateHotelOrderStatus } from "@/lib/hotelOrdersApi";
+import { createHotelOrder } from "@/lib/hotelOrdersApi";
 import { validateCoupon } from "@/lib/couponsApi";
 import {
   buildProductScanIndex,
@@ -1455,6 +1455,9 @@ export default function PosPage() {
         notes: "Dépôt encaissé depuis la caisse POS",
       });
       setRoomDepositInput("");
+      if (activeSpendingLimit === null && spendingLimitInput.trim() === "") {
+        setSpendingLimitInput(String(Math.round(amount * 100) / 100));
+      }
       pushNotice("Dépôt enregistré au folio de la chambre. Vérifiez son solde dans Hôtel > Folios.", "success");
     } catch (error) {
       pushError(`Enregistrement du dépôt non confirmé : ${getErrorMessage(error)}. Vérifiez le folio avant de recommencer.`);
@@ -1488,6 +1491,7 @@ export default function PosPage() {
         reservationId: selectedReservation.id,
         customerId: selectedReservation.customer_id,
         currency: saleCurrency === "USD" ? "USD" : "HTG",
+        status: "completed",
         note: `Commande POS - ${(customerNameForSale || selectedReservation.guest_name).slice(0, 100)}`,
         totalAmount: Math.round(grandTotal * 100) / 100,
         items: cart.map((item) => ({
@@ -1497,7 +1501,9 @@ export default function PosPage() {
         })),
       });
       createdOrderId = order.id;
-      await updateHotelOrderStatus(businessSlug, order.id, { status: "completed" });
+      if (order.status !== "completed") {
+        throw new Error("La commande n'a pas été confirmée.");
+      }
       setProducts((prev) => prev.map((product) => {
         const line = cart.find((item) => item.productId === String(product.id));
         return !line || product.type === "service" ? product : {
