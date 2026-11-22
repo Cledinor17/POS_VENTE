@@ -32,6 +32,7 @@ const tabs: {
   { id: "users", icon: Users, permission: "users.read", panel: dynamic<SettingsPanelProps>(() => import("./panels/UsersSettingsPanel"), { loading: PanelLoading }) },
   { id: "roles", icon: KeyRound, permission: "users.manage", panel: dynamic<SettingsPanelProps>(() => import("./panels/RolesSettingsPanel"), { loading: PanelLoading }) },
   { id: "printers", icon: Printer, permission: "billing.read", panel: dynamic<SettingsPanelProps>(() => import("./panels/PrintersSettingsPanel"), { loading: PanelLoading }) },
+  { id: "templates", icon: Printer, permission: "billing.read", panel: dynamic<SettingsPanelProps>(() => import("./panels/PrintTemplatesSettingsPanel"), { loading: PanelLoading }) },
   { id: "coupons", icon: Tag, permission: "business.read", panel: dynamic<SettingsPanelProps>(() => import("./panels/CouponsSettingsPanel"), { loading: PanelLoading }) },
   { id: "audit", icon: ShieldCheck, permission: "audit.read", panel: dynamic<SettingsPanelProps>(() => import("./panels/AuditSettingsPanel"), { loading: PanelLoading }) },
   { id: "backup", icon: DatabaseBackup, permission: "business.manage", panel: dynamic<SettingsPanelProps>(() => import("./panels/BackupSettingsPanel"), { loading: PanelLoading }) },
