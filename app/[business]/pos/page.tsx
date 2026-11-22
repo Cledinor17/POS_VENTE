@@ -920,13 +920,17 @@ export default function PosPage() {
     const grouped: Record<string, { HTG: number; USD: number }> = {};
     for (const memo of deposits) {
       const amount = Number(memo.amount);
-      if (!Number.isFinite(amount) || amount < 0) continue;
+      if (!Number.isFinite(amount)) continue;
       const sum = grouped[memo.cart_reference] ?? { HTG: 0, USD: 0 };
       sum[memo.currency] = Math.round((sum[memo.currency] + amount) * 100) / 100;
       grouped[memo.cart_reference] = sum;
     }
+    for (const item of parkedCarts) {
+      if (item.depositTotals) grouped[item.id] = item.depositTotals;
+    }
+    if (activeParked?.depositTotals) grouped[activeParked.id] = activeParked.depositTotals;
     return grouped;
-  }, [deposits]);
+  }, [deposits, parkedCarts, activeParked]);
   const canApplyDiscount = hasPermission(permissions, "billing.discount");
   useEffect(() => {
     if (!businessSlug || typeof window === "undefined") return;
@@ -953,15 +957,34 @@ export default function PosPage() {
   );
   const pointsDiscountAmount = Number((redeemPoints * loyaltyRedeemValue).toFixed(2));
   const remainingAfterPoints = Math.max(0, grandTotal - pointsDiscountAmount);
+  const activeDepositTotals = activeParked
+    ? (depositByCart[activeParked.id] ?? { HTG: 0, USD: 0 })
+    : { HTG: 0, USD: 0 };
+  const activeDepositApplied = activeParked
+    ? Number((
+      convertPayment(activeDepositTotals.HTG, "HTG", saleCurrency, {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
+      }) + convertPayment(activeDepositTotals.USD, "USD", saleCurrency, {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
+      })
+    ).toFixed(2))
+    : 0;
+  const remainingAfterDeposit = Math.max(0, remainingAfterPoints - activeDepositApplied);
   const amountDueInPaymentCurrency = useMemo(
     () =>
-      convertAmount(remainingAfterPoints, saleCurrency, paymentCurrency, {
+      convertAmount(remainingAfterDeposit, saleCurrency, paymentCurrency, {
         exchangeRateDirection: businessSettings?.exchange_rate_direction,
         exchangeRateValue: businessSettings?.exchange_rate_value,
         exchangeBuyRate: businessSettings?.exchange_buy_rate,
         exchangeSellRate: businessSettings?.exchange_sell_rate,
       }),
-    [businessSettings, remainingAfterPoints, paymentCurrency, saleCurrency],
+    [businessSettings, remainingAfterDeposit, paymentCurrency, saleCurrency],
   );
   const cashReceived = safeNumber(cashReceivedInput);
   const cashDelta = cashReceived - amountDueInPaymentCurrency;
