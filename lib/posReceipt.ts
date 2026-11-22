@@ -45,6 +45,7 @@ export type PosReceipt = {
   paymentMethod: string;
   paymentCurrency: string;
   paymentAmount: number;
+  depositApplied?: number;
   paymentDateLabel: string | null;
   receiptQrCodeDataUri: string | null;
   cashReceived: number | null;
@@ -107,6 +108,13 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
     .join("");
   const paymentLabel = t.methods[sale.paymentMethod] ?? sale.paymentMethod;
   const paymentSummary = `<div class="row"><span>${escapeHtml(t.paid)}</span><strong>${escapeHtml(formatMoney(sale.paymentAmount, sale.paymentCurrency))}</strong></div>`;
+  const depositText: Record<string, string> = {
+    fr: "Acompte appliqué", ht: "Depo ki deja peye", en: "Deposit applied",
+    es: "Anticipo aplicado", zh: "已抵扣预付款", ar: "العربون المحتسب",
+  };
+  const depositBlock = (sale.depositApplied ?? 0) > 0
+    ? `<div class="row"><span>${escapeHtml(depositText[locale] ?? depositText.fr)}</span><strong>${escapeHtml(formatMoney(sale.depositApplied!, sale.saleCurrency))}</strong></div>`
+    : "";
   const discountBlock =
     sale.discountAmount > 0
       ? `<div class="row"><span>${escapeHtml(t.discount)}</span><span>- ${escapeHtml(formatMoney(sale.discountAmount, sale.saleCurrency))}</span></div>`
@@ -241,7 +249,7 @@ ${statusBlock}${customerBlock}
 ${discountBlock}
 <div class="row"><span>${escapeHtml(t.tax)}</span><span>${escapeHtml(formatMoney(sale.tax,sale.saleCurrency))}</span></div>
 <div class="row grand"><span>${escapeHtml(t.total)}</span><strong>${escapeHtml(formatMoney(sale.total,sale.saleCurrency))}</strong></div>
-${paymentsBlock}${paymentSummary}${refundsBlock}${balanceBlock}${cashBlock}${loyaltyBlock}
+${paymentsBlock}${depositBlock}${paymentSummary}${refundsBlock}${balanceBlock}${cashBlock}${loyaltyBlock}
 <div class="sep"></div>${footerBlock}${qrBlock}
 <div class="center muted">${escapeHtml(t.thanks)}</div>
 </body></html>`;
