@@ -59,6 +59,7 @@ import {
 import {
   checkoutPosSale,
   createPosParkedCart,
+  recordPosTabMoneyMovement,
   cancelPosParkedCart,
   completePosParkedHotelCart,
   updatePosParkedCart,
@@ -125,6 +126,9 @@ type ParkedCart = {
   // Optional spending limit only. This field is NOT a recorded payment.
   spendingLimit?: number | null;
   spendingCurrency?: string;
+  depositTotal?: number;
+  depositBalance?: number;
+  depositCurrency?: string | null;
 };
 type PaymentMethodId =
   | "cash"
@@ -310,6 +314,9 @@ function fromApiParkedCart(cart: PosParkedCartApi): ParkedCart {
     roomLabel: cart.roomLabel ?? undefined,
     spendingLimit: cart.spendingLimit,
     spendingCurrency: cart.spendingCurrency ?? undefined,
+    depositTotal: cart.depositTotal,
+    depositBalance: cart.depositBalance,
+    depositCurrency: cart.depositCurrency,
   };
 }
 export default function PosPage() {
@@ -354,6 +361,13 @@ export default function PosPage() {
   const [activeParkedId, setActiveParkedId] = useState<string | null>(null);
   const [activeParkedRevision, setActiveParkedRevision] = useState(1);
   const [parkedCheckoutUncertain, setParkedCheckoutUncertain] = useState(false);
+  const [activeDepositTotal, setActiveDepositTotal] = useState(0);
+  const [activeDepositBalance, setActiveDepositBalance] = useState(0);
+  const [activeDepositCurrency, setActiveDepositCurrency] = useState<string | null>(null);
+  const [tabMoneyAmountInput, setTabMoneyAmountInput] = useState("");
+  const [tabMoneyMethod, setTabMoneyMethod] = useState<"cash" | "card" | "bank" | "mobile">("cash");
+  const [postingTabMoney, setPostingTabMoney] = useState(false);
+  const pendingTabMoneyKey = useRef<{ type: "deposit" | "refund"; signature: string; key: string } | null>(null);
   const pendingParkedToken = useRef<string | null>(null);
   const migratedLocalScope = useRef<Set<string>>(new Set());
   const [parkedCustomerId, setParkedCustomerId] = useState<string | null>(null);
@@ -1118,6 +1132,9 @@ export default function PosPage() {
       setParkNote("");
       setActiveParkedId(null);
       setActiveParkedRevision(1);
+      setActiveDepositTotal(0);
+      setActiveDepositBalance(0);
+      setActiveDepositCurrency(null);
       setParkedCustomerId(null);
       setActiveParkedRoomLabel(null);
       setSpendingLimitInput("");
@@ -1146,6 +1163,9 @@ export default function PosPage() {
       return;
     }
     setActiveParkedId(found.id);
+    setActiveDepositTotal(found.depositTotal ?? 0);
+    setActiveDepositBalance(found.depositBalance ?? 0);
+    setActiveDepositCurrency(found.depositCurrency ?? null);
     setParkedCheckoutUncertain(false);
     setActiveParkedRevision(found.revision ?? 1);
     setCart(found.items);
