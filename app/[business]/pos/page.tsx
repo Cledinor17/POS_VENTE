@@ -891,18 +891,24 @@ export default function PosPage() {
   );
   const pointsDiscountAmount = Number((redeemPoints * loyaltyRedeemValue).toFixed(2));
   const remainingAfterPoints = Math.max(0, grandTotal - pointsDiscountAmount);
+  const depositApplicable = Boolean(activeParkedId && activeDepositTotal > 0
+    && activeDepositCurrency === saleCurrency);
+  const advanceToApply = depositApplicable ? Math.min(activeDepositBalance, remainingAfterPoints) : 0;
+  const freshAmountDue = Math.max(0, remainingAfterPoints - advanceToApply);
   const amountDueInPaymentCurrency = useMemo(
     () =>
-      convertAmount(remainingAfterPoints, saleCurrency, paymentCurrency, {
+      convertAmount(freshAmountDue, saleCurrency, paymentCurrency, {
         exchangeRateDirection: businessSettings?.exchange_rate_direction,
         exchangeRateValue: businessSettings?.exchange_rate_value,
         exchangeBuyRate: businessSettings?.exchange_buy_rate,
         exchangeSellRate: businessSettings?.exchange_sell_rate,
       }),
-    [businessSettings, remainingAfterPoints, paymentCurrency, saleCurrency],
+    [businessSettings, freshAmountDue, paymentCurrency, saleCurrency],
   );
   // A parked-tab ceiling is a spending guard, not an accounting entry.
-  const spendingLimitInSaleCurrency = activeSpendingLimit === null ? null : convertAmount(
+  const spendingLimitInSaleCurrency = activeParkedId && activeDepositTotal > 0
+    ? (activeDepositCurrency === saleCurrency ? activeDepositBalance : 0)
+    : activeSpendingLimit === null ? null : convertAmount(
     activeSpendingLimit, activeSpendingCurrency, saleCurrency,
     {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
@@ -1166,6 +1172,9 @@ export default function PosPage() {
     setActiveDepositTotal(found.depositTotal ?? 0);
     setActiveDepositBalance(found.depositBalance ?? 0);
     setActiveDepositCurrency(found.depositCurrency ?? null);
+    if ((found.depositTotal ?? 0) > 0 && found.depositCurrency) {
+      setPaymentCurrency(found.depositCurrency === "USD" ? "USD" : "HTG");
+    }
     setParkedCheckoutUncertain(false);
     setActiveParkedRevision(found.revision ?? 1);
     setCart(found.items);
@@ -1326,6 +1335,10 @@ export default function PosPage() {
       return false;
     }
     if (!businessSettings) { pushError("Les taux de change ne sont pas encore charges."); return false; }
+    if (activeParkedId && activeDepositTotal > 0 && activeDepositCurrency !== saleCurrency) {
+      pushError("Choisissez la devise du dépôt avant de finaliser cette fiche.");
+      return false;
+    }
     if (cart.length === 0) {
       pushError("Ajoute des produits avant de passer a la caisse.");
       return false;
@@ -2503,6 +2516,12 @@ export default function PosPage() {
             </div>{" "}
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900">
               <div>Total facture: {formatMoney(grandTotal, saleCurrency)}</div>
+              {activeParkedId && activeDepositTotal > 0 ? (
+                <div className="mt-1">
+                  Avance déjà encaissée : {formatMoney(activeDepositBalance, activeDepositCurrency || saleCurrency)}.
+                  Imputation prévue : {formatMoney(advanceToApply, saleCurrency)}.
+                </div>
+              ) : null}
               {couponDiscountAmount > 0 ? (
                 <div className="mt-1">
                   Code promo: - {formatMoney(couponDiscountAmount, saleCurrency)}
@@ -2514,7 +2533,7 @@ export default function PosPage() {
                 </div>
               ) : null}
               <div className="mt-1">
-                A encaisser: {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
+                Reste à encaisser maintenant : {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
               </div>
             </div>{" "}
             <div className="space-y-1">
