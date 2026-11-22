@@ -1147,8 +1147,8 @@ export default function PosPage() {
           amount: normalizedDeposit,
           currency: parkDepositCurrency,
         });
-        if (ok) setParkDepositInput("");
-        else {
+        setParkDepositInput("");
+        if (!ok) {
           setDepositDrafts(prev => ({
             ...prev,
             [saved.id]: { ...prev[saved.id], amount: normalizedDeposit, currency: parkDepositCurrency },
@@ -1557,7 +1557,7 @@ export default function PosPage() {
             ) : null}
           </div>{" "}
           <div className="flex items-center gap-2">
-            {pendingSalesCount > 0 && <Link href={`/${businessSlug}/pos/pending`} className="rounded-xl border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-900">Voir les ventes en attente</Link>}
+            {pendingSalesCount > 0 && <Link href={`/${businessSlug}/pos/pending`} className="rounded-xl border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-900">Ventes hors-ligne</Link>}
             {pendingSalesCount > 0 ? (
               <button
                 onClick={() => void handleManualSync()}
@@ -1567,7 +1567,7 @@ export default function PosPage() {
                 {" "}
                 {syncingSales
                   ? "Synchronisation..."
-                  : `${pendingSalesCount} vente(s) en attente - Synchroniser maintenant`}{" "}
+                  : `Synchroniser (${pendingSalesCount})`}{" "}
               </button>
             ) : null}
             {businessSettings?.dollar_purchase_enabled && <Link href={`/${businessSlug}/pos/dollar-purchases`} className="rounded-xl border border-indigo-200 px-4 py-2.5 text-sm font-semibold text-indigo-700">Achat de dollars</Link>}
