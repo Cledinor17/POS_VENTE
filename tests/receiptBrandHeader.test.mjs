@@ -22,11 +22,16 @@ runInNewContext(transpile("../lib/receiptI18n.ts"), {
     throw new Error("Unexpected import: " + name);
   },
 });
+const templates = { exports: {} };
+runInNewContext(transpile("../lib/printTemplateModel.ts"), {
+  exports: templates.exports, module: templates,
+});
 const printed = [];
 const receiptModule = { exports: {} };
 runInNewContext(transpile("../lib/posReceipt.ts"), {
   exports: receiptModule.exports, module: receiptModule,
   require: name => {
+    if (name === "./printTemplateModel") return templates.exports;
     if (name === "./receiptI18n") return translations.exports;
     if (name === "./currency") return { formatMoney: (amount, code) => amount.toFixed(2) + " " + code };
     if (name === "./printHtml") return { printHtmlDocument: (html, options) => printed.push({ html, options }) };
