@@ -4,6 +4,7 @@ import { PauseCircle, PlayCircle, Trash2 } from "lucide-react";
 import type { Locale } from "@/lib/locale";
 import { posCompactLabels } from "@/lib/posCompactI18n";
 import { formatMoney } from "@/lib/currency";
+import type { UnpostedDepositMemo } from "@/lib/posDepositMemosApi";
 
 type Currency = "HTG" | "USD";
 type ParkedItem = { id: string; note: string; createdAt: string; items: { qty: number }[] };
@@ -23,6 +24,7 @@ export type ParkedCartsPanelProps = {
   onDraft: (id: string, value: DepositDraft) => void;
   totals: { HTG: string; USD: string };
   perCart: Record<string, { HTG: number; USD: number }>;
+  memos: UnpostedDepositMemo[];
   status: "ready" | "loading" | "unavailable";
   savingDepositId: string | null;
   canRecord: boolean;
@@ -40,7 +42,7 @@ export type ParkedCartsPanelProps = {
 
 export default function ParkedCartsPanel({
   locale, count, carts, note, onNote, depositAmount, onDepositAmount,
-  depositCurrency, onDepositCurrency, drafts, onDraft, totals, perCart, status,
+  depositCurrency, onDepositCurrency, drafts, onDraft, totals, perCart, memos, status,
   savingDepositId, canRecord, online, branchReady, onPark, onResume, onRecord,
   onRequestDelete, confirming, deletingId, onCancelDelete, onConfirmDelete,
 }: ParkedCartsPanelProps) {
@@ -101,6 +103,25 @@ export default function ParkedCartsPanel({
             <PauseCircle className="h-4 w-4" />{ui.park}
           </button>
         </div>
+        {memos.length > 0 ? (
+          <details className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+            <summary className="cursor-pointer font-semibold text-slate-700">
+              {ui.declared} · {memos.length}{memos.length >= 500 ? "+" : ""}
+            </summary>
+            <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+              {memos.slice(0, 20).map(entry => (
+                <div key={entry.id} className="flex flex-wrap justify-between gap-1 border-t border-slate-200 py-1">
+                  <span className="min-w-0 truncate" title={entry.note ?? entry.cart_reference}>
+                    {entry.note || entry.cart_reference}
+                  </span>
+                  <span className="shrink-0 font-bold tabular-nums">
+                    {formatMoney(Number(entry.amount), entry.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
         {carts.length > 0 ? (
           <div className="max-h-[420px] space-y-2 overflow-y-auto">
             {carts.map(parked => {
