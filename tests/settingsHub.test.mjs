@@ -22,7 +22,7 @@ function load(path, mocks = {}, globals = {}) {
   return loadedModule.exports;
 }
 const access = load("lib/businessAccess.ts");
-const allIds = ["business", "branches", "users", "roles", "printers", "coupons", "audit", "backup"];
+const allIds = ["business", "branches", "users", "roles", "printers", "templates", "coupons", "audit", "backup"];
 
 function harness({ permissions = access.ALL_PERMISSIONS, platform = false, locale = "fr", signedIn = true, loading = false } = {}) {
   const state = [];
@@ -100,7 +100,7 @@ test("settings gates screens by permission and keeps platform configuration rest
   for (const [permissions, expected] of [
     [[], []], [["business.read"], ["business", "branches", "coupons"]],
     [["users.read"], ["users"]], [["users.manage"], ["roles"]],
-    [["billing.read"], ["printers"]], [["accounting.read"], []],
+    [["billing.read"], ["printers", "templates"]], [["accounting.read"], []],
     [["audit.read"], ["audit"]], [["business.manage"], ["backup"]],
   ]) {
     const h = harness({ permissions });
@@ -144,7 +144,7 @@ test("tab labels render in all six application languages", () => {
   for (const locale of ["fr", "en", "es", "ht", "ar", "zh"]) {
     const h = harness({ locale, platform: true });
     const dom = h.render();
-    assert.equal(dom.querySelectorAll('[role="tab"]').length, 9);
+    assert.equal(dom.querySelectorAll('[role="tab"]').length, 10);
     for (const tab of dom.querySelectorAll('[role="tab"]')) assert.ok(tab.textContent.trim());
   }
 });
