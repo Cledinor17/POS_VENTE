@@ -354,6 +354,8 @@ export default function PosPage() {
   const [activeParkedId, setActiveParkedId] = useState<string | null>(null);
   const [activeParkedRevision, setActiveParkedRevision] = useState(1);
   const pendingParkedToken = useRef<string | null>(null);
+  const migratedLocalScope = useRef<Set<string>>(new Set());
+  const [parkedCustomerId, setParkedCustomerId] = useState<string | null>(null);
   const [parkNote, setParkNote] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS,
@@ -682,46 +684,71 @@ export default function PosPage() {
     };
   }, [businessSlug, pushError]);
   useEffect(() => {
-    let mounted = true;
-    async function loadParkedCarts() {
-      if (!businessSlug) return;
-      try {
-        const remote = await listPosParkedCarts(businessSlug);
-        if (!mounted) return;
-        if (remote) {
-          setUseRemoteParked(true);
-          setParkedCarts(remote.map(fromApiParkedCart));
-          return;
+    const timer = window.setTimeout(() => {
+      setParkedPage(1);
+      setParkedSearch(parkedSearchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [parkedSearchInput]);
+
+  const loadParkedCarts = useCallback(async () => {
+    if (!businessSlug || !branchId) return;
+    setParkedLoading(true);
+    try {
+      // Migrate legacy local-only tickets, preserving each original copy
+      // until the database confirms insertion. clientToken makes retries safe.
+      const scope = `${businessSlug}:${branchId}`;
+      if (!migratedLocalScope.current.has(scope)) {
+        const legacyKey = `pos_parked_carts:${businessSlug}`;
+        const raw = safeGetItem(legacyKey);
+        let remaining: ParkedCart[] = [];
+        try {
+          const parsed: unknown = raw ? JSON.parse(raw) : [];
+          remaining = Array.isArray(parsed) ? parsed as ParkedCart[] : [];
+        } catch {
+          pushError("Anciennes fiches locales illisibles : conservation sans suppression.");
         }
-      } catch (e) {
-        if (mounted) pushError(getErrorMessage(e));
+        for (const old of [...remaining]) {
+          try {
+            await createPosParkedCart(businessSlug, {
+              clientToken: `legacy-${old.id}`.slice(0, 100),
+              note: old.note || "Ancienne fiche",
+              items: old.items,
+              customerName: old.customerName || null,
+              customerId: old.customerId || null,
+              reservationId: old.reservationId || null,
+              roomLabel: old.roomLabel || null,
+              spendingLimit: old.spendingLimit ?? null,
+              spendingCurrency: old.spendingCurrency || null,
+            });
+            remaining = remaining.filter((item) => item.id !== old.id);
+            safeSetItem(legacyKey, JSON.stringify(remaining));
+          } catch {
+            // Keep local original and retry on next successful load.
+            pushError("Une ancienne fiche reste locale : migration vers le serveur non confirmée.");
+            break;
+          }
+        }
+        if (remaining.length === 0) migratedLocalScope.current.add(scope);
       }
-      if (!mounted) return;
-      setUseRemoteParked(false);
-      const raw = safeGetItem(`pos_parked_carts:${businessSlug}`);
-      if (!raw) {
-        setParkedCarts([]);
-        return;
-      }
-      try {
-        const parsed = JSON.parse(raw);
-        setParkedCarts(Array.isArray(parsed) ? parsed : []);
-      } catch {
-        setParkedCarts([]);
-      }
+
+      const result = await listPosParkedCarts(businessSlug, {
+        q: parkedSearch, page: parkedPage, perPage: 10,
+      });
+      setParkedCarts(result.items.map(fromApiParkedCart));
+      setParkedTotal(result.total);
+      setParkedTotalOpen(result.totalOpen);
+      setParkedLastPage(result.lastPage);
+    } catch (e) {
+      // Never represent localStorage as durable multi-device storage.
+      pushError(`Chargement des fiches serveur impossible : ${getErrorMessage(e)}`);
+    } finally {
+      setParkedLoading(false);
     }
-    void loadParkedCarts();
-    return () => {
-      mounted = false;
-    };
-  }, [businessSlug, pushError]);
-  function saveLocalParked(next: ParkedCart[]) {
-    setParkedCarts(next);
-    safeSetItem(
-      `pos_parked_carts:${businessSlug}`,
-      JSON.stringify(next),
-    );
-  }
+  }, [businessSlug, branchId, parkedPage, parkedSearch, pushError]);
+
+  useEffect(() => { void loadParkedCarts(); }, [loadParkedCarts]);
+
   const getSaleUnitPrice = useCallback((product: CatalogProduct): number => {
     return convertAmount(product.price, product.priceCurrency, saleCurrency, {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
