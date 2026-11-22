@@ -357,6 +357,7 @@ export default function PosPage() {
   const pendingParkedToken = useRef<string | null>(null);
   const migratedLocalScope = useRef<Set<string>>(new Set());
   const [parkedCustomerId, setParkedCustomerId] = useState<string | null>(null);
+  const [activeParkedRoomLabel, setActiveParkedRoomLabel] = useState<string | null>(null);
   const [parkNote, setParkNote] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS,
@@ -740,6 +741,7 @@ export default function PosPage() {
       setParkedTotal(result.total);
       setParkedTotalOpen(result.totalOpen);
       setParkedLastPage(result.lastPage);
+      if (parkedPage > result.lastPage) setParkedPage(result.lastPage);
     } catch (e) {
       // Never represent localStorage as durable multi-device storage.
       pushError(`Chargement des fiches serveur impossible : ${getErrorMessage(e)}`);
@@ -1102,7 +1104,7 @@ export default function PosPage() {
       customerName: customerNameForSale || null,
       customerId: selectedCustomer?.id ?? parkedCustomerId,
       reservationId: selectedReservationId,
-      roomLabel: selectedReservation?.room?.room_number || null,
+      roomLabel: selectedReservation?.room?.room_number || activeParkedRoomLabel,
       spendingLimit: limit,
       spendingCurrency: limitCurrency,
     };
@@ -1117,6 +1119,7 @@ export default function PosPage() {
       setActiveParkedId(null);
       setActiveParkedRevision(1);
       setParkedCustomerId(null);
+      setActiveParkedRoomLabel(null);
       setSpendingLimitInput("");
       setActiveSpendingLimit(null);
       setSelectedReservationId(null);
@@ -1151,6 +1154,7 @@ export default function PosPage() {
     setCustomerQuery("");
     setSelectedCustomer(found.registeredCustomer ?? null);
     setParkedCustomerId(found.customerId == null ? null : String(found.customerId));
+    setActiveParkedRoomLabel(found.roomLabel ?? null);
     setSelectedReservationId(found.reservationId ?? null);
     setActiveSpendingLimit(found.spendingLimit ?? null);
     setActiveSpendingCurrency(found.spendingCurrency || saleCurrency);
@@ -1466,7 +1470,7 @@ export default function PosPage() {
           customerName: customerNameForSale || null,
           customerId: selectedCustomer?.id ?? parkedCustomerId,
           reservationId: selectedReservationId,
-          roomLabel: selectedReservation?.room?.room_number || null,
+          roomLabel: selectedReservation?.room?.room_number || activeParkedRoomLabel,
           spendingLimit: activeSpendingLimit,
           spendingCurrency: activeSpendingCurrency,
         });
