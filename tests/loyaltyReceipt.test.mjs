@@ -4,12 +4,27 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
+const i18n = { exports: {} };
+runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/receiptI18n.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText, {
+  module: i18n, exports: i18n.exports,
+  require: name => {
+    if (name === './locale') return {
+      DEFAULT_LOCALE: 'fr',
+      isSupportedLocale: value => ['fr', 'en', 'ht', 'es', 'zh', 'ar'].includes(value),
+    };
+    throw new Error('Unexpected receipt translation import: ' + name);
+  },
+});
 const loaded = { exports: {} };
 runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/posReceipt.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText, {
   module: loaded, exports: loaded.exports,
-  require: name => name === './currency' ? { formatMoney: (n, c) => `${n} ${c}` } : { printHtmlDocument() {} },
+  require: name => name === './currency' ? { formatMoney: (n, c) => `${n} ${c}` }
+    : name === './receiptI18n' ? i18n.exports
+    : { printHtmlDocument() {} },
 });
 const receipt = {
   receiptNo: 'TKT-1', businessName: 'Boutique', cashierName: 'Jean', createdAt: '2026-10-05T10:00:00Z',
