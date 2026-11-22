@@ -89,6 +89,7 @@ test("parked cart panel renders separate unposted totals and an explicit Yes/No 
     note:"", onNote(){}, depositAmount:"", onDepositAmount(){},
     depositCurrency:"HTG", onDepositCurrency(){}, drafts:{}, onDraft(){},
     totals:{HTG:"200.00",USD:"30.00"}, perCart:{"P-1":{HTG:200,USD:30}},
+    memos:[{ id:"1", cart_reference:"P-1", amount:"200.00", currency:"HTG", note:"Table 3", recorded_at:"2026-11-22T12:00:00Z" }],
     status:"ready", savingDepositId:null, canRecord:true, online:true,branchReady:true,
     onPark(){}, onResume(){}, onRecord(){}, onRequestDelete(){},
     confirming:{ id:"P-1",note:"Table 3" }, deletingId:null,
