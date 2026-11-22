@@ -337,12 +337,15 @@ export default function PosPage() {
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>([]);
   const [useRemoteParked, setUseRemoteParked] = useState(false);
   const [parkNote, setParkNote] = useState("");
+  const [parkModalOpen, setParkModalOpen] = useState(false);
+  const [parkSaving, setParkSaving] = useState(false);
   const [parkDepositInput, setParkDepositInput] = useState("");
   const [parkDepositCurrency, setParkDepositCurrency] = useState<"HTG" | "USD">("HTG");
   const [depositDrafts, setDepositDrafts] = useState<Record<string, { amount: string; currency: "HTG" | "USD"; requestKey?: string }>>({});
   const [deposits, setDeposits] = useState<UnpostedDepositMemo[]>([]);
   const [depositTotals, setDepositTotals] = useState<UnpostedDepositSummary["totals"]>({ HTG: "0.00", USD: "0.00" });
   const [depositReadStatus, setDepositReadStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [depositMemosComplete, setDepositMemosComplete] = useState(false);
   const [depositSavingId, setDepositSavingId] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState<ParkedCart | null>(null);
   const [discardingId, setDiscardingId] = useState<string | null>(null);
@@ -714,12 +717,14 @@ export default function PosPage() {
     const result = await listUnpostedDeposits(businessSlug);
     setDeposits(result.data);
     setDepositTotals(result.totals);
+    setDepositMemosComplete(!result.more_records);
     setDepositReadStatus("ready");
   }, [businessSlug, branchId]);
 
   useEffect(() => {
     let active = true;
     setDeposits([]);
+    setDepositMemosComplete(false);
     setDepositTotals({ HTG: "0.00", USD: "0.00" });
     setDepositReadStatus("unavailable");
     if (!businessSlug || !branchId || !isOnline) return undefined;
@@ -728,6 +733,7 @@ export default function PosPage() {
       if (active) {
         setDeposits(result.data);
         setDepositTotals(result.totals);
+        setDepositMemosComplete(!result.more_records);
         setDepositReadStatus("ready");
       }
     }).catch(() => {
@@ -845,6 +851,20 @@ export default function PosPage() {
   const valuationConfig = { exchangeRateValue: businessSettings?.exchange_sell_rate || businessSettings?.usd_to_htg_rate || 1 };
   const couponDiscountAmount = convertAmount(appliedCoupon?.discountAmount ?? 0, businessSettings?.currency || "HTG", saleCurrency, valuationConfig);
   const grandTotal = Math.max(0, subtotal - discountAmount - couponDiscountAmount) + taxTotal;
+  const previewDeposit = parseDepositAmount(parkDepositInput);
+  const hasExchangeConfigured = [
+    businessSettings?.exchange_buy_rate,
+    businessSettings?.exchange_sell_rate,
+    businessSettings?.exchange_rate_value,
+  ].some(value => Number(value) > 0);
+  const previewDepositInSaleCurrency = previewDeposit && (parkDepositCurrency === saleCurrency || hasExchangeConfigured)
+    ? convertAmount(Number(previewDeposit), parkDepositCurrency, saleCurrency, {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
+      })
+    : null;
   const itemCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.qty, 0),
     [cart],
@@ -1091,6 +1111,7 @@ export default function PosPage() {
   }
 
   async function parkCurrentCart() {
+    if (parkSaving) return;
     if (!branchId || branchLoading) {
       pushError(ui.noNetwork);
       return;
@@ -1113,6 +1134,7 @@ export default function PosPage() {
       pushError(ui.noRights);
       return;
     }
+    setParkSaving(true);
     const parked: ParkedCart = {
       id: `P-${generateClientId()}`,
       branchId,
@@ -1139,6 +1161,7 @@ export default function PosPage() {
         saveLocalParked([parked, ...parkedCarts]);
       }
       setCart([]);
+      setParkModalOpen(false);
       setParkNote("");
       setCashReceivedInput("");
       setError("");
@@ -1156,10 +1179,13 @@ export default function PosPage() {
           pushNotice(ui.parkFailed, "warning");
         }
       } else {
+        setParkDepositInput("");
         pushNotice(ui.savedPending, "info");
       }
     } catch (error) {
       pushError(getErrorMessage(error));
+    } finally {
+      setParkSaving(false);
     }
   }
   async function resumeParkedCart(parkId: string) {
