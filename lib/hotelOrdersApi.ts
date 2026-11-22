@@ -74,6 +74,7 @@ export type CreateHotelOrderInput = {
   customerId?: number | null;
   note?: string;
   totalAmount?: number;
+  currency?: "USD" | "HTG";
   items: Array<{
     productId: number;
     quantity: number;
@@ -227,6 +228,7 @@ export async function createHotelOrder(
       status: "pending",
       note: input.note ?? "",
       total_amount: input.totalAmount,
+      currency: input.currency,
       items: input.items.map((item) => ({
         product_id: item.productId,
         quantity: item.quantity,
