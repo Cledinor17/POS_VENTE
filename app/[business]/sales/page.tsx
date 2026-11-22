@@ -9,7 +9,9 @@ import SensitiveActionApprovalModal, {
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
-import { printReceipt } from "@/lib/posReceipt";
+import { printReceipt, type ReceiptPaper } from "@/lib/posReceipt";
+import { receiptLabels } from "@/lib/receiptI18n";
+import { useAppLocale } from "@/context/LocaleContext";
 import {
   listBusinessApprovers,
   type BusinessApproverAbility,
@@ -87,6 +89,8 @@ export default function SalesPage() {
   const params = useParams<{ business: string }>();
   const businessSlug = params?.business ?? "";
   const { permissions } = useAuth();
+  const { locale } = useAppLocale();
+  const receiptText = receiptLabels(locale);
   const [items, setItems] = useState<PosSaleHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -192,7 +196,7 @@ export default function SalesPage() {
   function closeSaleDetail() {
     setDetailSale(null);
   }
-  async function reprintSale(saleId: string) {
+  async function reprintSale(saleId: string, paper: ReceiptPaper = "80mm") {
     if (!businessSlug || printLoadingId) return;
     setPrintLoadingId(saleId);
     setError("");
@@ -201,7 +205,7 @@ export default function SalesPage() {
       if (!detail.receipt) {
         throw new Error("Les donnees necessaires a la reimpression de ce ticket sont indisponibles.");
       }
-      printReceipt(detail.receipt);
+      printReceipt({ ...detail.receipt, locale }, { paper });
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -480,7 +484,18 @@ export default function SalesPage() {
                   className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 inline-flex items-center gap-1"
                 >
                   <Printer className="h-3.5 w-3.5" />
-                  {printLoadingId === detailSale.id ? "Preparation..." : "Réimprimer"}
+                  {printLoadingId === detailSale.id ? "Preparation..." : receiptText.print80}
+                </button>
+              ) : null}
+              {detailSale ? (
+                <button
+                  type="button"
+                  onClick={() => void reprintSale(detailSale.id, "a4")}
+                  disabled={printLoadingId !== null || detailLoadingId !== null}
+                  className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 inline-flex items-center gap-1"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  {receiptText.printA4}
                 </button>
               ) : null}
               <button
