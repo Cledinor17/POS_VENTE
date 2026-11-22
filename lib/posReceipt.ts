@@ -139,10 +139,89 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
         ? `<div class="sep"></div><div class="row"><span>${escapeHtml(t.earnedPoints)}</span><strong>${Math.max(0, Math.trunc(sale.loyaltyPointsEarned ?? 0))}</strong></div><div class="row"><span>${escapeHtml(t.pointsBalance)}</span><strong>${Math.max(0, Math.trunc(sale.loyaltyPointsBalanceAfter))}</strong></div>`
         : ''
     : '';
+  // The business identity is the first visual block on every paper format.
+  const brandHeader = `<header class="brand-header">
+    <div class="brand-main">${logoBlock}<div class="brand-name">${escapeHtml(sale.businessName)}</div></div>
+    <div class="brand-rule" aria-hidden="true"></div>
+    ${sale.businessAddress ? `<div class="brand-address">${escapeHtml(sale.businessAddress)}</div>` : ""}
+    ${sale.businessPhone || sale.businessEmail ? `<div class="brand-contact">${[sale.businessPhone, sale.businessEmail].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
+  </header>`;
+  const css = `
+    @page { ${a4 ? "size: A4; margin: 14mm;" : "margin: 4mm;"} }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { color-scheme: light; }
+    body { font-family: Arial, "Noto Sans", "Noto Naskh Arabic", sans-serif;
+      font-size: 11px; color:#111827; width:72mm; margin:0 auto;
+      overflow-wrap:anywhere; line-height:1.35; background:#fff; }
+    body.paper-a4 { width:100%; max-width:185mm; font-size:13px; }
+    .center {text-align:center;} .muted {color:#64748b;} .small {font-size:.87em;line-height:1.45;}
+    .copy {margin:0 0 8px;font-size:11px;letter-spacing:.08em;}
+    .brand-header {text-align:center; margin:0 0 13px; break-inside:avoid;}
+    .brand-main {display:flex; flex-direction:row; gap:9px; align-items:center; justify-content:center;
+      min-height:60px; margin-bottom:7px;}
+    .brand-main .logo {width:60px;height:60px;flex:none;object-fit:contain;object-position:center;}
+    .brand-name {font-size:18px;line-height:1.12;font-weight:800;overflow-wrap:anywhere;
+      text-align:start; flex:1; }
+    .brand-main:not(:has(.logo)) .brand-name {text-align:center;}
+    .brand-rule {border-top:2px solid #172554;margin:7px 0 6px;width:100%;}
+    .brand-address {font-weight:600;line-height:1.4;word-break:break-word;}
+    .brand-contact {color:#475569;font-size:.93em;line-height:1.4;margin-top:3px;word-break:break-word;}
+    .sep {border-top:1px dashed #94a3b8;margin:10px 0;}
+    .row {display:flex;justify-content:space-between;gap:8px;margin:4px 0;align-items:baseline;}
+    .row > * {min-width:0;overflow-wrap:anywhere;} .row > :last-child {text-align:end;}
+    table {width:100%;border-collapse:collapse;table-layout:fixed;}
+    td {padding:4px 2px;vertical-align:top;overflow-wrap:anywhere;}
+    td:first-child {width:43%;padding-inline-start:0;} td:last-child {padding-inline-end:0;}
+    tr,.header-card,.qr-card,.footer-note {break-inside:avoid;page-break-inside:avoid;}
+    .grand {font-size:1.22em;font-weight:800;}
+    .header-card,.qr-card,.footer-note {border:1px solid #e2e8f0;border-radius:10px;
+      padding:9px;background:#fff;margin-bottom:10px;}
+    .item-name {font-weight:700;} .item-meta {color:#64748b;font-size:.85em;}
+    .qr-title {text-transform:uppercase;letter-spacing:.07em;font-size:.85em;
+      color:#475569;font-weight:700;margin-bottom:8px;text-align:center;}
+    .qr-image {width:96px;height:96px;display:block;margin:0 auto 8px;object-fit:contain;}
+    .footer-note {font-size:.95em;line-height:1.5;color:#334155;white-space:normal;}
+    .paper-a4 .brand-main {justify-content:flex-start;gap:18px;min-height:100px;}
+    .paper-a4 .brand-main .logo {width:100px;height:100px;}
+    .paper-a4 .brand-name {font-size:30px;}
+    .paper-a4 .brand-header {margin-bottom:22px;}
+    .paper-a4 .brand-rule {margin:14px 0 10px;border-top-width:3px;}
+    .paper-a4 .brand-address {font-size:14px;}
+    .paper-a4 .brand-contact {font-size:12px;}
+    .paper-a4 td {padding:8px 5px;border-bottom:1px solid #e5e7eb;}
+    .paper-a4 .header-card {margin-bottom:18px;padding:12px;}
+    @media print {body {-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+      .header-card,.footer-note,.qr-card {background:#fff;} }
+  `;
   return `
 <!doctype html>
-<html><head><meta charset="utf-8" /><title>Ticket ${escapeHtml(sale.receiptNo)}</title><style>@page { margin: 4mm; } body { font-family: Arial, sans-serif; font-size: 11px; width: 72mm; margin: 0 auto; color: #111827; } .center { text-align: center; } .muted { color: #6b7280; } .small { font-size: 9px; line-height: 1.35; } .sep { border-top: 1px dashed #9ca3af; margin: 8px 0; } .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; } .title { font-size: 14px; font-weight: 700; margin-bottom: 2px; } table { width: 100%; border-collapse: collapse; table-layout: fixed; } td { padding: 3px 2px; vertical-align: top; overflow-wrap: anywhere; } td:first-child { width: 42%; padding-left: 0; } td:last-child { padding-right: 0; } .row > * { min-width: 0; overflow-wrap: anywhere; } .row > :last-child { text-align: right; } body { overflow-wrap: anywhere; } tr, .header-card, .qr-card { break-inside: avoid; } .grand { font-size: 14px; font-weight: 800; } .logo-wrap { text-align: center; margin-bottom: 8px; } .logo { width: 56px; height: 56px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 12px; padding: 4px; background: #fff; } .header-card, .qr-card, .footer-note { border: 1px solid #e5e7eb; border-radius: 12px; padding: 8px; background: #f8fafc; margin-bottom: 8px; } .item-name { font-weight: 700; } .item-meta { color: #6b7280; font-size: 9px; } .qr-title { text-transform: uppercase; letter-spacing: .08em; font-size: 9px; color: #475569; font-weight: 700; margin-bottom: 6px; text-align: center; } .qr-image { width: 96px; height: 96px; display: block; margin: 0 auto 6px; } .footer-note { font-size: 10px; line-height: 1.45; color: #334155; }</style></head><body>${copyBlock}<div class="center">${logoBlock}<div class="title">${escapeHtml(sale.businessName)}</div><div class="muted">${escapeHtml(sale.businessAddress || "")}</div><div class="muted">${escapeHtml(sale.businessPhone || "")}${sale.businessEmail ? ` | ${escapeHtml(sale.businessEmail)}` : ""}</div></div><div class="sep"></div><div class="header-card"><div class="row"><span>Ticket</span><strong>${escapeHtml(sale.receiptNo)}</strong></div><div class="row"><span>Date</span><span>${escapeHtml(paymentDateLabel)}</span></div><div class="row"><span>Caissier</span><span>${escapeHtml(sale.cashierName)}</span></div><div class="row"><span>Paiement</span><span>${escapeHtml(paymentLabel)}</span></div>${statusBlock}${customerBlock}</div><table>${linesHtml}</table><div class="sep"></div><div class="row"><span>Sous-total</span><span>${escapeHtml(formatMoney(sale.subtotal, sale.saleCurrency))}</span></div>${discountBlock}<div class="row"><span>Taxes</span><span>${escapeHtml(formatMoney(sale.tax, sale.saleCurrency))}</span></div><div class="row grand"><span>Total</span><span>${escapeHtml(formatMoney(sale.total, sale.saleCurrency))}</span></div>${paymentsBlock}${paymentSummary}${refundsBlock}${balanceBlock}${cashBlock}${loyaltyBlock}<div class="sep"></div>${footerBlock}${qrBlock}<div class="center muted">Merci et a bientot.</div></body></html>`;
+<html lang="${locale}" dir="${dir}"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${escapeHtml(t.ticket)} ${escapeHtml(sale.receiptNo)}</title>
+<style>${css}</style></head>
+<body class="${a4 ? "paper-a4" : "paper-thermal"}">
+${brandHeader}${copyBlock}
+<section class="header-card">
+<div class="row"><span>${escapeHtml(t.ticket)}</span><strong>${escapeHtml(sale.receiptNo)}</strong></div>
+<div class="row"><span>${escapeHtml(t.date)}</span><span>${escapeHtml(paymentDateLabel)}</span></div>
+<div class="row"><span>${escapeHtml(t.cashier)}</span><span>${escapeHtml(sale.cashierName)}</span></div>
+<div class="row"><span>${escapeHtml(t.payment)}</span><span>${escapeHtml(paymentLabel)}</span></div>
+${statusBlock}${customerBlock}
+</section>
+<table>${linesHtml}</table>
+<div class="sep"></div>
+<div class="row"><span>${escapeHtml(t.subtotal)}</span><span>${escapeHtml(formatMoney(sale.subtotal,sale.saleCurrency))}</span></div>
+${discountBlock}
+<div class="row"><span>${escapeHtml(t.tax)}</span><span>${escapeHtml(formatMoney(sale.tax,sale.saleCurrency))}</span></div>
+<div class="row grand"><span>${escapeHtml(t.total)}</span><strong>${escapeHtml(formatMoney(sale.total,sale.saleCurrency))}</strong></div>
+${paymentsBlock}${paymentSummary}${refundsBlock}${balanceBlock}${cashBlock}${loyaltyBlock}
+<div class="sep"></div>${footerBlock}${qrBlock}
+<div class="center muted">${escapeHtml(t.thanks)}</div>
+</body></html>`;
 }
-export function printReceipt(sale: PosReceipt) {
-  printHtmlDocument(buildReceiptHtml(sale), { paperWidthMm: 80 });
+export function printReceipt(sale: PosReceipt, options: ReceiptPrintOptions = {}) {
+  const paper = options.paper ?? "80mm";
+  printHtmlDocument(buildReceiptHtml(sale, { paper }), paper === "80mm"
+    ? { paperWidthMm: 80, marginMm: 4 }
+    : {});
 }
