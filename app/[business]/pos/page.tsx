@@ -2028,6 +2028,33 @@ export default function PosPage() {
                 })}{" "}
               </div>
             )}{" "}
+            {!loadingProducts && visibleProducts.length > 0 ? (
+              <nav aria-label="Pagination des produits"
+                className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-600">
+                <span className="tabular-nums">
+                  {((currentProductPage - 1) * productPageSize) + 1}–
+                  {Math.min(currentProductPage * productPageSize, visibleProducts.length)}
+                  {" "}sur {visibleProducts.length} produits
+                </span>
+                <div className="flex items-center gap-2">
+                  <button type="button"
+                    disabled={currentProductPage <= 1}
+                    onClick={() => setProductPageSelection({ key: productFilterKey, page: currentProductPage - 1 })}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                    Précédent
+                  </button>
+                  <span className="min-w-[50px] text-center font-semibold tabular-nums">
+                    {currentProductPage} / {productPageCount}
+                  </span>
+                  <button type="button"
+                    disabled={currentProductPage >= productPageCount}
+                    onClick={() => setProductPageSelection({ key: productFilterKey, page: currentProductPage + 1 })}
+                    className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 font-semibold text-indigo-800 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40">
+                    Suivant
+                  </button>
+                </div>
+              </nav>
+            ) : null}
           </div>{" "}
         </section>{" "}
         <aside id="pos-cart-section" className="min-w-0 space-y-3 scroll-mt-4">
