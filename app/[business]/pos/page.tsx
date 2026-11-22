@@ -43,6 +43,8 @@ import {
   resolveScannedProduct,
 } from "@/lib/productBarcode";
 import { printReceipt, type PosReceipt } from "@/lib/posReceipt";
+import { listPrintTemplates } from "@/lib/printTemplatesApi";
+import { defaultPrintTemplate, safePrintTemplate, type PrintPaper, type PrintTemplate } from "@/lib/printTemplateModel";
 import { receiptLabels } from "@/lib/receiptI18n";
 import { useAppLocale } from "@/context/LocaleContext";
 import {
@@ -356,6 +358,11 @@ export default function PosPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [lastSale, setLastSale] = useState<CompletedSale | null>(null);
   const [defaultPrinter, setDefaultPrinter] = useState<PrinterItem | null>(null);
+  const [printStyles, setPrintStyles] = useState<Record<PrintPaper, PrintTemplate>>({
+    "58mm": defaultPrintTemplate("58mm"),
+    "80mm": defaultPrintTemplate("80mm"),
+    "a4": defaultPrintTemplate("a4"),
+  });
   const [openingDrawer, setOpeningDrawer] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [approvalDialog, setApprovalDialog] = useState<ApprovalDialogState | null>(null);
@@ -575,6 +582,31 @@ export default function PosPage() {
       mounted = false;
     };
   }, [businessSlug, branchId, user?.id, pushError, isOnline]);
+  useEffect(() => {
+    let active = true;
+    if (!businessSlug) return undefined;
+    const key = `pos_print_templates:${businessSlug}:${user?.id ?? "anonymous"}`;
+    const cached = safeGetItem(key);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as Partial<Record<PrintPaper, PrintTemplate>>;
+        if (active) setPrintStyles({
+          "58mm": safePrintTemplate(parsed["58mm"], "58mm"),
+          "80mm": safePrintTemplate(parsed["80mm"], "80mm"),
+          a4: safePrintTemplate(parsed.a4, "a4"),
+        });
+      } catch { /* Invalid offline print style must not stop sales. */ }
+    }
+    void listPrintTemplates(businessSlug).then(data => {
+      if (!active) return;
+      setPrintStyles(data.effective);
+      safeSetItem(key, JSON.stringify(data.effective));
+    }).catch(() => {
+      // Keep the previous offline print style if the API is unavailable.
+    });
+    return () => { active = false; };
+  }, [businessSlug, user?.id]);
+
   useEffect(() => {
     let mounted = true;
     async function loadDefaultPrinter() {
@@ -1021,15 +1053,15 @@ export default function PosPage() {
     }
   }
   async function printSaleReceipt(sale: CompletedSale) {
-    const browserPaper = defaultPrinter?.paperWidth === "58" ? "58mm" : "80mm";
+    const browserPaper: PrintPaper = defaultPrinter?.paperWidth === "58" ? "58mm" : "80mm";
     if (!defaultPrinter || !businessSlug) {
-      printReceipt({ ...sale, locale }, { paper: browserPaper });
+      printReceipt({ ...sale, locale }, { paper: browserPaper, template: printStyles[browserPaper] });
       return;
     }
     // Many ESC/POS models cannot encode Chinese or Arabic characters. Use
     // browser rendering with proper fonts instead of printing corrupted text.
     if (locale === "ar" || locale === "zh") {
-      printReceipt({ ...sale, locale }, { paper: browserPaper });
+      printReceipt({ ...sale, locale }, { paper: browserPaper, template: printStyles[browserPaper] });
       return;
     }
     try {
@@ -1048,7 +1080,7 @@ export default function PosPage() {
         `Impression thermique impossible (${getErrorMessage(e)}), aperçu navigateur ouvert.`,
         "warning",
       );
-      printReceipt({ ...sale, locale }, { paper: browserPaper });
+      printReceipt({ ...sale, locale }, { paper: browserPaper, template: printStyles[browserPaper] });
     }
   }
   async function handleOpenDrawer() {
@@ -1410,7 +1442,7 @@ export default function PosPage() {
             {lastSale ? (
               <button
                 type="button"
-                onClick={() => printReceipt({ ...lastSale, locale }, { paper: "a4" })}
+                onClick={() => printReceipt({ ...lastSale, locale }, { paper: "a4", template: printStyles.a4 })}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 <Printer className="h-4 w-4" /> {receiptText.printA4}
