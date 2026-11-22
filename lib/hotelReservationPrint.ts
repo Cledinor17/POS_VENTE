@@ -15,6 +15,16 @@ type BookingPrintInput = {
   printedAt?: Date;
 };
 
+/**
+ * A thermal roll has fixed WIDTH but a receipt's LENGTH depends on content.
+ * Browser CSS measures at 96 CSS px/in; allow a little paper for the cutter.
+ * Some print drivers ignore custom heights, so users must still pick 80mm roll.
+ */
+export function thermalReceiptPageHeightMm(heightCssPx: number): number {
+  const height = Number.isFinite(heightCssPx) ? heightCssPx : 0;
+  return Math.max(70, Math.min(1500, Math.ceil(height * 25.4 / 96 + 8)));
+}
+
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
