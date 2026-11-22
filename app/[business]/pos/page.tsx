@@ -1530,7 +1530,7 @@ export default function PosPage() {
     await runCheckoutSale();
   }
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-20 xl:pb-0">
       {" "}
       <section className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
         {" "}
@@ -1539,6 +1539,14 @@ export default function PosPage() {
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <a href="#pos-cart-section" className="rounded-lg bg-indigo-50 px-3 py-2 font-bold text-indigo-800 hover:bg-indigo-100">
               {ui.cart} · {itemCount} · {formatMoney(grandTotal, saleCurrency)}
+            </a>
+            <a href="#pos-pending-section"
+              className="inline-flex min-w-0 flex-wrap items-center gap-1 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-900 hover:bg-indigo-50"
+              title={ui.unpostedInfo}>
+              <span>{ui.declared} ({ui.unposted}) :</span>
+              <span className="tabular-nums">{depositReadStatus === "ready"
+                ? `HTG ${depositTotals.HTG} · USD ${depositTotals.USD}`
+                : "—"}</span>
             </a>
             {!isOnline ? (
               <p className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
@@ -1683,7 +1691,7 @@ export default function PosPage() {
           </section>
         </div>
       ) : null}
-      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(410px,2fr)] 2xl:grid-cols-[minmax(0,5fr)_minmax(480px,3fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,1fr)] 2xl:grid-cols-[minmax(0,1.2fr)_minmax(460px,1fr)]">
         {" "}
         <section className="min-w-0 space-y-3">
           {" "}
@@ -1702,7 +1710,7 @@ export default function PosPage() {
                     event.preventDefault();
                   }
                 }}
-                placeholder="Scanner ou rechercher un produit (nom, SKU, code-barres, categorie)"
+                placeholder="Rechercher : nom, SKU ou code-barres"
                 className="w-full rounded-xl border border-slate-300 pl-9 pr-11 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />{" "}
               <button
@@ -1721,7 +1729,7 @@ export default function PosPage() {
               className="w-full md:w-72 rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
               {" "}
-              <option value="all">Toutes les categories</option>{" "}
+              <option value="all">Toutes les catégories</option>{" "}
               {categories.map((category) => (
                 <option key={category} value={category}>
                   {" "}
@@ -1741,7 +1749,7 @@ export default function PosPage() {
                 Aucun produit trouve.
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4">
                 {" "}
                 {visibleProducts.map((product) => {
                   const productId = String(product.id);
@@ -1757,7 +1765,7 @@ export default function PosPage() {
                   return (
                     <article
                       key={productId}
-                      className={`rounded-xl border p-2 space-y-1 ${canSell ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-80"}`}
+                      className={`rounded-xl border p-1.5 sm:p-2 space-y-1 ${canSell ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-80"}`}
                     >
                       {" "}
                       <div className="flex flex-col items-start justify-between gap-2">
@@ -1772,7 +1780,7 @@ export default function PosPage() {
                             </p>{" "}
                           </div>
                           <div className="w-full flex items-center justify-center">
-                          <div className="relative flex w-full min-h-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-xs font-bold text-slate-500 sm:min-h-28">
+                          <div className="relative flex w-full min-h-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-xs font-bold text-slate-500 sm:min-h-24">
                             <Image
                               src={imageSrc}
                               alt={product.name}
@@ -1856,16 +1864,16 @@ export default function PosPage() {
         </section>{" "}
         <aside id="pos-cart-section" className="min-w-0 space-y-3 scroll-mt-4">
           {" "}
-          <section className="bg-white rounded-2xl border-2 border-indigo-200 shadow-md">
+          <section className="overflow-hidden bg-white rounded-2xl border-2 border-indigo-300 shadow-lg">
             {" "}
-            <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between">
+            <div className="px-3 py-2.5 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between">
               {" "}
               <div className="text-base font-extrabold text-indigo-950">{ui.cart}</div>{" "}
               <div className="text-sm text-slate-500">
                 {itemCount} article(s)
               </div>{" "}
             </div>{" "}
-            <div className="p-3 space-y-2 min-h-[140px] max-h-[45vh] overflow-y-auto">
+            <div className="p-2.5 space-y-2 min-h-[140px] max-h-[45vh] overflow-y-auto">
               {" "}
               {cart.length === 0 ? (
                 <div className="text-sm text-slate-500 text-center py-6">
@@ -2050,6 +2058,35 @@ export default function PosPage() {
               </div>{" "}
             </div>{" "}
           </section>{" "}
+          <ParkedCartsPanel
+            locale={locale}
+            count={cart.length}
+            carts={parkedCarts}
+            note={parkNote}
+            onNote={setParkNote}
+            depositAmount={parkDepositInput}
+            onDepositAmount={setParkDepositInput}
+            depositCurrency={parkDepositCurrency}
+            onDepositCurrency={setParkDepositCurrency}
+            drafts={depositDrafts}
+            onDraft={(id, value) => setDepositDrafts(prev => ({ ...prev, [id]: value }))}
+            totals={depositTotals}
+            perCart={depositByCart}
+            memos={deposits}
+            status={depositReadStatus}
+            savingDepositId={depositSavingId}
+            canRecord={hasPermission(permissions, "billing.manage")}
+            online={isOnline}
+            branchReady={Boolean(branchId)}
+            onPark={() => void parkCurrentCart()}
+            onResume={id => void resumeParkedCart(id)}
+            onRecord={(id, draft) => void recordDepositForCart(id, draft)}
+            onRequestDelete={id => setConfirmDiscard(parkedCarts.find(park => park.id === id) ?? null)}
+            confirming={confirmDiscard}
+            deletingId={discardingId}
+            onCancelDelete={() => setConfirmDiscard(null)}
+            onConfirmDelete={id => void discardParkedCart(id)}
+          />
           <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
             {" "}
             <div className="font-bold text-slate-900">Paiement</div>{" "}
@@ -2329,37 +2366,15 @@ export default function PosPage() {
               {checkoutLoading ? "Traitement..." : "Passer a la caisse"}{" "}
             </button>{" "}
           </section>{" "}
-          <ParkedCartsPanel
-            locale={locale}
-            count={cart.length}
-            carts={parkedCarts}
-            note={parkNote}
-            onNote={setParkNote}
-            depositAmount={parkDepositInput}
-            onDepositAmount={setParkDepositInput}
-            depositCurrency={parkDepositCurrency}
-            onDepositCurrency={setParkDepositCurrency}
-            drafts={depositDrafts}
-            onDraft={(id, value) => setDepositDrafts(prev => ({ ...prev, [id]: value }))}
-            totals={depositTotals}
-            perCart={depositByCart}
-            memos={deposits}
-            status={depositReadStatus}
-            savingDepositId={depositSavingId}
-            canRecord={hasPermission(permissions, "billing.manage")}
-            online={isOnline}
-            branchReady={Boolean(branchId)}
-            onPark={() => void parkCurrentCart()}
-            onResume={id => void resumeParkedCart(id)}
-            onRecord={(id, draft) => void recordDepositForCart(id, draft)}
-            onRequestDelete={id => setConfirmDiscard(parkedCarts.find(park => park.id === id) ?? null)}
-            confirming={confirmDiscard}
-            deletingId={discardingId}
-            onCancelDelete={() => setConfirmDiscard(null)}
-            onConfirmDelete={id => void discardParkedCart(id)}
-          />
+
         </aside>{" "}
       </div>{" "}
+      <a href="#pos-cart-section"
+        className="fixed bottom-3 left-3 right-3 z-40 flex items-center justify-between gap-3 rounded-xl bg-indigo-950 px-4 py-3 text-sm font-bold text-white shadow-2xl xl:hidden"
+        aria-label={ui.cart}>
+        <span>{ui.cart} · {itemCount} {ui.items}</span>
+        <span className="tabular-nums">{formatMoney(grandTotal, saleCurrency)}</span>
+      </a>
       <SensitiveActionApprovalModal
         open={Boolean(approvalDialog)}
         title={approvalDialog?.title ?? "Autorisation requise"}
