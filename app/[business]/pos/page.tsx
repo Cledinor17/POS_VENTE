@@ -43,6 +43,8 @@ import {
   resolveScannedProduct,
 } from "@/lib/productBarcode";
 import { printReceipt, type PosReceipt } from "@/lib/posReceipt";
+import { receiptLabels } from "@/lib/receiptI18n";
+import { useAppLocale } from "@/context/LocaleContext";
 import {
   listBusinessApprovers,
   type BusinessApproverAbility,
@@ -295,6 +297,8 @@ export default function PosPage() {
   const businessSlug = params?.business ?? "";
 
   const { user, activeBusiness, permissions } = useAuth();
+  const { locale } = useAppLocale();
+  const receiptText = receiptLabels(locale);
   const { currentBranch, loading: branchLoading } = useBranch();
   const branchId = currentBranch?.id;
   const [products, setProducts] = useState<CatalogProduct[]>([]);
@@ -1017,12 +1021,19 @@ export default function PosPage() {
     }
   }
   async function printSaleReceipt(sale: CompletedSale) {
+    const browserPaper = defaultPrinter?.paperWidth === "58" ? "58mm" : "80mm";
     if (!defaultPrinter || !businessSlug) {
-      printReceipt(sale);
+      printReceipt({ ...sale, locale }, { paper: browserPaper });
+      return;
+    }
+    // Many ESC/POS models cannot encode Chinese or Arabic characters. Use
+    // browser rendering with proper fonts instead of printing corrupted text.
+    if (locale === "ar" || locale === "zh") {
+      printReceipt({ ...sale, locale }, { paper: browserPaper });
       return;
     }
     try {
-      const result = await printReceiptOnPrinter(businessSlug, defaultPrinter.id, sale.saleId);
+      const result = await printReceiptOnPrinter(businessSlug, defaultPrinter.id, sale.saleId, locale);
       if (result.printed) {
         pushNotice(`Ticket envoye a l'imprimante "${defaultPrinter.name}".`, "success");
         return;
@@ -1037,7 +1048,7 @@ export default function PosPage() {
         `Impression thermique impossible (${getErrorMessage(e)}), aperçu navigateur ouvert.`,
         "warning",
       );
-      printReceipt(sale);
+      printReceipt({ ...sale, locale }, { paper: browserPaper });
     }
   }
   async function handleOpenDrawer() {
@@ -1178,9 +1189,9 @@ export default function PosPage() {
     };
     function finishSale(backendResult: PosCheckoutResult | null, offline: boolean): CompletedSale {
       const businessName =
+        businessSettings?.name ||
         backendResult?.businessName ||
         businessSettings?.legal_name ||
-        businessSettings?.name ||
         getStringField(activeBusiness, ["name", "legal_name"], businessSlug.toUpperCase());
       const businessAddress =
         backendResult?.businessAddress || formatBusinessAddress(businessSettings);
@@ -1195,9 +1206,10 @@ export default function PosPage() {
       const cashierName = getStringField(
         user,
         ["name", "full_name"],
-        "Caissier",
+        receiptText.cashier,
       );
       const sale: CompletedSale = {
+        locale,
         customerName: selectedCustomer?.name,
         loyaltyEnabled: Boolean(selectedCustomer) && (offline ? loyaltyEnabled : backendResult?.loyaltyEnabled === true),
         loyaltyPointsEarned: backendResult?.loyaltyPointsEarned,
@@ -1392,7 +1404,16 @@ export default function PosPage() {
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 {" "}
-                <Printer className="h-4 w-4" /> Reimprimer dernier ticket{" "}
+                <Printer className="h-4 w-4" /> {receiptText.print80}{" "}
+              </button>
+            ) : null}
+            {lastSale ? (
+              <button
+                type="button"
+                onClick={() => printReceipt({ ...lastSale, locale }, { paper: "a4" })}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Printer className="h-4 w-4" /> {receiptText.printA4}
               </button>
             ) : null}{" "}
           </div>{" "}

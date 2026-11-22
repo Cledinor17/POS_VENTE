@@ -30,7 +30,9 @@ export function printHtmlDocument(html: string, options: PrintHtmlOptions = {}):
   frame.setAttribute("tabindex", "-1");
   frame.style.cssText =
     "position:fixed;left:-10000px;top:0;height:0;border:0;visibility:hidden;";
-  frame.style.width = contentWidthMm === undefined ? "0" : `${contentWidthMm}mm`;
+  // A4/browser sheets require a real layout viewport; 0-width iframes cause
+  // logos and business headings to wrap or disappear in print preview.
+  frame.style.width = contentWidthMm === undefined ? "210mm" : `${contentWidthMm}mm`;
 
   let removed = false;
   const remove = () => {
@@ -54,6 +56,12 @@ export function printHtmlDocument(html: string, options: PrintHtmlOptions = {}):
     window.setTimeout(remove, 60_000);
 
     try {
+      // Wait for brand logo/QR and fonts on *both* A4 and thermal paper.
+      // Previously this was only done for 58/80mm and A4 could print blank.
+      await doc.fonts.ready;
+      await Promise.all(Array.from(doc.images, (image) => image.decode().catch(() => {})));
+      if (removed) return;
+
       if (paperWidthMm !== undefined && contentWidthMm !== undefined) {
         // La largeur de mesure doit etre identique a la largeur imprimable.
         // flow-root inclut aussi les marges des derniers elements du ticket.
@@ -69,10 +77,6 @@ export function printHtmlDocument(html: string, options: PrintHtmlOptions = {}):
           body { display: flow-root !important; }
         `;
         doc.head.appendChild(layoutStyle);
-
-        await doc.fonts.ready;
-        await Promise.all(Array.from(doc.images, (image) => image.decode().catch(() => {})));
-        if (removed) return;
 
         const heightPx = Math.max(doc.body.getBoundingClientRect().height, doc.body.scrollHeight);
         // CSS utilise 96 px/pouce. Un demi-millimetre couvre les arrondis

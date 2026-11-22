@@ -133,11 +133,12 @@ export async function deletePrinter(business: string, printerId: string): Promis
 export async function printReceiptOnPrinter(
   business: string,
   printerId: string,
-  saleId: string
+  saleId: string,
+  locale: "fr" | "en" | "ht" | "es" | "zh" | "ar" = "fr",
 ): Promise<PrintReceiptResult> {
   const raw = await apiFetch<Dict>(`${basePath(business)}/${encodeURIComponent(printerId)}/print-receipt`, {
     method: "POST",
-    json: { sale_id: Number(saleId) },
+    json: { sale_id: Number(saleId), locale },
   });
 
   if (raw.printed === true) return { printed: true };
