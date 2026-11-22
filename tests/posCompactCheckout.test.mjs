@@ -117,6 +117,14 @@ test("POS main interface prioritizes cart, limits product columns to four and do
   const page = readFileSync(new URL("../app/[business]/pos/page.tsx", import.meta.url), "utf8");
   assert.match(page, /xl:grid-cols-\[minmax\(0,1\.05fr\)_minmax\(420px,1fr\)\]/);
   assert.match(page, /sm:grid-cols-3 xl:grid-cols-4/);
+  assert.match(page, /const productPageSize = 10;/);
+  assert.match(page, /visibleProducts\.slice\(/);
+  assert.match(page, /\{paginatedProducts\.map\(\(product\) =>/);
+  assert.match(page, /Pagination des produits/);
+  assert.match(page, /Précédent/);
+  assert.match(page, /Suivant/);
+  assert.match(page, /productFilterKey = JSON\.stringify\(\[query\.trim\(\)\.toLowerCase\(\), categoryFilter\]\)/);
+  assert.ok(page.indexOf("Passer à la caisse") < page.indexOf("Remettre la fiche en attente"), "hold action follows payment");
   assert.match(page, /<ParkedCartsPanel/);
   assert.doesNotMatch(page, /Nouvelle vente/);
   assert.doesNotMatch(page, /Caissier:\{/);
