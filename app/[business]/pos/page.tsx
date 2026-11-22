@@ -353,6 +353,7 @@ export default function PosPage() {
   const [savingParked, setSavingParked] = useState(false);
   const [activeParkedId, setActiveParkedId] = useState<string | null>(null);
   const [activeParkedRevision, setActiveParkedRevision] = useState(1);
+  const [parkedCheckoutUncertain, setParkedCheckoutUncertain] = useState(false);
   const pendingParkedToken = useRef<string | null>(null);
   const migratedLocalScope = useRef<Set<string>>(new Set());
   const [parkedCustomerId, setParkedCustomerId] = useState<string | null>(null);
@@ -1142,6 +1143,7 @@ export default function PosPage() {
       return;
     }
     setActiveParkedId(found.id);
+    setParkedCheckoutUncertain(false);
     setActiveParkedRevision(found.revision ?? 1);
     setCart(found.items);
     setParkNote(found.note ?? "");
@@ -1291,6 +1293,10 @@ export default function PosPage() {
   }
   async function runCheckoutSale(approval?: PosApprovalPayload): Promise<boolean> {
     if (!branchId || !cashSession) { pushError("La succursale et la session de caisse doivent être chargées."); return false; }
+    if (activeParkedId && (!isOnline || parkedCheckoutUncertain)) {
+      pushError("Vérifiez la synchronisation et l'historique de vente de cette fiche avant toute nouvelle tentative.");
+      return false;
+    }
     if (!businessSettings) { pushError("Les taux de change ne sont pas encore charges."); return false; }
     if (cart.length === 0) {
       pushError("Ajoute des produits avant de passer a la caisse.");
@@ -1302,13 +1308,15 @@ export default function PosPage() {
     }
     setCheckoutLoading(true);
     setError("");
-    const idempotencyKey = generateClientId();
+    const idempotencyKey = activeParkedId ? `parked-${activeParkedId}` : generateClientId();
     const checkoutInput: PosCheckoutInput = {
+      parkedCartId: activeParkedId ?? undefined,
+      parkedCartRevision: activeParkedId ? activeParkedRevision : undefined,
       branchId,
       cashSessionId: String(cashSession.id),
       currency: saleCurrency,
       cashierId: user?.id ?? undefined,
-      customerId: selectedCustomer?.id ?? undefined,
+      customerId: selectedCustomer?.id ?? parkedCustomerId ?? undefined,
       note: !selectedCustomer && customerNameForSale ? `Client: ${customerNameForSale.slice(0, 190)}` : undefined,
       subtotal,
       tax: taxTotal,
@@ -1427,6 +1435,13 @@ export default function PosPage() {
       setSelectedCustomer(null);
       setFreeCustomerName("");
       setCustomerQuery("");
+      if (!offline && activeParkedId) {
+        setActiveParkedId(null);
+        setActiveParkedRevision(1);
+        setParkedCustomerId(null);
+        setParkedCheckoutUncertain(false);
+        void loadParkedCarts();
+      }
       setSelectedReservationId(null);
       setActiveSpendingLimit(null);
       setSpendingLimitInput("");
@@ -1439,6 +1454,21 @@ export default function PosPage() {
     }
     let queued = false;
     try {
+      if (activeParkedId) {
+        // Save the exact basket before atomic ticket + invoice finalization.
+        const draft = await updatePosParkedCart(businessSlug, activeParkedId, activeParkedRevision, {
+          note: parkNote.trim() || "Fiche en attente",
+          items: sourceCart,
+          customerName: customerNameForSale || null,
+          customerId: selectedCustomer?.id ?? parkedCustomerId,
+          reservationId: selectedReservationId,
+          roomLabel: selectedReservation?.room?.room_number || null,
+          spendingLimit: activeSpendingLimit,
+          spendingCurrency: activeSpendingCurrency,
+        });
+        checkoutInput.parkedCartRevision = draft.revision;
+        setActiveParkedRevision(draft.revision);
+      }
       // Persist before sending: closing the tab during the request must be recoverable.
       await enqueuePendingSale({
         id: idempotencyKey, business: businessSlug, payload: checkoutInput, status: "pending", error: null,
@@ -1452,6 +1482,12 @@ export default function PosPage() {
       finishSale(backendResult, false);
       return true;
     } catch (e) {
+      if (activeParkedId && queued && (!(e instanceof ApiError) || e.status >= 500 || e.status === 408)) {
+        setParkedCheckoutUncertain(true);
+        setPendingSalesCount((count) => count + 1);
+        pushError("Confirmation incertaine : fiche toujours conservée. Consultez les ventes en attente et leur synchronisation avant de recommencer.");
+        return false;
+      }
       if (queued && (!(e instanceof ApiError) || e.status >= 500 || e.status === 408)) {
         try {
           await enqueuePendingSale({
