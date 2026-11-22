@@ -2194,13 +2194,14 @@ export default function PosPage() {
                     <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
                     <span className="truncate text-sm font-semibold text-slate-800">
                       {selectedCustomer?.name || freeCustomerName}
-                      {!selectedCustomer ? " (nom libre)" : ""}
+                      {!selectedCustomer ? (parkedCustomerId ? " (client enregistré)" : " (nom libre)") : ""}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedCustomer(null);
+                      setParkedCustomerId(null);
                       setFreeCustomerName("");
                       setCustomerQuery("");
                       setRedeemPointsInput("");
@@ -2238,6 +2239,7 @@ export default function PosPage() {
                             type="button"
                             onClick={() => {
                               setSelectedCustomer(item);
+                              setParkedCustomerId(null);
                               setFreeCustomerName("");
                               setCustomerDropdownOpen(false);
                               setCustomerQuery("");
@@ -2255,6 +2257,7 @@ export default function PosPage() {
                         onClick={() => {
                           setFreeCustomerName(customerQuery.trim().slice(0, 190));
                           setSelectedCustomer(null);
+                          setParkedCustomerId(null);
                           setRedeemPointsInput("");
                           setCustomerQuery("");
                           setCustomerDropdownOpen(false);
@@ -2286,6 +2289,7 @@ export default function PosPage() {
                       setSpendingLimitInput("");
                       if (reservation) {
                         setSelectedCustomer(null);
+                        setParkedCustomerId(null);
                         setFreeCustomerName(reservation.guest_name);
                         setCustomerQuery("");
                       }
