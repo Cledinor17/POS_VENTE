@@ -1916,133 +1916,72 @@ export default function PosPage() {
                   const discountEditorOpen = discountEditorProductId === item.productId;
 
                   return (
-                  <div
-                    key={item.productId}
-                    className="rounded-xl border border-slate-200 p-3 space-y-2"
-                  >
-                    {" "}
-                    <div className="flex items-start justify-between gap-3">
-                      {" "}
-                      <div className="min-w-0 flex items-center gap-2">
-                        <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                          <Image
-                            src={imageSrc}
-                            alt={item.name}
-                            fill
-                            sizes="36px"
-                            className="h-full w-full object-cover"
-                            unoptimized
-                            onError={() => {
-                              setBrokenImages((prev) => ({
-                                ...prev,
-                                [item.productId]: true,
-                              }));
-                            }}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          {" "}
-                          <div className="text-sm font-semibold text-slate-800 truncate">
-                            {item.name}
-                          </div>{" "}
-                          <div className="text-xs text-slate-500">
-                            {item.sku}
-                          </div>{" "}
-                        </div>
-                      </div>{" "}
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() =>
-                            setDiscountEditorProductId(discountEditorOpen ? null : item.productId)
-                          }
-                          className={`hover:text-indigo-700 ${lineDiscount > 0 ? "text-indigo-600" : "text-slate-400"}`}
-                          title="Remise sur cet article"
-                        >
-                          <Tag className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => removeLine(item.productId)}
-                          className="text-rose-600 hover:text-rose-700"
-                          title="Retirer"
-                        >
-                          {" "}
-                          <Trash2 className="h-4 w-4" />{" "}
-                        </button>{" "}
-                      </div>
-                    </div>{" "}
-                    {discountEditorOpen ? (
-                      <div className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2">
-                        <select
-                          value={item.discountType ?? "none"}
-                          onChange={(event) => {
-                            const nextType =
-                              event.target.value === "percent" || event.target.value === "fixed"
-                                ? event.target.value
-                                : null;
-                            setLineDiscount(item.productId, nextType, item.discountValue ?? 0);
-                          }}
-                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-                        >
-                          <option value="none">Aucune remise</option>
-                          <option value="percent">%</option>
-                          <option value="fixed">{saleCurrency}</option>
-                        </select>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          disabled={!item.discountType}
-                          value={item.discountValue ? String(item.discountValue) : ""}
-                          onChange={(event) =>
-                            setLineDiscount(
-                              item.productId,
-                              item.discountType ?? null,
-                              safeNumber(event.target.value),
-                            )
-                          }
-                          placeholder="0"
-                          className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-xs disabled:bg-slate-100"
-                        />
-                      </div>
-                    ) : null}
-                    <div className="flex items-center justify-between">
-                      {" "}
-                      <div className="inline-flex items-center gap-1">
-                        {" "}
-                        <button
-                          onClick={() =>
-                            updateQty(item.productId, item.qty - 1)
-                          }
-                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        >
-                          {" "}
-                          <Minus className="h-3.5 w-3.5" />{" "}
-                        </button>{" "}
-                        <span className="w-8 text-center text-sm font-semibold">
-                          {item.qty}
-                        </span>{" "}
-                        <button
-                          onClick={() =>
-                            updateQty(item.productId, item.qty + 1)
-                          }
-                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        >
-                          {" "}
-                          <Plus className="h-3.5 w-3.5" />{" "}
-                        </button>{" "}
-                      </div>{" "}
-                      <div className="text-right">
-                        {lineDiscount > 0 ? (
-                          <div className="text-xs text-slate-400 line-through">
-                            {formatMoney(lineGross, saleCurrency)}
+                    <div key={item.productId} className="space-y-1.5">
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                        <div className="flex min-w-[430px] items-center gap-2 px-2 py-2">
+                          <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                            <Image src={imageSrc} alt={item.name} fill sizes="28px"
+                              className="h-full w-full object-cover" unoptimized
+                              onError={() => setBrokenImages(prev => ({ ...prev, [item.productId]: true }))} />
                           </div>
-                        ) : null}
-                        <div className="text-sm font-bold text-slate-900">
-                          {formatMoney(lineNet, saleCurrency)}
+                          <div className="min-w-[70px] flex-1 truncate text-xs font-semibold text-slate-800"
+                            title={item.name + " · " + item.sku}>
+                            {item.name}{item.sku ? <span className="font-normal text-slate-400"> · {item.sku}</span> : null}
+                          </div>
+                          <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-600" title="Prix unitaire">
+                            {formatMoney(item.price, saleCurrency)}
+                          </span>
+                          <div className="inline-flex shrink-0 items-center gap-0.5" aria-label="Quantité">
+                            <button type="button" onClick={() => updateQty(item.productId, item.qty - 1)}
+                              aria-label={"Diminuer " + item.name}
+                              className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 hover:bg-slate-50">
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-5 text-center text-xs font-bold tabular-nums">{item.qty}</span>
+                            <button type="button" onClick={() => updateQty(item.productId, item.qty + 1)}
+                              aria-label={"Augmenter " + item.name}
+                              className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 hover:bg-slate-50">
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <span className="shrink-0 whitespace-nowrap text-right text-xs font-bold tabular-nums text-slate-900"
+                            title={lineDiscount > 0 ? "Prix avant remise : " + formatMoney(lineGross, saleCurrency) : "Total ligne"}>
+                            {formatMoney(lineNet, saleCurrency)}
+                          </span>
+                          <button type="button"
+                            onClick={() => setDiscountEditorProductId(discountEditorOpen ? null : item.productId)}
+                            className={lineDiscount > 0 ? "shrink-0 text-indigo-700" : "shrink-0 text-slate-400 hover:text-indigo-700"}
+                            aria-label={"Remise sur " + item.name} title="Remise">
+                            <Tag className="h-4 w-4" />
+                          </button>
+                          <button type="button" onClick={() => removeLine(item.productId)}
+                            className="shrink-0 text-rose-600 hover:text-rose-700"
+                            aria-label={"Retirer " + item.name} title="Retirer">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
-                      </div>{" "}
-                    </div>{" "}
-                  </div>
+                      </div>
+                      {discountEditorOpen ? (
+                        <div className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2">
+                          <select value={item.discountType ?? "none"}
+                            onChange={event => {
+                              const nextType = event.target.value === "percent" || event.target.value === "fixed"
+                                ? event.target.value : null;
+                              setLineDiscount(item.productId, nextType, item.discountValue ?? 0);
+                            }}
+                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                            <option value="none">Aucune remise</option>
+                            <option value="percent">%</option>
+                            <option value="fixed">{saleCurrency}</option>
+                          </select>
+                          <input type="number" min="0" step="0.01" disabled={!item.discountType}
+                            value={item.discountValue ? String(item.discountValue) : ""}
+                            onChange={event => setLineDiscount(item.productId, item.discountType ?? null, safeNumber(event.target.value))}
+                            placeholder="0" aria-label="Valeur de la remise"
+                            className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-xs disabled:bg-slate-100" />
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })
               )}{" "}
