@@ -124,7 +124,7 @@ test("POS main interface prioritizes cart, limits product columns to four and do
   assert.match(page, /Précédent/);
   assert.match(page, /Suivant/);
   assert.match(page, /productFilterKey = JSON\.stringify\(\[query\.trim\(\)\.toLowerCase\(\), categoryFilter\]\)/);
-  assert.ok(page.indexOf("Passer à la caisse") < page.indexOf("disabled={cart.length === 0 || branchLoading || !branchId || parkSaving}"), "payment action is above hold");
+  assert.ok(page.indexOf("Passer à la caisse") < page.indexOf("Remettre la fiche en attente"), "hold action follows payment");
   assert.match(page, /<ParkedCartsPanel/);
   assert.doesNotMatch(page, /Nouvelle vente/);
   assert.doesNotMatch(page, /Caissier:\{/);

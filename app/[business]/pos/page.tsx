@@ -59,7 +59,7 @@ import {
   type BusinessApproverItem,
 } from "@/lib/businessUsersApi";
 import { getProducts, type CatalogProduct } from "@/lib/catalogApi";
-import { getExchangeRate, convertAmount, formatMoney } from "@/lib/currency";
+import { getExchangeRate, convertAmount, convertPayment, formatMoney } from "@/lib/currency";
 import {
   DEFAULT_PRODUCT_AVATAR_PATH,
   resolveProductImageUrl,
@@ -67,6 +67,8 @@ import {
 import {
   checkoutPosSale,
   createPosParkedCart,
+  updatePosParkedCart,
+  setPosParkedDeposit,
   deletePosParkedCart,
   getPosPaymentMethods,
   listPosParkedCarts,
@@ -122,6 +124,8 @@ type ParkedCart = {
   note: string;
   createdAt: string;
   items: CartItem[];
+  version?: number;
+  depositTotals?: { HTG: number; USD: number };
 };
 type PaymentMethodId =
   | "cash"
@@ -299,6 +303,8 @@ function fromApiParkedCart(cart: PosParkedCartApi): ParkedCart {
     note: cart.note,
     createdAt: cart.createdAt,
     items: cart.items,
+    version: cart.version,
+    depositTotals: cart.depositTotals,
   };
 }
 export default function PosPage() {
@@ -336,10 +342,13 @@ export default function PosPage() {
     {},
   );
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>([]);
+  const [activeParked, setActiveParked] = useState<ParkedCart | null>(null);
   const [useRemoteParked, setUseRemoteParked] = useState(false);
   const [parkNote, setParkNote] = useState("");
   const [parkModalOpen, setParkModalOpen] = useState(false);
   const [parkSaving, setParkSaving] = useState(false);
+  const parkCreateId = useRef<string | null>(null);
+  const checkoutRequestKey = useRef<string | null>(null);
   const [parkDepositInput, setParkDepositInput] = useState("");
   const [parkDepositCurrency, setParkDepositCurrency] = useState<"HTG" | "USD">("HTG");
   const [depositDrafts, setDepositDrafts] = useState<Record<string, { amount: string; currency: "HTG" | "USD"; requestKey?: string }>>({});
@@ -680,39 +689,91 @@ export default function PosPage() {
     let mounted = true;
     async function loadParkedCarts() {
       if (!businessSlug || !branchId || branchLoading) return;
-      setParkedCarts([]);
       try {
         const remote = await listPosParkedCarts(businessSlug);
         if (!mounted) return;
         if (remote) {
           setUseRemoteParked(true);
-          setParkedCarts(remote.map(item => ({ ...fromApiParkedCart(item), branchId })));
+          // Migrate older browser-only slips without changing their original
+          // reference: their existing memo deposits remain attached to it.
+          const key = `pos_parked_carts:${businessSlug}`;
+          let local: ParkedCart[] = [];
+          try {
+            const parsed: unknown = JSON.parse(safeGetItem(key) || "[]");
+            local = Array.isArray(parsed) ? parsed as ParkedCart[] : [];
+          } catch { /* Leave unreadable local data untouched. */ }
+          const visible = visibleParkedForBranch(local, branchId, Boolean(currentBranch?.isMain));
+          const migrated: string[] = [];
+          for (const item of visible) {
+            if (!mounted) return;
+            if (remote.some(serverCart => serverCart.id === item.id)) {
+              migrated.push(item.id);
+              continue;
+            }
+            try {
+              const moved = await createPosParkedCart(businessSlug, {
+                id: item.id, note: item.note, items: item.items,
+              });
+              if (moved) migrated.push(item.id);
+            } catch {
+              // Do not silently discard legacy slips; keep them on this device
+              // until the server accepts them.
+              break;
+            }
+          }
+          if (migrated.length) {
+            safeSetItem(key, JSON.stringify(local.filter(item => !migrated.includes(item.id))));
+          }
+          const latest = migrated.length ? (await listPosParkedCarts(businessSlug)) : remote;
+          if (mounted) {
+            const shared = (latest ?? remote).map(item => ({ ...fromApiParkedCart(item), branchId }));
+            const localRemaining = visible.filter(item =>
+              !migrated.includes(item.id) && !shared.some(server => server.id === item.id),
+            );
+            setParkedCarts([...shared, ...localRemaining.map(item => ({ ...item, version: undefined }))]);
+            if (localRemaining.length) pushNotice(
+              localRemaining.length + " fiche(s) locales non synchronisées : repassez-les en attente pour les partager.",
+              "warning",
+            );
+          }
           return;
         }
       } catch (e) {
-        if (mounted) pushError(getErrorMessage(e));
+        if (mounted && isOnline) {
+          pushError("Les fiches partagées ne sont pas accessibles. Vérifiez l’API avant d’enregistrer.");
+          return;
+        }
       }
       if (!mounted) return;
       setUseRemoteParked(false);
       const raw = safeGetItem(`pos_parked_carts:${businessSlug}`);
-      if (!raw) {
-        setParkedCarts([]);
-        return;
-      }
+      if (!raw) { setParkedCarts([]); return; }
       try {
         const parsed = JSON.parse(raw);
         setParkedCarts(Array.isArray(parsed)
           ? visibleParkedForBranch(parsed as ParkedCart[], branchId, Boolean(currentBranch?.isMain))
           : []);
-      } catch {
-        setParkedCarts([]);
-      }
+      } catch { setParkedCarts([]); }
     }
     void loadParkedCarts();
-    return () => {
-      mounted = false;
+    return () => { mounted = false; };
+  }, [businessSlug, branchId, branchLoading, currentBranch?.isMain, pushError, isOnline]);
+
+  useEffect(() => {
+    if (!businessSlug || !branchId || !useRemoteParked || !isOnline) return undefined;
+    let active = true;
+    const refresh = () => {
+      void listPosParkedCarts(businessSlug).then(carts => {
+        if (active && carts) setParkedCarts(prev => {
+          const shared = carts.map(cart => ({ ...fromApiParkedCart(cart), branchId }));
+          return [...shared, ...prev.filter(item => !item.version && !shared.some(server => server.id === item.id))];
+        });
+      }).catch(() => { /* A transient poll must not erase valid cashier data. */ });
     };
-  }, [businessSlug, branchId, branchLoading, currentBranch?.isMain, pushError]);
+    const timer = window.setInterval(refresh, 12000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [businessSlug, branchId, useRemoteParked, isOnline]);
+
   const reloadDepositMemos = useCallback(async () => {
     if (!businessSlug || !branchId) return;
     const result = await listUnpostedDeposits(businessSlug);
@@ -864,20 +925,13 @@ export default function PosPage() {
   const valuationConfig = { exchangeRateValue: businessSettings?.exchange_sell_rate || businessSettings?.usd_to_htg_rate || 1 };
   const couponDiscountAmount = convertAmount(appliedCoupon?.discountAmount ?? 0, businessSettings?.currency || "HTG", saleCurrency, valuationConfig);
   const grandTotal = Math.max(0, subtotal - discountAmount - couponDiscountAmount) + taxTotal;
-  const previewDeposit = parseDepositAmount(parkDepositInput);
+  const previewDeposit = /^(?:0|0[.,]0{1,2})$/.test(parkDepositInput.trim())
+    ? "0.00" : parseDepositAmount(parkDepositInput);
   const hasExchangeConfigured = [
     businessSettings?.exchange_buy_rate,
     businessSettings?.exchange_sell_rate,
     businessSettings?.exchange_rate_value,
   ].some(value => Number(value) > 0);
-  const previewDepositInSaleCurrency = previewDeposit && (parkDepositCurrency === saleCurrency || hasExchangeConfigured)
-    ? convertAmount(Number(previewDeposit), parkDepositCurrency, saleCurrency, {
-        exchangeRateDirection: businessSettings?.exchange_rate_direction,
-        exchangeRateValue: businessSettings?.exchange_rate_value,
-        exchangeBuyRate: businessSettings?.exchange_buy_rate,
-        exchangeSellRate: businessSettings?.exchange_sell_rate,
-      })
-    : null;
   const itemCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.qty, 0),
     [cart],
@@ -886,13 +940,17 @@ export default function PosPage() {
     const grouped: Record<string, { HTG: number; USD: number }> = {};
     for (const memo of deposits) {
       const amount = Number(memo.amount);
-      if (!Number.isFinite(amount) || amount < 0) continue;
+      if (!Number.isFinite(amount)) continue;
       const sum = grouped[memo.cart_reference] ?? { HTG: 0, USD: 0 };
       sum[memo.currency] = Math.round((sum[memo.currency] + amount) * 100) / 100;
       grouped[memo.cart_reference] = sum;
     }
+    for (const item of parkedCarts) {
+      if (item.depositTotals) grouped[item.id] = item.depositTotals;
+    }
+    if (activeParked?.depositTotals) grouped[activeParked.id] = activeParked.depositTotals;
     return grouped;
-  }, [deposits]);
+  }, [deposits, parkedCarts, activeParked]);
   const canApplyDiscount = hasPermission(permissions, "billing.discount");
   useEffect(() => {
     if (!businessSlug || typeof window === "undefined") return;
@@ -919,15 +977,45 @@ export default function PosPage() {
   );
   const pointsDiscountAmount = Number((redeemPoints * loyaltyRedeemValue).toFixed(2));
   const remainingAfterPoints = Math.max(0, grandTotal - pointsDiscountAmount);
+  const activeDepositTotals = activeParked
+    ? (depositByCart[activeParked.id] ?? { HTG: 0, USD: 0 })
+    : { HTG: 0, USD: 0 };
+  const activeDepositApplied = activeParked
+    ? Number((
+      convertPayment(activeDepositTotals.HTG, "HTG", saleCurrency, {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
+      }) + convertPayment(activeDepositTotals.USD, "USD", saleCurrency, {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
+      })
+    ).toFixed(2))
+    : 0;
+  const previewDepositInSaleCurrency = previewDeposit !== null && (parkDepositCurrency === saleCurrency || hasExchangeConfigured)
+    ? activeDepositApplied + convertPayment(
+        Number(previewDeposit) - activeDepositTotals[parkDepositCurrency],
+        parkDepositCurrency, saleCurrency, {
+          exchangeRateDirection: businessSettings?.exchange_rate_direction,
+          exchangeRateValue: businessSettings?.exchange_rate_value,
+          exchangeBuyRate: businessSettings?.exchange_buy_rate,
+          exchangeSellRate: businessSettings?.exchange_sell_rate,
+        },
+      )
+    : null;
+  const remainingAfterDeposit = Math.max(0, remainingAfterPoints - activeDepositApplied);
   const amountDueInPaymentCurrency = useMemo(
     () =>
-      convertAmount(remainingAfterPoints, saleCurrency, paymentCurrency, {
+      convertAmount(remainingAfterDeposit, saleCurrency, paymentCurrency, {
         exchangeRateDirection: businessSettings?.exchange_rate_direction,
         exchangeRateValue: businessSettings?.exchange_rate_value,
         exchangeBuyRate: businessSettings?.exchange_buy_rate,
         exchangeSellRate: businessSettings?.exchange_sell_rate,
       }),
-    [businessSettings, remainingAfterPoints, paymentCurrency, saleCurrency],
+    [businessSettings, remainingAfterDeposit, paymentCurrency, saleCurrency],
   );
   const cashReceived = safeNumber(cashReceivedInput);
   const cashDelta = cashReceived - amountDueInPaymentCurrency;
@@ -1082,34 +1170,42 @@ export default function PosPage() {
   async function recordDepositForCart(
     cartReference: string, draft: { amount: string; currency: "HTG" | "USD"; requestKey?: string },
   ): Promise<boolean> {
-    const amount = parseDepositAmount(draft.amount);
-    if (!amount) {
-      pushError(ui.invalidAmount);
-      return false;
-    }
-    if (!isOnline || !branchId) {
-      pushError(ui.noNetwork);
-      return false;
-    }
-    const requestKey = draft.requestKey || (typeof crypto !== "undefined" ? crypto.randomUUID?.() : undefined);
-    if (!requestKey) {
-      pushError(ui.noNetwork);
-      return false;
-    }
+    const amount = /^(?:0|0[.,]0{1,2})$/.test(draft.amount.trim())
+      ? "0.00" : parseDepositAmount(draft.amount);
+    if (amount === null) { pushError(ui.invalidAmount); return false; }
+    if (!isOnline || !branchId) { pushError(ui.noNetwork); return false; }
+    const requestKey = draft.requestKey || crypto.randomUUID?.();
+    if (!requestKey) { pushError(ui.noNetwork); return false; }
+    const found = parkedCarts.find(item => item.id === cartReference)
+      ?? (activeParked?.id === cartReference ? activeParked : null);
     setDepositDrafts(previous => ({
-      ...previous,
-      [cartReference]: { ...draft, requestKey },
+      ...previous, [cartReference]: { ...draft, requestKey },
     }));
     setDepositSavingId(cartReference);
     try {
-      await recordUnpostedDeposit(businessSlug, {
-        cart_reference: cartReference,
-        amount,
-        currency: draft.currency,
-        request_key: requestKey,
-        note: parkedCarts.find(item => item.id === cartReference)?.note ?? parkNote.trim(),
-      });
-      await reloadDepositMemos();
+      if (found?.version && useRemoteParked) {
+        const updated = fromApiParkedCart(await setPosParkedDeposit(businessSlug, cartReference, {
+          version: found.version, amount, currency: draft.currency, request_key: requestKey,
+        }));
+        setParkedCarts(prev => prev.map(item => item.id === cartReference ? updated : item));
+        if (activeParked?.id === cartReference) setActiveParked(updated);
+      } else {
+        // Existing browser-only slips keep their original unposted memo reference
+        // until they can be migrated to the shared backend.
+        if (Number(amount) === 0) {
+          pushError("Pour corriger cet acompte, synchronisez d'abord la fiche avec le serveur.");
+          return false;
+        }
+        await recordUnpostedDeposit(businessSlug, {
+          cart_reference: cartReference,
+          amount,
+          currency: draft.currency,
+          request_key: requestKey,
+          note: found?.note ?? parkNote.trim(),
+        });
+      }
+      try { await reloadDepositMemos(); }
+      catch { pushNotice("Acompte sauvé. Actualisez la caisse pour afficher les derniers totaux.", "warning"); }
       setDepositDrafts(previous => ({
         ...previous, [cartReference]: { amount: "", currency: draft.currency },
       }));
@@ -1125,120 +1221,124 @@ export default function PosPage() {
 
   async function parkCurrentCart() {
     if (parkSaving) return;
-    if (!branchId || branchLoading) {
-      pushError(ui.noNetwork);
-      return;
-    }
-    if (cart.length === 0) {
-      pushError("Le panier est vide.");
-      return;
-    }
+    if (!branchId || branchLoading) { pushError("Succursale indisponible."); return; }
+    if (!cart.length) { pushError("Le panier est vide."); return; }
     const hasDeposit = parkDepositInput.trim().length > 0;
-    const normalizedDeposit = hasDeposit ? parseDepositAmount(parkDepositInput) : null;
-    if (hasDeposit && !normalizedDeposit) {
-      pushError(ui.invalidAmount);
+    const normalizedDeposit = !hasDeposit ? null
+      : /^(?:0|0[.,]0{1,2})$/.test(parkDepositInput.trim()) ? "0.00" : parseDepositAmount(parkDepositInput);
+    if (hasDeposit && normalizedDeposit === null) { pushError(ui.invalidAmount); return; }
+    if (hasDeposit && (!isOnline || !hasPermission(permissions, "billing.manage"))) {
+      pushError(!isOnline ? ui.noNetwork : ui.noRights);
       return;
     }
-    if (hasDeposit && (!isOnline || !branchId)) {
-      pushError(ui.noNetwork);
-      return;
-    }
-    if (hasDeposit && !hasPermission(permissions, "billing.manage")) {
-      pushError(ui.noRights);
+    if (!isOnline && (useRemoteParked || activeParked?.version)) {
+      pushError("Connexion nécessaire pour enregistrer la fiche partagée.");
       return;
     }
     setParkSaving(true);
     const parked: ParkedCart = {
-      id: `P-${generateClientId()}`,
+      id: activeParked?.id ?? (parkCreateId.current ||= `P-${generateClientId()}`),
       branchId,
-      note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
-      createdAt: new Date().toISOString(),
+      note: parkNote.trim() || activeParked?.note || `Panier ${parkedCarts.length + 1}`,
+      createdAt: activeParked?.createdAt ?? new Date().toISOString(),
       items: sourceCart,
+      version: activeParked?.version,
+      depositTotals: activeParked?.depositTotals,
     };
     try {
       let saved = parked;
       if (useRemoteParked) {
-        const created = await createPosParkedCart(businessSlug, {
-          note: parked.note,
-          items: parked.items,
-        });
-        if (created) {
-          saved = fromApiParkedCart(created);
-          setParkedCarts((prev) => [saved, ...prev]);
+        if (activeParked?.version) {
+          saved = fromApiParkedCart(await updatePosParkedCart(businessSlug, parked.id, {
+            note: parked.note, items: parked.items, version: activeParked.version,
+          }));
+          setActiveParked(saved);
+          if (hasDeposit && normalizedDeposit !== null) {
+            const updated = await setPosParkedDeposit(businessSlug, parked.id, {
+              version: saved.version!, amount: normalizedDeposit, currency: parkDepositCurrency,
+              request_key: crypto.randomUUID(),
+            });
+            saved = fromApiParkedCart(updated);
+            setActiveParked(saved);
+          }
         } else {
-          const next = [parked, ...parkedCarts];
-          saveLocalParked(next);
-          setUseRemoteParked(false);
+          const created = await createPosParkedCart(businessSlug, {
+            id: parked.id, note: parked.note, items: parked.items,
+            depositAmount: hasDeposit ? normalizedDeposit : null,
+            depositCurrency: parkDepositCurrency,
+          });
+          if (!created) throw new Error("Service des fiches partagées indisponible. La fiche reste dans le panier.");
+          saved = fromApiParkedCart(created);
         }
+        setParkedCarts(prev => [saved, ...prev.filter(item => item.id !== saved.id)]);
+        try { await reloadDepositMemos(); }
+        catch { pushNotice("Fiche sauvegardée, mais totaux non actualisés.", "warning"); }
       } else {
-        saveLocalParked([parked, ...parkedCarts]);
+        if (activeParked) {
+          saveLocalParked([saved, ...parkedCarts.filter(item => item.id !== saved.id)]);
+        } else {
+          saveLocalParked([saved, ...parkedCarts]);
+        }
+        if (hasDeposit && normalizedDeposit && Number(normalizedDeposit) > 0) {
+          // Offline/old-API fallback deliberately does not promise synced deposits.
+          setDepositDrafts(prev => ({
+            ...prev, [saved.id]: { amount: normalizedDeposit, currency: parkDepositCurrency },
+          }));
+          pushNotice("Fiche locale. Acompte à enregistrer dès que le serveur sera disponible.", "warning");
+        }
       }
       setCart([]);
+      setActiveParked(null);
       setParkModalOpen(false);
       setParkNote("");
+      setParkDepositInput("");
       setCashReceivedInput("");
-      setError("");
-      if (normalizedDeposit) {
-        const ok = await recordDepositForCart(saved.id, {
-          amount: normalizedDeposit,
-          currency: parkDepositCurrency,
-        });
-        setParkDepositInput("");
-        if (!ok) {
-          setDepositDrafts(prev => ({
-            ...prev,
-            [saved.id]: { ...prev[saved.id], amount: normalizedDeposit, currency: parkDepositCurrency },
-          }));
-          pushNotice(ui.parkFailed, "warning");
-        }
-      } else {
-        setParkDepositInput("");
-        pushNotice(ui.savedPending, "info");
-      }
+      parkCreateId.current = null;
+      checkoutRequestKey.current = null;
+      pushNotice(ui.savedPending, "success");
     } catch (error) {
+      // Keep the cart, stable reference and deposit intact on any failure.
       pushError(getErrorMessage(error));
     } finally {
       setParkSaving(false);
     }
   }
-  async function resumeParkedCart(parkId: string) {
-    const found = parkedCarts.find((item) => item.id === parkId);
+
+  function resumeParkedCart(parkId: string) {
+    const found = parkedCarts.find(item => item.id === parkId);
     if (!found || !branchId) return;
-    setCart(found.items);
-    setParkNote(found.note ?? "");
-    try {
-      if (useRemoteParked) {
-        const deleted = await deletePosParkedCart(businessSlug, parkId);
-        if (!deleted) setUseRemoteParked(false);
-      }
-      const next = parkedCarts.filter((item) => item.id !== parkId);
-      setParkedCarts(next);
-      if (!useRemoteParked) saveLocalParked(next);
-      setError("");
-      pushNotice(depositByCart[parkId]?.HTG || depositByCart[parkId]?.USD
-        ? ui.alreadyUnposted : `Panier repris: ${found.note}.`, "info");
-    } catch (e) {
-      pushError(getErrorMessage(e));
+    if (cart.length || activeParked) {
+      pushError("Mettez d’abord votre panier actuel en attente ou finalisez-le.");
+      return;
     }
+    checkoutRequestKey.current = null;
+    setCart(found.items);
+    setActiveParked(found);
+    setParkNote(found.note || "");
+    setParkDepositInput("");
+    setParkedCarts(prev => prev.filter(item => item.id !== parkId));
+    if (!useRemoteParked) saveLocalParked(parkedCarts.filter(item => item.id !== parkId));
+    setError("");
+    pushNotice("Fiche reprise avec ses acomptes : " + found.note, "info");
   }
+
   async function discardParkedCart(parkId: string) {
-    const found = parkedCarts.find((item) => item.id === parkId);
+    const found = parkedCarts.find(item => item.id === parkId);
     if (!found || depositSavingId === parkId) return;
     setDiscardingId(parkId);
     try {
-      if (useRemoteParked) {
-        const deleted = await deletePosParkedCart(businessSlug, parkId);
-        if (!deleted) setUseRemoteParked(false);
+      if (useRemoteParked && found.version) {
+        await deletePosParkedCart(businessSlug, parkId, found.version);
+      } else if (useRemoteParked) {
+        throw new Error("Actualisez la fiche avant de la supprimer.");
       }
-      const next = parkedCarts.filter((item) => item.id !== parkId);
-      setParkedCarts(next);
-      if (!useRemoteParked) saveLocalParked(next);
-      setError("");
-      if (found) pushNotice(depositByCart[parkId]?.HTG || depositByCart[parkId]?.USD
-        ? ui.alreadyUnposted : `Panier supprime: ${found.note}.`, "info");
+      const next = parkedCarts.filter(item => item.id !== parkId);
+      if (useRemoteParked) setParkedCarts(next);
+      else saveLocalParked(next);
       setConfirmDiscard(null);
-    } catch (e) {
-      pushError(getErrorMessage(e));
+      pushNotice("Fiche supprimée. Historique des acomptes conservé.", "info");
+    } catch (error) {
+      pushError(getErrorMessage(error));
     } finally {
       setDiscardingId(null);
     }
@@ -1371,15 +1471,26 @@ export default function PosPage() {
       pushError("Ajoute des produits avant de passer a la caisse.");
       return false;
     }
+    if (activeParked && (!activeParked.version || !useRemoteParked || !isOnline)) {
+      pushError("Connexion au serveur requise pour finaliser une fiche avec son acompte.");
+      return false;
+    }
+    if (activeParked && activeDepositApplied > remainingAfterPoints + 0.01) {
+      pushError("L’acompte dépasse le total de la vente. Corrigez l’acompte avant l’encaissement.");
+      return false;
+    }
     if (paymentMethod === "cash" && cashReceived < amountDueInPaymentCurrency) {
       pushError(`Montant insuffisant: manque ${formatMoney(cashMissing, paymentCurrency)}.`);
       return false;
     }
     setCheckoutLoading(true);
     setError("");
-    const idempotencyKey = generateClientId();
+    const idempotencyKey = checkoutRequestKey.current || generateClientId();
+    checkoutRequestKey.current = idempotencyKey;
     const checkoutInput: PosCheckoutInput = {
       branchId,
+      parkedCartId: activeParked?.version ? activeParked.id : undefined,
+      parkedCartVersion: activeParked?.version,
       cashSessionId: String(cashSession.id),
       currency: saleCurrency,
       cashierId: user?.id ?? undefined,
@@ -1462,6 +1573,7 @@ export default function PosPage() {
         paymentMethod,
         paymentCurrency,
         paymentAmount: backendResult?.paymentAmount ?? amountDueInPaymentCurrency,
+        depositApplied: backendResult?.depositApplied || activeDepositApplied,
         paymentDateLabel:
           backendResult?.paymentDateLabel ||
           new Date(backendResult?.createdAt ?? new Date().toISOString()).toLocaleString("fr-FR"),
@@ -1487,6 +1599,9 @@ export default function PosPage() {
         }),
       );
       setLastSale(sale);
+      if (activeParked) setParkedCarts(prev => prev.filter(item => item.id !== activeParked.id));
+      setActiveParked(null);
+      checkoutRequestKey.current = null;
       clearCurrentCart();
       if (offline) {
         pushNotice(`Vente enregistree hors-ligne. Ticket provisoire ${sale.receiptNo}.`, "warning");
@@ -1511,18 +1626,26 @@ export default function PosPage() {
     let queued = false;
     try {
       // Persist before sending: closing the tab during the request must be recoverable.
-      await enqueuePendingSale({
-        id: idempotencyKey, business: businessSlug, payload: checkoutInput, status: "pending", error: null,
-        createdAt: new Date().toISOString(), totalDisplay: grandTotal, currencyDisplay: saleCurrency,
-      });
-      queued = true;
+      if (!activeParked) {
+        await enqueuePendingSale({
+          id: idempotencyKey, business: businessSlug, payload: checkoutInput, status: "pending", error: null,
+          createdAt: new Date().toISOString(), totalDisplay: grandTotal, currencyDisplay: saleCurrency,
+        });
+        queued = true;
+      }
       const backendResult = await checkoutPosSale(businessSlug, checkoutInput);
       if (!backendResult) throw new Error("Le serveur n’a pas confirmé la vente.");
       try { await removePendingSale(idempotencyKey); }
       catch { pushNotice("Vente confirmée. La référence locale sera vérifiée à la prochaine synchronisation.", "warning"); }
       finishSale(backendResult, false);
+      if (activeParked) void reloadDepositMemos().catch(() => {});
       return true;
     } catch (e) {
+      if (activeParked) {
+        pushError("Vente non confirmée : " + getErrorMessage(e) +
+          ". Vérifiez les ventes avant de réessayer ; l’acompte et la fiche sont conservés.");
+        return false;
+      }
       if (queued && (!(e instanceof ApiError) || e.status >= 500 || e.status === 408)) {
         try {
           await enqueuePendingSale({
@@ -2071,7 +2194,7 @@ export default function PosPage() {
           </section>{" "}
           <ParkedCartsPanel
             locale={locale}
-            carts={parkedCarts}
+            carts={parkedCarts.filter(item => item.id !== activeParked?.id)}
             preferredCurrency={saleCurrency === "USD" ? "USD" : "HTG"}
             exchange={{
               exchangeRateDirection: businessSettings?.exchange_rate_direction,
@@ -2300,6 +2423,11 @@ export default function PosPage() {
               </select>
             </div>{" "}
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900">
+              {activeParked ? (
+                <div className="font-semibold text-indigo-900">
+                  Fiche reprise : {activeParked.note}
+                </div>
+              ) : null}
               <div>Total facture: {formatMoney(grandTotal, saleCurrency)}</div>
               {couponDiscountAmount > 0 ? (
                 <div className="mt-1">
@@ -2311,7 +2439,17 @@ export default function PosPage() {
                   Points utilises: - {formatMoney(pointsDiscountAmount, saleCurrency)}
                 </div>
               ) : null}
-              <div className="mt-1">
+              {activeParked ? (
+                <>
+                  <div className="mt-1 font-semibold">Acompte conservé :
+                    {activeDepositTotals.HTG > 0 ? " " + formatMoney(activeDepositTotals.HTG, "HTG") : ""}
+                    {activeDepositTotals.USD > 0 ? " · " + formatMoney(activeDepositTotals.USD, "USD") : ""}
+                    {!activeDepositTotals.HTG && !activeDepositTotals.USD ? " Aucun" : ""}
+                  </div>
+                  <div className="text-xs text-indigo-700">Imputé une seule fois à la confirmation de cette vente.</div>
+                </>
+              ) : null}
+              <div className="mt-1 font-bold">
                 A encaisser: {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
               </div>
             </div>{" "}
@@ -2380,7 +2518,7 @@ export default function PosPage() {
                 }}
                 disabled={cart.length === 0 || branchLoading || !branchId || parkSaving}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-indigo-200 bg-indigo-50 px-3 py-2.5 text-sm font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50">
-                <PauseCircle className="h-4 w-4 shrink-0" />{ui.park}
+                <PauseCircle className="h-4 w-4 shrink-0" />{activeParked ? "Remettre la fiche en attente" : ui.park}
               </button>
             </div>{" "}
           </section>{" "}
@@ -2430,14 +2568,19 @@ export default function PosPage() {
                 </select>
               </label>
             </div>
-            {parkDepositInput.trim() && !previewDeposit ? (
+            {parkDepositInput.trim() && previewDeposit === null ? (
               <p role="alert" className="text-xs font-semibold text-rose-700">{ui.invalidAmount}</p>
             ) : null}
             <div className="space-y-1 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-950">
               <div className="flex justify-between gap-2">
                 <span>{ui.subtotal}</span><strong>{formatMoney(grandTotal, saleCurrency)}</strong>
               </div>
-              {previewDeposit ? (
+              {activeParked ? (
+                <div className="text-xs font-semibold text-indigo-800">
+                  Acompte conservé : {formatMoney(activeDepositTotals.HTG, "HTG")} · {formatMoney(activeDepositTotals.USD, "USD")}
+                </div>
+              ) : null}
+              {previewDeposit !== null ? (
                 <>
                   <div className="flex justify-between gap-2">
                     <span>{ui.declaredOnSlip}</span>
@@ -2449,6 +2592,9 @@ export default function PosPage() {
                       formatMoney(Math.max(0, grandTotal - previewDepositInSaleCurrency), saleCurrency)}</span>
                   </div>
                 </>
+              ) : null}
+              {activeParked ? (
+                <p className="text-[11px] text-indigo-700">Laissez le montant vide pour conserver l’acompte. Saisissez le nouveau total pour le modifier (0 pour annuler).</p>
               ) : null}
               <p className="text-[11px] text-indigo-700">{ui.unpostedInfo}</p>
             </div>
@@ -2462,7 +2608,7 @@ export default function PosPage() {
                 {ui.no}
               </button>
               <button type="button" disabled={parkSaving || depositSavingId !== null || cart.length === 0
-                  || Boolean(parkDepositInput.trim() && (!previewDeposit || !isOnline || !hasPermission(permissions, "billing.manage")))}
+                  || Boolean(parkDepositInput.trim() && (previewDeposit === null || !isOnline || !hasPermission(permissions, "billing.manage")))}
                 onClick={() => void parkCurrentCart()}
                 className="rounded-xl brand-primary-btn py-2.5 text-sm font-bold text-white disabled:opacity-50">
                 {parkSaving ? ui.loading : ui.park}
