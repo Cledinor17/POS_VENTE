@@ -118,6 +118,8 @@ export type PosCheckoutResult = {
   businessInvoiceFooter: string | null;
   paymentCurrency: string;
   paymentAmount: number;
+  advanceApplied: number;
+  advanceBalance: number;
   paymentDateLabel: string | null;
   receiptQrPayload: string | null;
   receiptQrCodeDataUri: string | null;
@@ -382,6 +384,8 @@ function normalizeCheckoutResult(raw: unknown): PosCheckoutResult {
       toString(obj.business_invoice_footer ?? obj.businessInvoiceFooter ?? obj.invoice_footer ?? obj.invoiceFooter, "") || null,
     paymentCurrency: toString(obj.payment_currency ?? obj.paymentCurrency, "HTG"),
     paymentAmount: toNumber(obj.payment_amount ?? obj.paymentAmount, 0),
+    advanceApplied: toNumber(obj.advance_applied ?? obj.advanceApplied, 0),
+    advanceBalance: toNumber(obj.advance_balance ?? obj.advanceBalance, 0),
     paymentDateLabel: toString(obj.payment_date_label ?? obj.paymentDateLabel, "") || null,
     receiptQrPayload: toString(obj.receipt_qr_payload ?? obj.receiptQrPayload, "") || null,
     receiptQrCodeDataUri: toString(obj.receipt_qr_code_data_uri ?? obj.receiptQrCodeDataUri, "") || null,
