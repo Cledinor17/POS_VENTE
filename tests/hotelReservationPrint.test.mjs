@@ -10,7 +10,7 @@ const js = ts.transpileModule(source, {
 }).outputText;
 const loadedModule = { exports: {} };
 runInNewContext(js, { module: loadedModule, exports: loadedModule.exports });
-const { buildHotelBookingPrintHtml } = loadedModule.exports;
+const { buildHotelBookingPrintHtml, thermalReceiptPageHeightMm } = loadedModule.exports;
 
 const reservation = {
   id: 42, reservation_code: "#0012345678", status: "confirmed",
@@ -110,4 +110,11 @@ test("no fixed departure hour or universal refund terms without tenant settings"
   assert.match(doc, /Horaires d’arrivée et de départ/);
   assert.doesNotMatch(doc, /10h30|10:30/);
   assert.doesNotMatch(doc, /non.remboursable/i);
+});
+
+test("80mm page length is measured dynamically with a small cutter allowance", () => {
+  assert.equal(thermalReceiptPageHeightMm(0), 70);
+  assert.equal(thermalReceiptPageHeightMm(100), 70);
+  assert.equal(thermalReceiptPageHeightMm(800), Math.ceil(800 * 25.4 / 96 + 8));
+  assert.equal(thermalReceiptPageHeightMm(100_000), 1500);
 });
