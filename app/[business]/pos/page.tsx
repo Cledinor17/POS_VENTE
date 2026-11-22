@@ -46,6 +46,9 @@ import { printReceipt, type PosReceipt } from "@/lib/posReceipt";
 import { listPrintTemplates } from "@/lib/printTemplatesApi";
 import { defaultPrintTemplate, safePrintTemplate, type PrintPaper, type PrintTemplate } from "@/lib/printTemplateModel";
 import { receiptLabels } from "@/lib/receiptI18n";
+import { posCompactLabels } from "@/lib/posCompactI18n";
+import { listUnpostedDeposits, recordUnpostedDeposit,
+  type UnpostedDepositMemo, type UnpostedDepositSummary } from "@/lib/posDepositMemosApi";
 import { useAppLocale } from "@/context/LocaleContext";
 import {
   listBusinessApprovers,
@@ -301,6 +304,7 @@ export default function PosPage() {
   const { user, activeBusiness, permissions } = useAuth();
   const { locale } = useAppLocale();
   const receiptText = receiptLabels(locale);
+  const ui = posCompactLabels(locale);
   const { currentBranch, loading: branchLoading } = useBranch();
   const branchId = currentBranch?.id;
   const [products, setProducts] = useState<CatalogProduct[]>([]);
@@ -329,6 +333,16 @@ export default function PosPage() {
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>([]);
   const [useRemoteParked, setUseRemoteParked] = useState(false);
   const [parkNote, setParkNote] = useState("");
+  const [parkDepositInput, setParkDepositInput] = useState("");
+  const [parkDepositCurrency, setParkDepositCurrency] = useState<"HTG" | "USD">("HTG");
+  const [depositDrafts, setDepositDrafts] = useState<Record<string, { amount: string; currency: "HTG" | "USD"; requestKey?: string }>>({});
+  const [deposits, setDeposits] = useState<UnpostedDepositMemo[]>([]);
+  const [depositTotals, setDepositTotals] = useState<UnpostedDepositSummary["totals"]>({ HTG: "0.00", USD: "0.00" });
+  const [depositsLoading, setDepositsLoading] = useState(false);
+  const [depositSavingId, setDepositSavingId] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState<ParkedCart | null>(null);
+  const [discardingId, setDiscardingId] = useState<string | null>(null);
+
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS,
   );
@@ -688,6 +702,30 @@ export default function PosPage() {
       mounted = false;
     };
   }, [businessSlug, pushError]);
+  const reloadDepositMemos = useCallback(async () => {
+    if (!businessSlug || !branchId) return;
+    const result = await listUnpostedDeposits(businessSlug);
+    setDeposits(result.data);
+    setDepositTotals(result.totals);
+  }, [businessSlug, branchId]);
+
+  useEffect(() => {
+    let active = true;
+    setDeposits([]);
+    setDepositTotals({ HTG: "0.00", USD: "0.00" });
+    if (!businessSlug || !branchId || !isOnline) return undefined;
+    setDepositsLoading(true);
+    void listUnpostedDeposits(businessSlug).then(result => {
+      if (active) {
+        setDeposits(result.data);
+        setDepositTotals(result.totals);
+      }
+    }).catch(() => {
+      // A read error must not block sales or imply that no deposits exist.
+    }).finally(() => { if (active) setDepositsLoading(false); });
+    return () => { active = false; };
+  }, [businessSlug, branchId, isOnline]);
+
   function saveLocalParked(next: ParkedCart[]) {
     setParkedCarts(next);
     safeSetItem(
@@ -794,6 +832,17 @@ export default function PosPage() {
     () => cart.reduce((sum, item) => sum + item.qty, 0),
     [cart],
   );
+  const depositByCart = useMemo(() => {
+    const grouped: Record<string, { HTG: number; USD: number }> = {};
+    for (const memo of deposits) {
+      const amount = Number(memo.amount);
+      if (!Number.isFinite(amount) || amount < 0) continue;
+      const sum = grouped[memo.cart_reference] ?? { HTG: 0, USD: 0 };
+      sum[memo.currency] = Math.round((sum[memo.currency] + amount) * 100) / 100;
+      grouped[memo.cart_reference] = sum;
+    }
+    return grouped;
+  }, [deposits]);
   const canApplyDiscount = hasPermission(permissions, "billing.discount");
   useEffect(() => {
     if (!businessSlug || typeof window === "undefined") return;
