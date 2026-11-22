@@ -367,6 +367,7 @@ export default function PosPage() {
   const [tabMoneyAmountInput, setTabMoneyAmountInput] = useState("");
   const [tabMoneyMethod, setTabMoneyMethod] = useState<"cash" | "card" | "bank" | "mobile">("cash");
   const [postingTabMoney, setPostingTabMoney] = useState(false);
+  const [recentCompletedTab, setRecentCompletedTab] = useState<{ id: string; balance: number; currency: "HTG" | "USD" } | null>(null);
   const pendingTabMoneyKey = useRef<{ type: "deposit" | "refund"; signature: string; key: string } | null>(null);
   const pendingParkedToken = useRef<string | null>(null);
   const migratedLocalScope = useRef<Set<string>>(new Set());
@@ -891,7 +892,7 @@ export default function PosPage() {
   );
   const pointsDiscountAmount = Number((redeemPoints * loyaltyRedeemValue).toFixed(2));
   const remainingAfterPoints = Math.max(0, grandTotal - pointsDiscountAmount);
-  const depositApplicable = Boolean(activeParkedId && activeDepositTotal > 0
+  const depositApplicable = Boolean(activeParkedId && activeDepositBalance > 0
     && activeDepositCurrency === saleCurrency);
   const advanceToApply = depositApplicable ? Math.min(activeDepositBalance, remainingAfterPoints) : 0;
   const freshAmountDue = Math.max(0, remainingAfterPoints - advanceToApply);
@@ -906,7 +907,7 @@ export default function PosPage() {
     [businessSettings, freshAmountDue, paymentCurrency, saleCurrency],
   );
   // A parked-tab ceiling is a spending guard, not an accounting entry.
-  const spendingLimitInSaleCurrency = activeParkedId && activeDepositTotal > 0
+  const spendingLimitInSaleCurrency = activeParkedId && activeDepositBalance > 0
     ? (activeDepositCurrency === saleCurrency ? activeDepositBalance : 0)
     : activeSpendingLimit === null ? null : convertAmount(
     activeSpendingLimit, activeSpendingCurrency, saleCurrency,
@@ -1477,10 +1478,22 @@ export default function PosPage() {
       setFreeCustomerName("");
       setCustomerQuery("");
       if (!offline && activeParkedId) {
+        if (backendResult && backendResult.advanceBalance > 0) {
+          setRecentCompletedTab({
+            id: activeParkedId,
+            balance: backendResult.advanceBalance,
+            currency: saleCurrency === "USD" ? "USD" : "HTG",
+          });
+        } else {
+          setRecentCompletedTab(null);
+        }
         setActiveParkedId(null);
         setActiveParkedRevision(1);
         setParkedCustomerId(null);
         setParkedCheckoutUncertain(false);
+        setActiveDepositTotal(0);
+        setActiveDepositBalance(0);
+        setActiveDepositCurrency(null);
         void loadParkedCarts();
       }
       setSelectedReservationId(null);
@@ -1587,6 +1600,10 @@ export default function PosPage() {
     }
   }
   async function chargeSelectedRoom() {
+    if (activeParkedId && activeDepositTotal > 0) {
+      pushError("Une avance a été encaissée sur cette fiche : finalisez-la en vente POS ou remboursez l’avance avant de la porter à la chambre. Le folio hôtel est distinct.");
+      return;
+    }
     if (!canChargeRoom || !isOnline || postingRoomCharge || !selectedReservation || !selectedReservation.room) return;
     if (cart.length === 0 || grandTotal <= 0) {
       pushError("Ajoutez des articles pour porter une addition sur la chambre.");
