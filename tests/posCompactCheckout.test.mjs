@@ -113,3 +113,24 @@ test("POS main interface prioritizes cart, limits product columns to four and do
   assert.doesNotMatch(page, /Caissier:\{/);
   assert.match(page, /setConfirmDiscard/);
 });
+
+test("saving one branch never wipes parked tabs from another branch or legacy Main", () => {
+  const storage = load("../lib/posParkedBranchStorage.ts");
+  const all = [
+    { id: "legacy", items: [] },
+    { id: "first", branchId: "1", items: [] },
+    { id: "second", branchId: "2", items: [] },
+  ];
+  assert.deepEqual(
+    Array.from(storage.visibleParkedForBranch(all, "2", false), x => x.id),
+    ["second"],
+  );
+  assert.deepEqual(
+    Array.from(storage.visibleParkedForBranch(all, "1", true), x => x.id),
+    ["legacy", "first"],
+  );
+  const merged = storage.mergeParkedForBranch(all, [{ id: "new-two", branchId: "2" }], "2", false);
+  assert.deepEqual(Array.from(merged, x => x.id), ["legacy", "first", "new-two"]);
+  const main = storage.mergeParkedForBranch(all, [{ id: "new-main", branchId: "1" }], "1", true);
+  assert.deepEqual(Array.from(main, x => x.id), ["second", "new-main"]);
+});
