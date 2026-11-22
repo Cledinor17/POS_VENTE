@@ -37,6 +37,8 @@ import { ApiError } from "@/lib/api";
 import { getPosSettings, type BusinessSettings } from "@/lib/businessApi";
 import { hasPermission } from "@/lib/businessAccess";
 import { listCustomers, type CustomerItem } from "@/lib/customersApi";
+import { getHotelReservations, type HotelReservation } from "@/lib/hotelApi";
+import { createHotelOrder, updateHotelOrderStatus } from "@/lib/hotelOrdersApi";
 import { validateCoupon } from "@/lib/couponsApi";
 import {
   buildProductScanIndex,
@@ -111,6 +113,12 @@ type ParkedCart = {
   note: string;
   createdAt: string;
   items: CartItem[];
+  customerName?: string;
+  customerId?: string | number | null;
+  reservationId?: number | null;
+  // Optional spending limit only. This field is NOT a recorded payment.
+  spendingLimit?: number | null;
+  spendingCurrency?: string;
 };
 type PaymentMethodId =
   | "cash"
@@ -340,6 +348,13 @@ export default function PosPage() {
   }, [saleCurrency]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
+  const [freeCustomerName, setFreeCustomerName] = useState("");
+  const [hotelReservations, setHotelReservations] = useState<HotelReservation[]>([]);
+  const [selectedReservationId, setSelectedReservationId] = useState<number | null>(null);
+  const [postingRoomCharge, setPostingRoomCharge] = useState(false);
+  const [spendingLimitInput, setSpendingLimitInput] = useState("");
+  const [activeSpendingLimit, setActiveSpendingLimit] = useState<number | null>(null);
+  const [activeSpendingCurrency, setActiveSpendingCurrency] = useState("HTG");
   const [customerResults, setCustomerResults] = useState<CustomerItem[]>([]);
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
@@ -368,6 +383,10 @@ export default function PosPage() {
   const [openingNoteInput, setOpeningNoteInput] = useState("");
   const [openingRegister, setOpeningRegister] = useState(false);
   const registerOpen = cashSession?.status === "open";
+  const canChargeRoom = hasPermission(permissions, "hotel.orders.manage") && hasPermission(permissions, "reservations.read");
+  const canUseRoomDeposit = canChargeRoom && hasPermission(permissions, "reservations.manage");
+  const customerNameForSale = selectedCustomer?.name || freeCustomerName.trim() || customerQuery.trim();
+  const selectedReservation = hotelReservations.find((item) => item.id === selectedReservationId) ?? null;
   const queryInputRef = useRef<HTMLInputElement | null>(null);
   const pushNotice = useCallback((message: string, tone: NoticeTone = "info") => {
     setNotice({ id: Date.now(), tone, message });
@@ -402,6 +421,22 @@ export default function PosPage() {
       window.clearTimeout(timer);
     };
   }, [businessSlug, customerQuery]);
+  useEffect(() => {
+    if (!businessSlug || !canChargeRoom || !isOnline) {
+      setHotelReservations([]);
+      return;
+    }
+    let cancelled = false;
+    void getHotelReservations(businessSlug)
+      .then((rows) => {
+        if (!cancelled) setHotelReservations(rows.filter((row) => row.status === "checked_in" && row.room));
+      })
+      .catch(() => {
+        if (!cancelled) setHotelReservations([]);
+      });
+    return () => { cancelled = true; };
+  }, [businessSlug, canChargeRoom, isOnline]);
+
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => {
@@ -475,6 +510,7 @@ export default function PosPage() {
     setSelectedCustomer(null);
     setCustomerQuery("");
     setCustomerDropdownOpen(false);
+    setSelectedReservationId(null);
     setRedeemPointsInput("");
     setAppliedCoupon(null);
     setCouponCodeInput("");
