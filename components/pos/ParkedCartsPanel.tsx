@@ -1,26 +1,23 @@
 "use client";
 
-import { PauseCircle, PlayCircle, Search, Trash2 } from "lucide-react";
+import { PlayCircle, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { Locale } from "@/lib/locale";
 import { posCompactLabels } from "@/lib/posCompactI18n";
-import { formatMoney } from "@/lib/currency";
+import { formatMoney, type ExchangeConfig } from "@/lib/currency";
 import type { UnpostedDepositMemo } from "@/lib/posDepositMemosApi";
+import { calculateParkedBalance, type ParkedBalanceItem } from "@/lib/posParkedBalance";
 
 type Currency = "HTG" | "USD";
-type ParkedItem = { id: string; note: string; createdAt: string; items: { qty: number }[] };
+type ParkedItem = { id: string; note: string; createdAt: string; items: ParkedBalanceItem[] };
 type DepositDraft = { amount: string; currency: Currency; requestKey?: string };
 
 export type ParkedCartsPanelProps = {
   locale: Locale;
-  count: number;
   carts: ParkedItem[];
-  note: string;
-  onNote: (value: string) => void;
-  depositAmount: string;
-  onDepositAmount: (value: string) => void;
-  depositCurrency: Currency;
-  onDepositCurrency: (value: Currency) => void;
+  preferredCurrency: Currency;
+  exchange: ExchangeConfig;
+  memosComplete: boolean;
   drafts: Record<string, DepositDraft>;
   onDraft: (id: string, value: DepositDraft) => void;
   totals: { HTG: string; USD: string };
@@ -31,7 +28,6 @@ export type ParkedCartsPanelProps = {
   canRecord: boolean;
   online: boolean;
   branchReady: boolean;
-  onPark: () => void;
   onResume: (id: string) => void;
   onRecord: (id: string, draft: DepositDraft) => void;
   onRequestDelete: (id: string) => void;
@@ -42,10 +38,10 @@ export type ParkedCartsPanelProps = {
 };
 
 export default function ParkedCartsPanel({
-  locale, count, carts, note, onNote, depositAmount, onDepositAmount,
-  depositCurrency, onDepositCurrency, drafts, onDraft, totals, perCart, memos, status,
-  savingDepositId, canRecord, online, branchReady, onPark, onResume, onRecord,
-  onRequestDelete, confirming, deletingId, onCancelDelete, onConfirmDelete,
+  locale, carts, preferredCurrency, exchange, memosComplete, drafts, onDraft,
+  totals, perCart, memos, status, savingDepositId, canRecord, online, branchReady,
+  onResume, onRecord, onRequestDelete, confirming, deletingId,
+  onCancelDelete, onConfirmDelete,
 }: ParkedCartsPanelProps) {
   const ui = posCompactLabels(locale);
   const [tabSearch, setTabSearch] = useState("");
@@ -74,44 +70,11 @@ export default function ParkedCartsPanel({
             ) : <span>{status === "loading" ? ui.loading : "—"}</span>}
           </div>
         </div>
-        <div className="space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
-          <p className="text-xs font-bold uppercase tracking-wide text-indigo-800">{ui.createTab}</p>
-          <input
-            value={note} onChange={event => onNote(event.target.value)}
-            placeholder={ui.note} aria-label={ui.note} maxLength={190}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-          />
-          <div className="grid grid-cols-[minmax(0,1fr)_95px] gap-2">
-            <label className="min-w-0 text-xs font-semibold text-slate-700">
-              {ui.downDeposit} <span className="font-normal text-slate-500">({ui.optional})</span>
-              <input
-                type="text" inputMode="decimal" value={depositAmount}
-                onChange={event => onDepositAmount(event.target.value)}
-                placeholder="0.00"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="text-xs font-semibold text-slate-700">
-              {ui.currency}
-              <select
-                value={depositCurrency} onChange={event => onDepositCurrency(event.target.value as Currency)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-              >
-                <option value="HTG">HTG</option><option value="USD">USD</option>
-              </select>
-            </label>
-          </div>
-          <button
-            type="button" onClick={onPark} disabled={count === 0 || savingDepositId !== null}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 py-2.5 text-sm font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
-          >
-            <PauseCircle className="h-4 w-4" />{ui.park}
-          </button>
-        </div>
+
         {memos.length > 0 ? (
           <details className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
             <summary className="cursor-pointer font-semibold text-slate-700">
-              {ui.declared} · {memos.length}{memos.length >= 500 ? "+" : ""}
+              {ui.declared} · {memos.length}{!memosComplete ? "+" : ""}
             </summary>
             <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
               {memos.slice(0, 20).map(entry => (
@@ -127,6 +90,7 @@ export default function ParkedCartsPanel({
             </div>
           </details>
         ) : null}
+
         {carts.length >= 5 ? (
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -136,55 +100,74 @@ export default function ParkedCartsPanel({
               className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500" />
           </label>
         ) : null}
+
         {carts.length > 0 ? (
-          <div className="max-h-[420px] space-y-2 overflow-y-auto">
+          <div className="max-h-[440px] space-y-2 overflow-y-auto">
             {matchingCarts.length === 0 ? <p className="py-2 text-xs text-slate-500">{ui.pendingEmpty}</p> : null}
             {matchingCarts.map(parked => {
-              const held = perCart[parked.id];
-              const draft = drafts[parked.id] ?? { amount: "", currency: "HTG" as const };
+              const held = perCart[parked.id] ?? { HTG: 0, USD: 0 };
+              const draft = drafts[parked.id] ?? { amount: "", currency: preferredCurrency };
+              const ready = status === "ready" && memosComplete;
+              const balance = ready
+                ? calculateParkedBalance(parked.items, held, preferredCurrency, exchange)
+                : null;
+              const originalDeposits = [held.HTG > 0 ? formatMoney(held.HTG, "HTG") : null,
+                held.USD > 0 ? formatMoney(held.USD, "USD") : null].filter(Boolean).join(" · ");
+
               return (
-                <div key={parked.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div key={parked.id} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate text-sm font-bold text-slate-900">{parked.note}</span>
+                    <span className="min-w-0 truncate text-sm font-bold text-slate-900" title={parked.note}>{parked.note}</span>
                     <span className="shrink-0 text-xs text-slate-500">
                       {parked.items.reduce((sum, item) => sum + item.qty, 0)} {ui.items}
                     </span>
                   </div>
-                  {held && (held.HTG > 0 || held.USD > 0) ? (
-                    <div className="mt-1 text-xs font-semibold text-amber-800">
-                      {ui.declaredOnSlip}: {held.HTG > 0 ? formatMoney(held.HTG, "HTG") : ""}
-                      {held.HTG > 0 && held.USD > 0 ? " · " : ""}
-                      {held.USD > 0 ? formatMoney(held.USD, "USD") : ""}
+                  <div className="space-y-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-600">{ui.estimatedTotal}</span>
+                      <strong className="tabular-nums text-slate-900">{balance?.total == null ? "—" : formatMoney(balance.total, balance.currency)}</strong>
                     </div>
-                  ) : null}
-                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-600">{ui.declaredOnSlip}</span>
+                      <strong className="text-right tabular-nums text-indigo-900">{ready ? (originalDeposits || formatMoney(0, balance?.currency || preferredCurrency)) : "—"}</strong>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-1">
+                      <span className="font-bold text-slate-800">{ui.estimatedDue}</span>
+                      <strong className="tabular-nums text-indigo-900">{balance?.remaining == null ? "—" : formatMoney(balance.remaining, balance.currency)}</strong>
+                    </div>
+                    {balance?.overpayment != null && balance.overpayment > 0 ? (
+                      <p className="font-semibold text-amber-700">{ui.overpaid} : {formatMoney(balance.overpayment, balance.currency)}</p>
+                    ) : null}
+                    <p className="text-[10px] leading-snug text-slate-500">{!memosComplete && status === "ready" ? ui.incompleteDeposits : ui.estimateInfo}</p>
+                  </div>
+                  <div className="space-y-1">
                     <p className="text-xs font-semibold text-indigo-800">{ui.downDeposit}</p>
                     <div className="flex flex-wrap gap-2">
-                    <input
-                      type="text" inputMode="decimal" aria-label={ui.downDeposit}
-                      title={ui.downDeposit} placeholder={ui.amount} value={draft.amount}
-                      disabled={Boolean(draft.requestKey) || savingDepositId === parked.id}
-                      onChange={event => onDraft(parked.id, { amount: event.target.value, currency: draft.currency })}
-                      className="min-w-0 flex-1 basis-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60"
-                    />
-                    <select
-                      aria-label={ui.currency} value={draft.currency}
-                      disabled={Boolean(draft.requestKey) || savingDepositId === parked.id}
-                      onChange={event => onDraft(parked.id, { amount: draft.amount, currency: event.target.value as Currency })}
-                      className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
-                    >
-                      <option value="HTG">HTG</option><option value="USD">USD</option>
-                    </select>
-                    <button
-                      type="button" onClick={() => onRecord(parked.id, draft)}
-                      disabled={!draft.amount || !online || !branchReady || !canRecord || savingDepositId !== null}
-                      className="rounded-lg border border-indigo-300 bg-white px-2 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-                    >
-                      {savingDepositId === parked.id ? ui.loading : ui.record}
-                    </button>
+                      <input
+                        type="text" inputMode="decimal" aria-label={ui.downDeposit}
+                        title={ui.downDeposit} placeholder={ui.amount} value={draft.amount}
+                        disabled={Boolean(draft.requestKey) || savingDepositId === parked.id}
+                        onChange={event => onDraft(parked.id, { amount: event.target.value, currency: draft.currency })}
+                        className="min-w-0 flex-1 basis-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60"
+                      />
+                      <select
+                        aria-label={ui.currency} value={draft.currency}
+                        disabled={Boolean(draft.requestKey) || savingDepositId === parked.id}
+                        onChange={event => onDraft(parked.id, { amount: draft.amount, currency: event.target.value as Currency })}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                      >
+                        <option value="HTG">HTG</option><option value="USD">USD</option>
+                      </select>
+                      <button
+                        type="button" onClick={() => onRecord(parked.id, draft)}
+                        disabled={!draft.amount || !online || !branchReady || !canRecord || savingDepositId !== null}
+                        className="rounded-lg border border-indigo-300 bg-white px-2 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                      >
+                        {savingDepositId === parked.id ? ui.loading : ui.record}
+                      </button>
+                    </div>
                   </div>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="flex items-center gap-2">
                     <button type="button" onClick={() => onResume(parked.id)}
                       disabled={savingDepositId === parked.id}
                       className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg brand-primary-btn py-2 text-xs font-semibold text-white disabled:opacity-50">
