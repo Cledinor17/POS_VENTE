@@ -187,13 +187,17 @@ function getReservationSettlementStatus(
   return { label: "Partiellement payee", tone: "warning" };
 }
 
-function buildReservationPrintLoadingHtml(reservationCode: string): string {
+function buildReservationPrintLoadingHtml(reservationCode: string, kind: "booking" | "invoice" = "invoice"): string {
+  const documentLabel = kind === "booking" ? "fiche de réservation" : "facture de réservation";
+  const loadingLabel = kind === "booking"
+    ? "Chargement des données du séjour et des éventuels paiements"
+    : "Chargement du détail de facturation et des paiements";
   return `<!DOCTYPE html>
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Preparation facture reservation ${escapeHtml(reservationCode)}</title>
+    <title>Préparation ${escapeHtml(documentLabel)} ${escapeHtml(reservationCode)}</title>
     <style>
       html, body {
         margin: 0;
@@ -256,8 +260,8 @@ function buildReservationPrintLoadingHtml(reservationCode: string): string {
   <body>
     <section class="card">
       <div class="spinner"></div>
-      <h1>Preparation de la facture de reservation</h1>
-      <p>Chargement du detail de facturation et des paiements pour ${escapeHtml(reservationCode)}...</p>
+      <h1>Préparation de la ${escapeHtml(documentLabel)}</h1>
+      <p>${escapeHtml(loadingLabel)} pour ${escapeHtml(reservationCode)}...</p>
       <div class="reference">${escapeHtml(reservationCode)}</div>
     </section>
   </body>
@@ -2351,7 +2355,7 @@ export default function HotelReservationsPage() {
     }
 
     printWindow.document.open();
-    printWindow.document.write(buildReservationPrintLoadingHtml(getReservationCodeLabel(reservation)));
+    printWindow.document.write(buildReservationPrintLoadingHtml(getReservationCodeLabel(reservation), "booking"));
     printWindow.document.close();
 
     let folio: HotelReservationFolio | null = null;
