@@ -87,6 +87,16 @@ test("the receipt labels and language attributes track all six app locales", () 
   assert.match(receiptModule.exports.buildReceiptHtml({ ...data, locale: "ar" }), /dir="rtl"/);
 });
 
+test("58mm receipts keep a readable logo and A4 waits for logo and fonts", () => {
+  receiptModule.exports.printReceipt({ ...data, locale: "ht" }, { paper: "58mm" });
+  const last = printed.at(-1);
+  assert.equal(last.options.paperWidthMm, 58);
+  assert.match(last.html, /width:50mm/);
+  const source = readFileSync(new URL("../lib/printHtml.ts", import.meta.url), "utf8");
+  assert.match(source, /frame\.style\.width = contentWidthMm === undefined \? "210mm"/);
+  assert.ok(source.indexOf("await doc.fonts.ready") < source.indexOf("if (paperWidthMm !== undefined"));
+});
+
 test("untrusted logo URLs and customer HTML cannot break the print document", () => {
   const html = receiptModule.exports.buildReceiptHtml({
     ...data, businessLogoSrc: "javascript:alert(1)", receiptQrCodeDataUri: "data:image/svg+xml;base64,PHN2Zz4=",
