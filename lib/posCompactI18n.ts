@@ -1,7 +1,7 @@
 import type { Locale } from "./locale";
 
 /** POS compact controls: all six supported app locales. */
-const labels: Record<Locale, Record<"cart" | "items" | "pending" | "note" | "park" | "resume" | "remove" | "confirmRemove" | "yes" | "no" | "declared" | "unposted" | "unpostedInfo" | "downDeposit" | "amount" | "currency" | "record" | "recorded" | "invalidAmount" | "savedPending" | "parkFailed" | "noNetwork" | "noRights" | "loading" | "pendingEmpty" | "declaredOnSlip" | "alreadyUnposted" | "pleaseConfirm" | "close" | "subtotal", string>> = {
+const labels: Record<Locale, Record<"cart" | "items" | "pending" | "note" | "park" | "resume" | "remove" | "confirmRemove" | "yes" | "no" | "declared" | "unposted" | "unpostedInfo" | "downDeposit" | "amount" | "currency" | "record" | "recorded" | "invalidAmount" | "savedPending" | "parkFailed" | "noNetwork" | "noRights" | "loading" | "pendingEmpty" | "declaredOnSlip" | "alreadyUnposted" | "pleaseConfirm" | "close" | "subtotal" | "add" | "stock" | "invoicePrice", string>> = {
   "fr": {
     "cart": "Panier",
     "items": "articles",
@@ -32,7 +32,10 @@ const labels: Record<Locale, Record<"cart" | "items" | "pending" | "note" | "par
     "alreadyUnposted": "Acompte non comptabilisé conservé dans le suivi.",
     "pleaseConfirm": "Confirmer la suppression",
     "close": "Fermer",
-    "subtotal": "Total panier"
+    "subtotal": "Total panier",
+    "add": "Ajouter",
+    "stock": "Stock",
+    "invoicePrice": "Facture"
   },
   "ht": {
     "cart": "Panye",
@@ -64,7 +67,10 @@ const labels: Record<Locale, Record<"cart" | "items" | "pending" | "note" | "par
     "alreadyUnposted": "Akonpayman ki pa kontabilize rete nan lis swivi a.",
     "pleaseConfirm": "Konfime efasman an",
     "close": "Fèmen",
-    "subtotal": "Total panye"
+    "subtotal": "Total panye",
+    "add": "Ajoute",
+    "stock": "Stock",
+    "invoicePrice": "Fakti"
   },
   "en": {
     "cart": "Cart",
@@ -96,7 +102,10 @@ const labels: Record<Locale, Record<"cart" | "items" | "pending" | "note" | "par
     "alreadyUnposted": "Unposted deposit is retained in tracking.",
     "pleaseConfirm": "Confirm deletion",
     "close": "Close",
-    "subtotal": "Cart total"
+    "subtotal": "Cart total",
+    "add": "Add",
+    "stock": "Stock",
+    "invoicePrice": "Invoice"
   },
   "es": {
     "cart": "Carrito",
@@ -128,7 +137,10 @@ const labels: Record<Locale, Record<"cart" | "items" | "pending" | "note" | "par
     "alreadyUnposted": "El anticipo no contabilizado se conserva en el registro.",
     "pleaseConfirm": "Confirmar eliminación",
     "close": "Cerrar",
-    "subtotal": "Total carrito"
+    "subtotal": "Total carrito",
+    "add": "Añadir",
+    "stock": "Exist.",
+    "invoicePrice": "Factura"
   },
   "zh": {
     "cart": "购物车",
@@ -160,7 +172,10 @@ const labels: Record<Locale, Record<"cart" | "items" | "pending" | "note" | "par
     "alreadyUnposted": "未入账预收款继续保留在记录中。",
     "pleaseConfirm": "确认删除",
     "close": "关闭",
-    "subtotal": "购物车合计"
+    "subtotal": "购物车合计",
+    "add": "添加",
+    "stock": "库存",
+    "invoicePrice": "发票"
   },
   "ar": {
     "cart": "السلة",
@@ -192,7 +207,10 @@ const labels: Record<Locale, Record<"cart" | "items" | "pending" | "note" | "par
     "alreadyUnposted": "العربون غير المرحّل محفوظ في سجل المتابعة.",
     "pleaseConfirm": "تأكيد الحذف",
     "close": "إغلاق",
-    "subtotal": "إجمالي السلة"
+    "subtotal": "إجمالي السلة",
+    "add": "إضافة",
+    "stock": "المخزون",
+    "invoicePrice": "الفاتورة"
   }
 };
 
