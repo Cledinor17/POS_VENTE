@@ -899,20 +899,13 @@ export default function PosPage() {
   const valuationConfig = { exchangeRateValue: businessSettings?.exchange_sell_rate || businessSettings?.usd_to_htg_rate || 1 };
   const couponDiscountAmount = convertAmount(appliedCoupon?.discountAmount ?? 0, businessSettings?.currency || "HTG", saleCurrency, valuationConfig);
   const grandTotal = Math.max(0, subtotal - discountAmount - couponDiscountAmount) + taxTotal;
-  const previewDeposit = parseDepositAmount(parkDepositInput);
+  const previewDeposit = /^(?:0|0[.,]0{1,2})$/.test(parkDepositInput.trim())
+    ? "0.00" : parseDepositAmount(parkDepositInput);
   const hasExchangeConfigured = [
     businessSettings?.exchange_buy_rate,
     businessSettings?.exchange_sell_rate,
     businessSettings?.exchange_rate_value,
   ].some(value => Number(value) > 0);
-  const previewDepositInSaleCurrency = previewDeposit && (parkDepositCurrency === saleCurrency || hasExchangeConfigured)
-    ? convertAmount(Number(previewDeposit), parkDepositCurrency, saleCurrency, {
-        exchangeRateDirection: businessSettings?.exchange_rate_direction,
-        exchangeRateValue: businessSettings?.exchange_rate_value,
-        exchangeBuyRate: businessSettings?.exchange_buy_rate,
-        exchangeSellRate: businessSettings?.exchange_sell_rate,
-      })
-    : null;
   const itemCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.qty, 0),
     [cart],
@@ -976,6 +969,17 @@ export default function PosPage() {
       })
     ).toFixed(2))
     : 0;
+  const previewDepositInSaleCurrency = previewDeposit !== null && (parkDepositCurrency === saleCurrency || hasExchangeConfigured)
+    ? activeDepositApplied + convertPayment(
+        Number(previewDeposit) - activeDepositTotals[parkDepositCurrency],
+        parkDepositCurrency, saleCurrency, {
+          exchangeRateDirection: businessSettings?.exchange_rate_direction,
+          exchangeRateValue: businessSettings?.exchange_rate_value,
+          exchangeBuyRate: businessSettings?.exchange_buy_rate,
+          exchangeSellRate: businessSettings?.exchange_sell_rate,
+        },
+      )
+    : null;
   const remainingAfterDeposit = Math.max(0, remainingAfterPoints - activeDepositApplied);
   const amountDueInPaymentCurrency = useMemo(
     () =>
@@ -2127,7 +2131,7 @@ export default function PosPage() {
           </section>{" "}
           <ParkedCartsPanel
             locale={locale}
-            carts={parkedCarts}
+            carts={parkedCarts.filter(item => item.id !== activeParked?.id)}
             preferredCurrency={saleCurrency === "USD" ? "USD" : "HTG"}
             exchange={{
               exchangeRateDirection: businessSettings?.exchange_rate_direction,
@@ -2356,6 +2360,11 @@ export default function PosPage() {
               </select>
             </div>{" "}
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900">
+              {activeParked ? (
+                <div className="font-semibold text-indigo-900">
+                  Fiche reprise : {activeParked.note}
+                </div>
+              ) : null}
               <div>Total facture: {formatMoney(grandTotal, saleCurrency)}</div>
               {couponDiscountAmount > 0 ? (
                 <div className="mt-1">
@@ -2367,7 +2376,17 @@ export default function PosPage() {
                   Points utilises: - {formatMoney(pointsDiscountAmount, saleCurrency)}
                 </div>
               ) : null}
-              <div className="mt-1">
+              {activeParked ? (
+                <>
+                  <div className="mt-1 font-semibold">Acompte conservé :
+                    {activeDepositTotals.HTG > 0 ? " " + formatMoney(activeDepositTotals.HTG, "HTG") : ""}
+                    {activeDepositTotals.USD > 0 ? " · " + formatMoney(activeDepositTotals.USD, "USD") : ""}
+                    {!activeDepositTotals.HTG && !activeDepositTotals.USD ? " Aucun" : ""}
+                  </div>
+                  <div className="text-xs text-indigo-700">Imputé une seule fois à la confirmation de cette vente.</div>
+                </>
+              ) : null}
+              <div className="mt-1 font-bold">
                 A encaisser: {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
               </div>
             </div>{" "}
@@ -2425,6 +2444,7 @@ export default function PosPage() {
             <div className="grid grid-cols-2 gap-2">
               <button type="button"
                 onClick={() => {
+                  setParkDepositInput("");
                   setParkDepositCurrency(saleCurrency === "USD" ? "USD" : "HTG");
                   setParkModalOpen(true);
                 }}
@@ -2485,14 +2505,19 @@ export default function PosPage() {
                 </select>
               </label>
             </div>
-            {parkDepositInput.trim() && !previewDeposit ? (
+            {parkDepositInput.trim() && previewDeposit === null ? (
               <p role="alert" className="text-xs font-semibold text-rose-700">{ui.invalidAmount}</p>
             ) : null}
             <div className="space-y-1 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-950">
               <div className="flex justify-between gap-2">
                 <span>{ui.subtotal}</span><strong>{formatMoney(grandTotal, saleCurrency)}</strong>
               </div>
-              {previewDeposit ? (
+              {activeParked ? (
+                <div className="text-xs font-semibold text-indigo-800">
+                  Acompte conservé : {formatMoney(activeDepositTotals.HTG, "HTG")} · {formatMoney(activeDepositTotals.USD, "USD")}
+                </div>
+              ) : null}
+              {previewDeposit !== null ? (
                 <>
                   <div className="flex justify-between gap-2">
                     <span>{ui.declaredOnSlip}</span>
@@ -2504,6 +2529,9 @@ export default function PosPage() {
                       formatMoney(Math.max(0, grandTotal - previewDepositInSaleCurrency), saleCurrency)}</span>
                   </div>
                 </>
+              ) : null}
+              {activeParked ? (
+                <p className="text-[11px] text-indigo-700">Laissez le montant vide pour conserver l’acompte. Saisissez le nouveau total pour le modifier (0 pour annuler).</p>
               ) : null}
               <p className="text-[11px] text-indigo-700">{ui.unpostedInfo}</p>
             </div>
@@ -2517,7 +2545,7 @@ export default function PosPage() {
                 {ui.no}
               </button>
               <button type="button" disabled={parkSaving || depositSavingId !== null || cart.length === 0
-                  || Boolean(parkDepositInput.trim() && (!previewDeposit || !isOnline || !hasPermission(permissions, "billing.manage")))}
+                  || Boolean(parkDepositInput.trim() && (previewDeposit === null || !isOnline || !hasPermission(permissions, "billing.manage")))}
                 onClick={() => void parkCurrentCart()}
                 className="rounded-xl brand-primary-btn py-2.5 text-sm font-bold text-white disabled:opacity-50">
                 {parkSaving ? ui.loading : ui.park}
