@@ -31,6 +31,9 @@ export type PosParkedCart = {
   roomLabel: string | null;
   spendingLimit: number | null;
   spendingCurrency: string | null;
+  depositTotal: number;
+  depositBalance: number;
+  depositCurrency: string | null;
 };
 
 export type PosParkedCartInput = {
@@ -350,6 +353,9 @@ function normalizeParkedCart(raw: unknown): PosParkedCart {
     roomLabel: toString(obj.room_label ?? obj.roomLabel, "") || null,
     spendingLimit: obj.spending_limit == null && obj.spendingLimit == null ? null : toNumber(obj.spending_limit ?? obj.spendingLimit, 0),
     spendingCurrency: toString(obj.spending_currency ?? obj.spendingCurrency, "") || null,
+    depositTotal: toNumber(obj.deposit_total ?? obj.depositTotal, 0),
+    depositBalance: toNumber(obj.deposit_balance ?? obj.depositBalance, 0),
+    depositCurrency: toString(obj.deposit_currency ?? obj.depositCurrency, "") || null,
     items: itemsRaw.map(normalizeParkedItem),
   };
 }
@@ -638,6 +644,39 @@ export async function updatePosParkedCart(
     json: { ...parkedCartPayload(input), revision },
   });
   return normalizeParkedCart(getResource(raw, ["parked_cart"]));
+}
+
+export type PosTabDepositResult = {
+  event: { id: number; type: "deposit" | "refund"; amount: number; currency: string; method: string; created_at: string };
+  balance: number;
+  received: number;
+  ticket_revision: number;
+};
+
+/** Actual money movement. Do not call this for a mere client-entered ceiling. */
+export async function recordPosTabMoneyMovement(
+  business: string,
+  ticketId: string,
+  type: "deposit" | "refund",
+  input: {
+    amount: number;
+    currency: "HTG" | "USD";
+    method: "cash" | "card" | "bank" | "mobile";
+    idempotencyKey: string;
+    reference?: string;
+  },
+): Promise<PosTabDepositResult> {
+  const path = `${parkedCartPath(business)}/${encodeURIComponent(ticketId)}/${type === "deposit" ? "deposits" : "refunds"}`;
+  return apiFetch<PosTabDepositResult>(path, {
+    method: "POST",
+    json: {
+      amount: input.amount,
+      currency: input.currency,
+      method: input.method,
+      idempotency_key: input.idempotencyKey,
+      reference: input.reference || null,
+    },
+  });
 }
 
 /** Explicit cancel: backend archives the record; it is not physically erased. */
