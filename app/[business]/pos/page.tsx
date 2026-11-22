@@ -37,6 +37,8 @@ import { ApiError } from "@/lib/api";
 import { getPosSettings, type BusinessSettings } from "@/lib/businessApi";
 import { hasPermission } from "@/lib/businessAccess";
 import { listCustomers, type CustomerItem } from "@/lib/customersApi";
+import { addHotelReservationPayment, getHotelReservations, type HotelReservation } from "@/lib/hotelApi";
+import { createHotelOrder } from "@/lib/hotelOrdersApi";
 import { validateCoupon } from "@/lib/couponsApi";
 import {
   buildProductScanIndex,
@@ -57,7 +59,10 @@ import {
 import {
   checkoutPosSale,
   createPosParkedCart,
-  deletePosParkedCart,
+  recordPosTabMoneyMovement,
+  cancelPosParkedCart,
+  completePosParkedHotelCart,
+  updatePosParkedCart,
   getPosPaymentMethods,
   listPosParkedCarts,
   type PosApprovalPayload,
@@ -110,7 +115,20 @@ type ParkedCart = {
   id: string;
   note: string;
   createdAt: string;
+  updatedAt?: string;
+  revision?: number;
   items: CartItem[];
+  customerName?: string;
+  customerId?: string | number | null;
+  registeredCustomer?: CustomerItem | null;
+  reservationId?: number | null;
+  roomLabel?: string;
+  // Optional spending limit only. This field is NOT a recorded payment.
+  spendingLimit?: number | null;
+  spendingCurrency?: string;
+  depositTotal?: number;
+  depositBalance?: number;
+  depositCurrency?: string | null;
 };
 type PaymentMethodId =
   | "cash"
@@ -287,7 +305,18 @@ function fromApiParkedCart(cart: PosParkedCartApi): ParkedCart {
     id: cart.id,
     note: cart.note,
     createdAt: cart.createdAt,
+    updatedAt: cart.updatedAt,
+    revision: cart.revision,
     items: cart.items,
+    customerName: cart.customerName ?? undefined,
+    customerId: cart.customerId,
+    reservationId: cart.reservationId,
+    roomLabel: cart.roomLabel ?? undefined,
+    spendingLimit: cart.spendingLimit,
+    spendingCurrency: cart.spendingCurrency ?? undefined,
+    depositTotal: cart.depositTotal,
+    depositBalance: cart.depositBalance,
+    depositCurrency: cart.depositCurrency,
   };
 }
 export default function PosPage() {
@@ -321,7 +350,29 @@ export default function PosPage() {
     {},
   );
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>([]);
-  const [useRemoteParked, setUseRemoteParked] = useState(false);
+  const [parkedSearchInput, setParkedSearchInput] = useState("");
+  const [parkedSearch, setParkedSearch] = useState("");
+  const [parkedPage, setParkedPage] = useState(1);
+  const [parkedTotal, setParkedTotal] = useState(0);
+  const [parkedTotalOpen, setParkedTotalOpen] = useState(0);
+  const [parkedLastPage, setParkedLastPage] = useState(1);
+  const [parkedLoading, setParkedLoading] = useState(false);
+  const [savingParked, setSavingParked] = useState(false);
+  const [activeParkedId, setActiveParkedId] = useState<string | null>(null);
+  const [activeParkedRevision, setActiveParkedRevision] = useState(1);
+  const [parkedCheckoutUncertain, setParkedCheckoutUncertain] = useState(false);
+  const [activeDepositTotal, setActiveDepositTotal] = useState(0);
+  const [activeDepositBalance, setActiveDepositBalance] = useState(0);
+  const [activeDepositCurrency, setActiveDepositCurrency] = useState<string | null>(null);
+  const [tabMoneyAmountInput, setTabMoneyAmountInput] = useState("");
+  const [tabMoneyMethod, setTabMoneyMethod] = useState<"cash" | "card" | "bank" | "mobile">("cash");
+  const [postingTabMoney, setPostingTabMoney] = useState(false);
+  const [recentCompletedTab, setRecentCompletedTab] = useState<{ id: string; balance: number; currency: "HTG" | "USD" } | null>(null);
+  const pendingTabMoneyKey = useRef<{ type: "deposit" | "refund"; signature: string; key: string } | null>(null);
+  const pendingParkedToken = useRef<string | null>(null);
+  const migratedLocalScope = useRef<Set<string>>(new Set());
+  const [parkedCustomerId, setParkedCustomerId] = useState<string | null>(null);
+  const [activeParkedRoomLabel, setActiveParkedRoomLabel] = useState<string | null>(null);
   const [parkNote, setParkNote] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS,
@@ -340,6 +391,16 @@ export default function PosPage() {
   }, [saleCurrency]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
+  const [freeCustomerName, setFreeCustomerName] = useState("");
+  const [hotelReservations, setHotelReservations] = useState<HotelReservation[]>([]);
+  const [selectedReservationId, setSelectedReservationId] = useState<number | null>(null);
+  const [postingRoomCharge, setPostingRoomCharge] = useState(false);
+  const [recordingRoomDeposit, setRecordingRoomDeposit] = useState(false);
+  const [roomDepositInput, setRoomDepositInput] = useState("");
+  const [roomDepositMethod, setRoomDepositMethod] = useState<"cash" | "card" | "bank" | "mobile">("cash");
+  const [spendingLimitInput, setSpendingLimitInput] = useState("");
+  const [activeSpendingLimit, setActiveSpendingLimit] = useState<number | null>(null);
+  const [activeSpendingCurrency, setActiveSpendingCurrency] = useState("HTG");
   const [customerResults, setCustomerResults] = useState<CustomerItem[]>([]);
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
@@ -368,6 +429,10 @@ export default function PosPage() {
   const [openingNoteInput, setOpeningNoteInput] = useState("");
   const [openingRegister, setOpeningRegister] = useState(false);
   const registerOpen = cashSession?.status === "open";
+  const canChargeRoom = hasPermission(permissions, "hotel.orders.manage") && hasPermission(permissions, "reservations.read");
+  const canUseRoomDeposit = canChargeRoom && hasPermission(permissions, "reservations.manage");
+  const customerNameForSale = selectedCustomer?.name || freeCustomerName.trim() || customerQuery.trim();
+  const selectedReservation = hotelReservations.find((item) => item.id === selectedReservationId) ?? null;
   const queryInputRef = useRef<HTMLInputElement | null>(null);
   const pushNotice = useCallback((message: string, tone: NoticeTone = "info") => {
     setNotice({ id: Date.now(), tone, message });
@@ -402,6 +467,22 @@ export default function PosPage() {
       window.clearTimeout(timer);
     };
   }, [businessSlug, customerQuery]);
+  useEffect(() => {
+    if (!businessSlug || !canChargeRoom || !isOnline) {
+      setHotelReservations([]);
+      return;
+    }
+    let cancelled = false;
+    void getHotelReservations(businessSlug)
+      .then((rows) => {
+        if (!cancelled) setHotelReservations(rows.filter((row) => row.status === "checked_in" && row.room));
+      })
+      .catch(() => {
+        if (!cancelled) setHotelReservations([]);
+      });
+    return () => { cancelled = true; };
+  }, [businessSlug, canChargeRoom, isOnline]);
+
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => {
@@ -475,6 +556,7 @@ export default function PosPage() {
     setSelectedCustomer(null);
     setCustomerQuery("");
     setCustomerDropdownOpen(false);
+    setSelectedReservationId(null);
     setRedeemPointsInput("");
     setAppliedCoupon(null);
     setCouponCodeInput("");
@@ -619,46 +701,72 @@ export default function PosPage() {
     };
   }, [businessSlug, pushError]);
   useEffect(() => {
-    let mounted = true;
-    async function loadParkedCarts() {
-      if (!businessSlug) return;
-      try {
-        const remote = await listPosParkedCarts(businessSlug);
-        if (!mounted) return;
-        if (remote) {
-          setUseRemoteParked(true);
-          setParkedCarts(remote.map(fromApiParkedCart));
-          return;
+    const timer = window.setTimeout(() => {
+      setParkedPage(1);
+      setParkedSearch(parkedSearchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [parkedSearchInput]);
+
+  const loadParkedCarts = useCallback(async () => {
+    if (!businessSlug || !branchId) return;
+    setParkedLoading(true);
+    try {
+      // Migrate legacy local-only tickets, preserving each original copy
+      // until the database confirms insertion. clientToken makes retries safe.
+      const scope = `${businessSlug}:${branchId}`;
+      if (!migratedLocalScope.current.has(scope)) {
+        const legacyKey = `pos_parked_carts:${businessSlug}`;
+        const raw = safeGetItem(legacyKey);
+        let remaining: ParkedCart[] = [];
+        try {
+          const parsed: unknown = raw ? JSON.parse(raw) : [];
+          remaining = Array.isArray(parsed) ? parsed as ParkedCart[] : [];
+        } catch {
+          pushError("Anciennes fiches locales illisibles : conservation sans suppression.");
         }
-      } catch (e) {
-        if (mounted) pushError(getErrorMessage(e));
+        for (const old of [...remaining]) {
+          try {
+            await createPosParkedCart(businessSlug, {
+              clientToken: `legacy-${old.id}`.slice(0, 100),
+              note: old.note || "Ancienne fiche",
+              items: old.items,
+              customerName: old.customerName || null,
+              customerId: old.customerId || null,
+              reservationId: old.reservationId || null,
+              roomLabel: old.roomLabel || null,
+              spendingLimit: old.spendingLimit ?? null,
+              spendingCurrency: old.spendingCurrency || null,
+            });
+            remaining = remaining.filter((item) => item.id !== old.id);
+            safeSetItem(legacyKey, JSON.stringify(remaining));
+          } catch {
+            // Keep local original and retry on next successful load.
+            pushError("Une ancienne fiche reste locale : migration vers le serveur non confirmée.");
+            break;
+          }
+        }
+        if (remaining.length === 0) migratedLocalScope.current.add(scope);
       }
-      if (!mounted) return;
-      setUseRemoteParked(false);
-      const raw = safeGetItem(`pos_parked_carts:${businessSlug}`);
-      if (!raw) {
-        setParkedCarts([]);
-        return;
-      }
-      try {
-        const parsed = JSON.parse(raw);
-        setParkedCarts(Array.isArray(parsed) ? parsed : []);
-      } catch {
-        setParkedCarts([]);
-      }
+
+      const result = await listPosParkedCarts(businessSlug, {
+        q: parkedSearch, page: parkedPage, perPage: 10,
+      });
+      setParkedCarts(result.items.map(fromApiParkedCart));
+      setParkedTotal(result.total);
+      setParkedTotalOpen(result.totalOpen);
+      setParkedLastPage(result.lastPage);
+      if (parkedPage > result.lastPage) setParkedPage(result.lastPage);
+    } catch (e) {
+      // Never represent localStorage as durable multi-device storage.
+      pushError(`Chargement des fiches serveur impossible : ${getErrorMessage(e)}`);
+    } finally {
+      setParkedLoading(false);
     }
-    void loadParkedCarts();
-    return () => {
-      mounted = false;
-    };
-  }, [businessSlug, pushError]);
-  function saveLocalParked(next: ParkedCart[]) {
-    setParkedCarts(next);
-    safeSetItem(
-      `pos_parked_carts:${businessSlug}`,
-      JSON.stringify(next),
-    );
-  }
+  }, [businessSlug, branchId, parkedPage, parkedSearch, pushError]);
+
+  useEffect(() => { void loadParkedCarts(); }, [loadParkedCarts]);
+
   const getSaleUnitPrice = useCallback((product: CatalogProduct): number => {
     return convertAmount(product.price, product.priceCurrency, saleCurrency, {
       exchangeRateDirection: businessSettings?.exchange_rate_direction,
@@ -784,16 +892,41 @@ export default function PosPage() {
   );
   const pointsDiscountAmount = Number((redeemPoints * loyaltyRedeemValue).toFixed(2));
   const remainingAfterPoints = Math.max(0, grandTotal - pointsDiscountAmount);
+  const depositApplicable = Boolean(activeParkedId && activeDepositBalance > 0
+    && activeDepositCurrency === saleCurrency);
+  const advanceToApply = depositApplicable ? Math.min(activeDepositBalance, remainingAfterPoints) : 0;
+  const freshAmountDue = Math.max(0, remainingAfterPoints - advanceToApply);
   const amountDueInPaymentCurrency = useMemo(
     () =>
-      convertAmount(remainingAfterPoints, saleCurrency, paymentCurrency, {
+      convertAmount(freshAmountDue, saleCurrency, paymentCurrency, {
         exchangeRateDirection: businessSettings?.exchange_rate_direction,
         exchangeRateValue: businessSettings?.exchange_rate_value,
         exchangeBuyRate: businessSettings?.exchange_buy_rate,
         exchangeSellRate: businessSettings?.exchange_sell_rate,
       }),
-    [businessSettings, remainingAfterPoints, paymentCurrency, saleCurrency],
+    [businessSettings, freshAmountDue, paymentCurrency, saleCurrency],
   );
+  // A parked-tab ceiling is a spending guard, not an accounting entry.
+  const spendingLimitInSaleCurrency = activeParkedId && activeDepositBalance > 0
+    ? (activeDepositCurrency === saleCurrency ? activeDepositBalance : 0)
+    : activeSpendingLimit === null ? null : convertAmount(
+    activeSpendingLimit, activeSpendingCurrency, saleCurrency,
+    {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+      exchangeBuyRate: businessSettings?.exchange_buy_rate,
+      exchangeSellRate: businessSettings?.exchange_sell_rate,
+    },
+  );
+  const cartGrossTotal = useCallback((items: CartItem[]): number => {
+    const priced = pricePosCart(items, paymentCurrency, businessSettings?.currency || "HTG", {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+      exchangeBuyRate: businessSettings?.exchange_buy_rate,
+      exchangeSellRate: businessSettings?.exchange_sell_rate,
+    });
+    return priced.items.reduce((sum, item) => sum + item.qty * item.price * (1 + item.taxRate / 100), 0);
+  }, [businessSettings, paymentCurrency]);
   const cashReceived = safeNumber(cashReceivedInput);
   const cashDelta = cashReceived - amountDueInPaymentCurrency;
   const cashMissing = Math.max(-cashDelta, 0);
@@ -835,19 +968,23 @@ export default function PosPage() {
           pushError("Stock insuffisant pour ce produit.");
           return prev;
         }
-        qtyAdded = qtyToAdd;
-        return prev.map((item) =>
+        const next = prev.map((item) =>
           item.productId === String(product.id)
             ? { ...item, qty: item.qty + qtyToAdd }
             : item,
         );
+        if (spendingLimitInSaleCurrency !== null && cartGrossTotal(next) > spendingLimitInSaleCurrency + 0.001) {
+          pushError("Plafond de consommation atteint : impossible d'ajouter cet article.");
+          return prev;
+        }
+        qtyAdded = qtyToAdd;
+        return next;
       }
       if (stockLimit < qtyToAdd) {
         pushError("Stock indisponible pour ce produit.");
         return prev;
       }
-      qtyAdded = qtyToAdd;
-      return [
+      const next = [
         ...prev,
         {
           productId: String(product.id),
@@ -862,6 +999,12 @@ export default function PosPage() {
           currency: product.priceCurrency,
         },
       ];
+      if (spendingLimitInSaleCurrency !== null && cartGrossTotal(next) > spendingLimitInSaleCurrency + 0.001) {
+        pushError("Plafond de consommation atteint : impossible d'ajouter cet article.");
+        return prev;
+      }
+      qtyAdded = qtyToAdd;
+      return next;
     });
     if (qtyAdded > 0) {
       pushNotice(
@@ -869,7 +1012,7 @@ export default function PosPage() {
         "success",
       );
     }
-  }, [pushError, pushNotice]);
+  }, [pushError, pushNotice, spendingLimitInSaleCurrency, cartGrossTotal]);
   const tryAddScannedProduct = useCallback((rawCode: string): boolean => {
     const found = resolveScannedProduct(scanIndex, rawCode);
     if (!found) return false;
@@ -908,8 +1051,8 @@ export default function PosPage() {
       const current = cart.find((item) => item.productId === productId);
       if (current) pushNotice(`${current.name} retire du panier.`, "info");
     }
-    setCart((prev) =>
-      prev.flatMap((item) => {
+    setCart((prev) => {
+      const next = prev.flatMap((item) => {
         if (item.productId !== productId) return [item];
         if (nextQty <= 0) return [];
         if (item.type === "product" && nextQty > item.stock) {
@@ -917,8 +1060,13 @@ export default function PosPage() {
           return [item];
         }
         return [{ ...item, qty: nextQty }];
-      }),
-    );
+      });
+      if (spendingLimitInSaleCurrency !== null && cartGrossTotal(next) > spendingLimitInSaleCurrency + 0.001) {
+        pushError("Plafond de consommation atteint : réduire la quantité.");
+        return prev;
+      }
+      return next;
+    });
   }
   function removeLine(productId: string) {
     const current = cart.find((item) => item.productId === productId);
@@ -944,76 +1092,185 @@ export default function PosPage() {
     setDiscountEditorProductId(null);
     setError("");
   }
-  async function parkCurrentCart() {
-    if (cart.length === 0) {
-      pushError("Le panier est vide.");
+  async function postTabMoney(type: "deposit" | "refund", ticketId?: string) {
+    const id = ticketId ?? activeParkedId;
+    if (!id || postingTabMoney || !isOnline || parkedCheckoutUncertain) return;
+    if (!registerOpen || !cashSession) {
+      pushError("Ouvrez votre session de caisse avant d'encaisser ou rembourser un dépôt.");
       return;
     }
-    const parked: ParkedCart = {
-      id: `P-${Date.now().toString(36).toUpperCase()}`,
-      note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
-      createdAt: new Date().toISOString(),
-      items: sourceCart,
-    };
+    const businessCurrency = businessSettings?.currency === "USD" ? "USD" : "HTG";
+    if (id === activeParkedId && activeDepositBalance > 0 && activeDepositCurrency !== saleCurrency) {
+      pushError("Revenez à la devise du dépôt pour modifier cette fiche.");
+      return;
+    }
+    const value = Number(tabMoneyAmountInput);
+    if (!Number.isFinite(value) || value <= 0 || Math.round(value * 100) !== value * 100) {
+      pushError("Saisissez un montant positif à deux décimales maximum.");
+      return;
+    }
+    const amount = Math.round(value * 100) / 100;
+    const balance = id === activeParkedId ? activeDepositBalance : recentCompletedTab?.balance ?? 0;
+    if (type === "refund" && amount > balance + 0.001) {
+      pushError("Le remboursement dépasse l'avance encore remboursable.");
+      return;
+    }
+    const signature = `${id}:${type}:${amount}:${businessCurrency}:${tabMoneyMethod}`;
+    if (pendingTabMoneyKey.current?.signature !== signature) {
+      pendingTabMoneyKey.current = { type, signature, key: generateClientId() };
+    }
+    const idempotencyKey = pendingTabMoneyKey.current.key;
+    setPostingTabMoney(true);
     try {
-      if (useRemoteParked) {
-        const created = await createPosParkedCart(businessSlug, {
-          note: parked.note,
-          items: parked.items,
-        });
-        if (created) {
-          setParkedCarts((prev) => [fromApiParkedCart(created), ...prev]);
-        } else {
-          const next = [parked, ...parkedCarts];
-          saveLocalParked(next);
-          setUseRemoteParked(false);
-        }
-      } else {
-        const next = [parked, ...parkedCarts];
-        saveLocalParked(next);
+      const result = await recordPosTabMoneyMovement(businessSlug, id, type, {
+        amount, currency: businessCurrency, method: tabMoneyMethod, idempotencyKey,
+      });
+      pendingTabMoneyKey.current = null;
+      setTabMoneyAmountInput("");
+      if (id === activeParkedId) {
+        setActiveDepositTotal(result.received);
+        setActiveDepositBalance(result.balance);
+        setActiveDepositCurrency(businessCurrency);
+        setActiveParkedRevision(result.ticket_revision);
+        setPaymentCurrency(businessCurrency);
       }
-      setCart([]);
-      setParkNote("");
-      setCashReceivedInput("");
-      setError("");
-      pushNotice(`Panier mis en attente: ${parked.note}.`, "info");
-    } catch (e) {
-      pushError(getErrorMessage(e));
+      if (recentCompletedTab?.id === id) {
+        setRecentCompletedTab(result.balance > 0
+          ? { ...recentCompletedTab, balance: result.balance }
+          : null);
+      }
+      await loadParkedCarts();
+      pushNotice(type === "refund"
+        ? `Remboursement de ${formatMoney(amount, businessCurrency)} enregistré en caisse.`
+        : `Dépôt de ${formatMoney(amount, businessCurrency)} encaissé comme avance, sans vente.`,
+        "success");
+    } catch (error) {
+      pushError(`Opération non confirmée : ${getErrorMessage(error)}. Vérifiez la caisse avant de réessayer ; le même identifiant sera réutilisé.`);
+    } finally {
+      setPostingTabMoney(false);
     }
   }
-  async function resumeParkedCart(parkId: string) {
+  async function parkCurrentCart() {
+    if (!isOnline) {
+      pushError("Connexion requise : impossible de garantir la sauvegarde permanente de la fiche.");
+      return;
+    }
+    if (savingParked) return;
+    const enteredLimit = spendingLimitInput.trim() === "" ? null : Number(spendingLimitInput);
+    if (enteredLimit !== null && (!Number.isFinite(enteredLimit) || enteredLimit <= 0)) {
+      pushError("Le plafond de consommation doit être un montant positif.");
+      return;
+    }
+    const limit = activeSpendingLimit ?? enteredLimit;
+    const limitCurrency = activeSpendingLimit !== null ? activeSpendingCurrency : saleCurrency;
+    const effectiveLimit = limit === null ? null : convertAmount(limit, limitCurrency, saleCurrency, {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+      exchangeBuyRate: businessSettings?.exchange_buy_rate,
+      exchangeSellRate: businessSettings?.exchange_sell_rate,
+    });
+    if (effectiveLimit !== null && cartGrossTotal(sourceCart) > effectiveLimit + 0.001) {
+      pushError("La fiche dépasse le plafond. Réduire les articles avant enregistrement.");
+      return;
+    }
+    if (!activeParkedId && !pendingParkedToken.current) {
+      pendingParkedToken.current = generateClientId();
+    }
+    const payload = {
+      clientToken: activeParkedId ? undefined : pendingParkedToken.current ?? undefined,
+      note: parkNote.trim() || `Fiche ${parkedTotalOpen + 1}`,
+      items: sourceCart,
+      customerName: customerNameForSale || null,
+      customerId: selectedCustomer?.id ?? parkedCustomerId,
+      reservationId: selectedReservationId,
+      roomLabel: selectedReservation?.room?.room_number || activeParkedRoomLabel,
+      spendingLimit: limit,
+      spendingCurrency: limitCurrency,
+    };
+    setSavingParked(true);
+    try {
+      const saved = activeParkedId
+        ? await updatePosParkedCart(businessSlug, activeParkedId, activeParkedRevision, payload)
+        : await createPosParkedCart(businessSlug, payload);
+      pendingParkedToken.current = null;
+      clearCurrentCart();
+      setParkNote("");
+      setActiveParkedId(null);
+      setActiveParkedRevision(1);
+      setActiveDepositTotal(0);
+      setActiveDepositBalance(0);
+      setActiveDepositCurrency(null);
+      setParkedCustomerId(null);
+      setActiveParkedRoomLabel(null);
+      setSpendingLimitInput("");
+      setActiveSpendingLimit(null);
+      setSelectedReservationId(null);
+      setSelectedCustomer(null);
+      setFreeCustomerName("");
+      setCustomerQuery("");
+      setParkedSearchInput("");
+      setParkedSearch("");
+      setParkedPage(1);
+      await loadParkedCarts();
+      pushNotice(`Fiche ${saved.note} sauvegardée sur le serveur.`, "success");
+    } catch (error) {
+      // No acknowledgement => preserve the basket and the idempotency token.
+      pushError(`Fiche NON enregistrée sur le serveur : ${getErrorMessage(error)}. Réessayez sans vider le panier.`);
+    } finally {
+      setSavingParked(false);
+    }
+  }
+  function resumeParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
     if (!found) return;
+    if (cart.length > 0 || activeParkedId) {
+      pushError("Enregistrez le panier en cours avant de reprendre une autre fiche.");
+      return;
+    }
+    setActiveParkedId(found.id);
+    setActiveDepositTotal(found.depositTotal ?? 0);
+    setActiveDepositBalance(found.depositBalance ?? 0);
+    setActiveDepositCurrency(found.depositCurrency ?? null);
+    if ((found.depositTotal ?? 0) > 0 && found.depositCurrency) {
+      setPaymentCurrency(found.depositCurrency === "USD" ? "USD" : "HTG");
+    }
+    setParkedCheckoutUncertain(false);
+    setActiveParkedRevision(found.revision ?? 1);
     setCart(found.items);
     setParkNote(found.note ?? "");
-    try {
-      if (useRemoteParked) {
-        const deleted = await deletePosParkedCart(businessSlug, parkId);
-        if (!deleted) setUseRemoteParked(false);
-      }
-      const next = parkedCarts.filter((item) => item.id !== parkId);
-      setParkedCarts(next);
-      if (!useRemoteParked) saveLocalParked(next);
-      setError("");
-      pushNotice(`Panier repris: ${found.note}.`, "success");
-    } catch (e) {
-      pushError(getErrorMessage(e));
-    }
+    setFreeCustomerName(found.customerName ?? "");
+    setCustomerQuery("");
+    setSelectedCustomer(found.registeredCustomer ?? null);
+    setParkedCustomerId(found.customerId == null ? null : String(found.customerId));
+    setActiveParkedRoomLabel(found.roomLabel ?? null);
+    setSelectedReservationId(found.reservationId ?? null);
+    setActiveSpendingLimit(found.spendingLimit ?? null);
+    setActiveSpendingCurrency(found.spendingCurrency || saleCurrency);
+    setSpendingLimitInput(found.spendingLimit == null ? "" : String(found.spendingLimit));
+    setError("");
+    // The ticket MUST remain in the server database until cancel/finalize.
+    pushNotice(`Fiche reprise : ${found.note}. Modifications à enregistrer avant de quitter.`, "info");
   }
   async function discardParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
+    if (!found) return;
+    if (activeParkedId === parkId && parkedCheckoutUncertain) {
+      pushError("Cette fiche pourrait être en cours de finalisation. Vérifiez d'abord la synchronisation des ventes.");
+      return;
+    }
+    if (!window.confirm(`Annuler définitivement la fiche « ${found.note} » ? L'historique restera archivé.`)) return;
     try {
-      if (useRemoteParked) {
-        const deleted = await deletePosParkedCart(businessSlug, parkId);
-        if (!deleted) setUseRemoteParked(false);
+      await cancelPosParkedCart(businessSlug, parkId);
+      if (activeParkedId === parkId) {
+        clearCurrentCart();
+        setActiveParkedId(null);
+        setActiveParkedRevision(1);
+        setParkedCustomerId(null);
       }
-      const next = parkedCarts.filter((item) => item.id !== parkId);
-      setParkedCarts(next);
-      if (!useRemoteParked) saveLocalParked(next);
-      setError("");
-      if (found) pushNotice(`Panier supprime: ${found.note}.`, "info");
+      await loadParkedCarts();
+      pushNotice(`Fiche annulée : ${found.note}.`, "info");
     } catch (e) {
-      pushError(getErrorMessage(e));
+      pushError(`Annulation non confirmée : ${getErrorMessage(e)}`);
     }
   }
   async function printSaleReceipt(sale: CompletedSale) {
@@ -1132,7 +1389,15 @@ export default function PosPage() {
   }
   async function runCheckoutSale(approval?: PosApprovalPayload): Promise<boolean> {
     if (!branchId || !cashSession) { pushError("La succursale et la session de caisse doivent être chargées."); return false; }
+    if (activeParkedId && (!isOnline || parkedCheckoutUncertain)) {
+      pushError("Vérifiez la synchronisation et l'historique de vente de cette fiche avant toute nouvelle tentative.");
+      return false;
+    }
     if (!businessSettings) { pushError("Les taux de change ne sont pas encore charges."); return false; }
+    if (activeParkedId && activeDepositTotal > 0 && activeDepositCurrency !== saleCurrency) {
+      pushError("Choisissez la devise du dépôt avant de finaliser cette fiche.");
+      return false;
+    }
     if (cart.length === 0) {
       pushError("Ajoute des produits avant de passer a la caisse.");
       return false;
@@ -1143,13 +1408,16 @@ export default function PosPage() {
     }
     setCheckoutLoading(true);
     setError("");
-    const idempotencyKey = generateClientId();
+    const idempotencyKey = activeParkedId ? `parked-${activeParkedId}` : generateClientId();
     const checkoutInput: PosCheckoutInput = {
+      parkedCartId: activeParkedId ?? undefined,
+      parkedCartRevision: activeParkedId ? activeParkedRevision : undefined,
       branchId,
       cashSessionId: String(cashSession.id),
       currency: saleCurrency,
       cashierId: user?.id ?? undefined,
-      customerId: selectedCustomer?.id ?? undefined,
+      customerId: selectedCustomer?.id ?? parkedCustomerId ?? undefined,
+      note: !selectedCustomer && customerNameForSale ? `Client: ${customerNameForSale.slice(0, 190)}` : undefined,
       subtotal,
       tax: taxTotal,
       total: grandTotal,
@@ -1198,7 +1466,7 @@ export default function PosPage() {
         "Caissier",
       );
       const sale: CompletedSale = {
-        customerName: selectedCustomer?.name,
+        customerName: customerNameForSale || undefined,
         loyaltyEnabled: Boolean(selectedCustomer) && (offline ? loyaltyEnabled : backendResult?.loyaltyEnabled === true),
         loyaltyPointsEarned: backendResult?.loyaltyPointsEarned,
         loyaltyPointsBalanceAfter: backendResult?.loyaltyPointsBalanceAfter ?? null,
@@ -1265,7 +1533,30 @@ export default function PosPage() {
         }
       }
       setSelectedCustomer(null);
+      setFreeCustomerName("");
       setCustomerQuery("");
+      if (!offline && activeParkedId) {
+        if (backendResult && backendResult.advanceBalance > 0) {
+          setRecentCompletedTab({
+            id: activeParkedId,
+            balance: backendResult.advanceBalance,
+            currency: saleCurrency === "USD" ? "USD" : "HTG",
+          });
+        } else {
+          setRecentCompletedTab(null);
+        }
+        setActiveParkedId(null);
+        setActiveParkedRevision(1);
+        setParkedCustomerId(null);
+        setParkedCheckoutUncertain(false);
+        setActiveDepositTotal(0);
+        setActiveDepositBalance(0);
+        setActiveDepositCurrency(null);
+        void loadParkedCarts();
+      }
+      setSelectedReservationId(null);
+      setActiveSpendingLimit(null);
+      setSpendingLimitInput("");
       setRedeemPointsInput("");
       setAppliedCoupon(null);
       setCouponCodeInput("");
@@ -1275,6 +1566,21 @@ export default function PosPage() {
     }
     let queued = false;
     try {
+      if (activeParkedId) {
+        // Save the exact basket before atomic ticket + invoice finalization.
+        const draft = await updatePosParkedCart(businessSlug, activeParkedId, activeParkedRevision, {
+          note: parkNote.trim() || "Fiche en attente",
+          items: sourceCart,
+          customerName: customerNameForSale || null,
+          customerId: selectedCustomer?.id ?? parkedCustomerId,
+          reservationId: selectedReservationId,
+          roomLabel: selectedReservation?.room?.room_number || activeParkedRoomLabel,
+          spendingLimit: activeSpendingLimit,
+          spendingCurrency: activeSpendingCurrency,
+        });
+        checkoutInput.parkedCartRevision = draft.revision;
+        setActiveParkedRevision(draft.revision);
+      }
       // Persist before sending: closing the tab during the request must be recoverable.
       await enqueuePendingSale({
         id: idempotencyKey, business: businessSlug, payload: checkoutInput, status: "pending", error: null,
@@ -1288,6 +1594,12 @@ export default function PosPage() {
       finishSale(backendResult, false);
       return true;
     } catch (e) {
+      if (activeParkedId && queued && (!(e instanceof ApiError) || e.status >= 500 || e.status === 408)) {
+        setParkedCheckoutUncertain(true);
+        setPendingSalesCount((count) => count + 1);
+        pushError("Confirmation incertaine : fiche toujours conservée. Consultez les ventes en attente et leur synchronisation avant de recommencer.");
+        return false;
+      }
       if (queued && (!(e instanceof ApiError) || e.status >= 500 || e.status === 408)) {
         try {
           await enqueuePendingSale({
@@ -1319,7 +1631,123 @@ export default function PosPage() {
     }
   }
 
+  async function recordRoomDeposit() {
+    if (!selectedReservation || !canUseRoomDeposit || !isOnline || recordingRoomDeposit) return;
+    const amount = Number(roomDepositInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      pushError("Saisissez un dépôt positif à recevoir sur le folio de la chambre.");
+      return;
+    }
+    setRecordingRoomDeposit(true);
+    try {
+      await addHotelReservationPayment(businessSlug, selectedReservation.id, {
+        amount: Math.round(amount * 100) / 100,
+        paymentCurrency: saleCurrency === "USD" ? "USD" : "HTG",
+        paymentMethod: roomDepositMethod,
+        notes: "Dépôt encaissé depuis la caisse POS",
+      });
+      setRoomDepositInput("");
+      // The hotel folio can also contain accommodation charges. A room payment
+      // is NOT an earmarked available budget for POS consumption; do not
+      // silently advertise its amount as a spendable balance.
+      pushNotice("Paiement inscrit au folio hôtel. Son solde prend aussi en compte l'hébergement : vérifiez Hôtel > Folios.", "success");
+    } catch (error) {
+      pushError(`Enregistrement du dépôt non confirmé : ${getErrorMessage(error)}. Vérifiez le folio avant de recommencer.`);
+    } finally {
+      setRecordingRoomDeposit(false);
+    }
+  }
+  async function chargeSelectedRoom() {
+    if (activeParkedId && activeDepositTotal > 0) {
+      pushError("Une avance a été encaissée sur cette fiche : finalisez-la en vente POS ou remboursez l’avance avant de la porter à la chambre. Le folio hôtel est distinct.");
+      return;
+    }
+    if (!canChargeRoom || !isOnline || postingRoomCharge || !selectedReservation || !selectedReservation.room) return;
+    if (cart.length === 0 || grandTotal <= 0) {
+      pushError("Ajoutez des articles pour porter une addition sur la chambre.");
+      return;
+    }
+    // Existing hotel orders do not model POS taxes/discounts/loyalty or mixed
+    // product currencies. Refuse instead of silently posting a wrong folio.
+    const currencies = new Set(sourceCart.map((item) => (item.currency || saleCurrency).toUpperCase()));
+    if (currencies.size > 1 || discountAmount > 0 || itemDiscountTotal > 0 || taxTotal > 0 ||
+        couponDiscountAmount > 0 || pointsDiscountAmount > 0) {
+      pushError("Pour une addition sur chambre, utilisez des articles dans une seule devise, sans taxe ni rabais. Sinon, passez par le module Commandes hôtel.");
+      return;
+    }
+    if (spendingLimitInSaleCurrency !== null && cartGrossTotal(sourceCart) > spendingLimitInSaleCurrency + 0.001) {
+      pushError("Le plafond de consommation de cette fiche est dépassé.");
+      return;
+    }
+    setPostingRoomCharge(true);
+    let createdOrderId: number | null = null;
+    try {
+      if (activeParkedId) {
+        const draft = await updatePosParkedCart(businessSlug, activeParkedId, activeParkedRevision, {
+          note: parkNote.trim() || "Fiche en attente",
+          items: sourceCart,
+          customerName: customerNameForSale || null,
+          customerId: selectedCustomer?.id ?? parkedCustomerId,
+          reservationId: selectedReservationId,
+          roomLabel: selectedReservation.room.room_number,
+          spendingLimit: activeSpendingLimit,
+          spendingCurrency: activeSpendingCurrency,
+        });
+        setActiveParkedRevision(draft.revision);
+      }
+      const order = await createHotelOrder(businessSlug, {
+        roomId: selectedReservation.room_id,
+        reservationId: selectedReservation.id,
+        customerId: selectedReservation.customer_id,
+        currency: saleCurrency === "USD" ? "USD" : "HTG",
+        status: "completed",
+        note: `Commande POS - ${selectedReservation.guest_name.slice(0, 100)}`,
+        totalAmount: Math.round(grandTotal * 100) / 100,
+        items: cart.map((item) => ({
+          productId: Number(item.productId),
+          quantity: item.qty,
+          unitPrice: item.price,
+        })),
+      });
+      createdOrderId = order.id;
+      if (order.status !== "completed") {
+        throw new Error("La commande n'a pas été confirmée.");
+      }
+      if (activeParkedId) {
+        await completePosParkedHotelCart(businessSlug, activeParkedId, order.id);
+        setActiveParkedId(null);
+        setActiveParkedRevision(1);
+        setParkedCustomerId(null);
+        void loadParkedCarts();
+      }
+      setProducts((prev) => prev.map((product) => {
+        const line = cart.find((item) => item.productId === String(product.id));
+        return !line || product.type === "service" ? product : {
+          ...product, stock: Math.max(0, product.stock - line.qty),
+        };
+      }));
+      clearCurrentCart();
+      setSelectedReservationId(null);
+      setFreeCustomerName("");
+      setCustomerQuery("");
+      setSelectedCustomer(null);
+      setActiveSpendingLimit(null);
+      setSpendingLimitInput("");
+      pushNotice(`Addition portée sur chambre ${selectedReservation.room.room_number} (commande #${order.id}).`, "success");
+    } catch (error) {
+      const message = createdOrderId
+        ? `Commande hôtel #${createdOrderId} créée mais confirmation non vérifiée. Contrôlez-la dans Commandes hôtel avant toute nouvelle tentative.`
+        : "Commande non confirmée. Vérifiez Commandes hôtel avant de recommencer.";
+      pushError(`${message} ${getErrorMessage(error)}`);
+    } finally {
+      setPostingRoomCharge(false);
+    }
+  }
   async function checkoutSale() {
+    if (spendingLimitInSaleCurrency !== null && cartGrossTotal(sourceCart) > spendingLimitInSaleCurrency + 0.001) {
+      pushError("Le plafond de consommation de cette fiche est dépassé.");
+      return;
+    }
     if ((discountAmount > 0 || itemDiscountTotal > 0) && !canApplyDiscount) {
       setApprovalDialog({
         title: "Validation manager requise",
@@ -1872,18 +2300,22 @@ export default function PosPage() {
                   <UserRound className="h-4 w-4 shrink-0 text-slate-300" />
                   Indisponible hors-ligne (client comptoir)
                 </div>
-              ) : selectedCustomer ? (
+              ) : selectedCustomer || freeCustomerName ? (
                 <div className="flex items-center justify-between rounded-xl border border-slate-300 px-3 py-2.5">
                   <div className="flex min-w-0 items-center gap-2">
                     <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
                     <span className="truncate text-sm font-semibold text-slate-800">
-                      {selectedCustomer.name}
+                      {selectedCustomer?.name || freeCustomerName}
+                      {!selectedCustomer ? (parkedCustomerId ? " (client enregistré)" : " (nom libre)") : ""}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedCustomer(null);
+                      setParkedCustomerId(null);
+                      setFreeCustomerName("");
+                      setCustomerQuery("");
                       setRedeemPointsInput("");
                     }}
                     className="text-slate-400 hover:text-slate-600"
@@ -1919,6 +2351,8 @@ export default function PosPage() {
                             type="button"
                             onClick={() => {
                               setSelectedCustomer(item);
+                              setParkedCustomerId(null);
+                              setFreeCustomerName("");
                               setCustomerDropdownOpen(false);
                               setCustomerQuery("");
                             }}
@@ -1929,11 +2363,103 @@ export default function PosPage() {
                           </button>
                         ))
                       )}
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setFreeCustomerName(customerQuery.trim().slice(0, 190));
+                          setSelectedCustomer(null);
+                          setParkedCustomerId(null);
+                          setRedeemPointsInput("");
+                          setCustomerQuery("");
+                          setCustomerDropdownOpen(false);
+                        }}
+                        className="block w-full border-t border-slate-100 px-3 py-2.5 text-left text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+                      >
+                        Utiliser « {customerQuery.trim()} » sans créer de fiche client
+                      </button>
                     </div>
+                  ) : null}
+                  {customerQuery.trim() ? (
+                    <p className="mt-1 text-xs text-slate-500">Sans sélection, le nom saisi sera repris sur le ticket, sans création de client.</p>
                   ) : null}
                 </div>
               )}
             </div>{" "}
+            {canChargeRoom ? (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-2">
+                <label className="block text-sm font-semibold text-indigo-900">
+                  Mettre l'addition sur une chambre (optionnel)
+                  <select
+                    value={selectedReservationId ?? ""}
+                    onChange={(event) => {
+                      const id = Number(event.target.value);
+                      const reservation = hotelReservations.find((item) => item.id === id);
+                      setSelectedReservationId(reservation?.id ?? null);
+                      setRoomDepositInput("");
+                      setActiveSpendingLimit(null);
+                      setSpendingLimitInput("");
+                      if (reservation) {
+                        setSelectedCustomer(null);
+                        setParkedCustomerId(null);
+                        setFreeCustomerName(reservation.guest_name);
+                        setCustomerQuery("");
+                      }
+                    }}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"
+                  >
+                    <option value="">Client comptoir / table — encaissement normal</option>
+                    {hotelReservations.map((reservation) => (
+                      <option key={reservation.id} value={reservation.id}>
+                        Chambre {reservation.room?.room_number || reservation.room_id} — {reservation.guest_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedReservation ? (
+                  <div className="space-y-2 text-xs text-indigo-900">
+                    <div>Client hébergé : {selectedReservation.guest_name}. Les achats seront ajoutés à son folio sans encaissement en caisse.</div>
+                    {canUseRoomDeposit ? (
+                      <div className="space-y-2 rounded-lg border border-indigo-100 bg-white p-2">
+                        <label className="block font-semibold">
+                          Encaisser un dépôt sur le folio hôtel ({saleCurrency})
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={roomDepositInput}
+                            onChange={(event) => setRoomDepositInput(event.target.value)}
+                            placeholder="Montant reçu"
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                          />
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            value={roomDepositMethod}
+                            onChange={(event) => setRoomDepositMethod(event.target.value as typeof roomDepositMethod)}
+                            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                          >
+                            <option value="cash">Espèces</option>
+                            <option value="card">Carte</option>
+                            <option value="mobile">Mobile</option>
+                            <option value="bank">Banque</option>
+                          </select>
+                          <button
+                            type="button"
+                            disabled={recordingRoomDeposit || !isOnline || !roomDepositInput}
+                            onClick={() => void recordRoomDeposit()}
+                            className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                          >
+                            {recordingRoomDeposit ? "En cours..." : "Enregistrer dépôt"}
+                          </button>
+                        </div>
+                        <p className="text-slate-500">Paiement affecté au folio complet (chambre + extras). Il ne constitue pas automatiquement un crédit disponible pour les achats. Le plafond facultatif de la fiche en attente est séparé.</p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {loyaltyEnabled && selectedCustomer && isOnline ? (
               <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-sm text-amber-900">
@@ -2065,6 +2591,12 @@ export default function PosPage() {
             </div>{" "}
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900">
               <div>Total facture: {formatMoney(grandTotal, saleCurrency)}</div>
+              {activeParkedId && activeDepositTotal > 0 ? (
+                <div className="mt-1">
+                  Avance déjà encaissée : {formatMoney(activeDepositBalance, activeDepositCurrency || saleCurrency)}.
+                  Imputation prévue : {formatMoney(advanceToApply, saleCurrency)}.
+                </div>
+              ) : null}
               {couponDiscountAmount > 0 ? (
                 <div className="mt-1">
                   Code promo: - {formatMoney(couponDiscountAmount, saleCurrency)}
@@ -2076,7 +2608,7 @@ export default function PosPage() {
                 </div>
               ) : null}
               <div className="mt-1">
-                A encaisser: {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
+                Reste à encaisser maintenant : {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
               </div>
             </div>{" "}
             <div className="space-y-1">
@@ -2134,35 +2666,101 @@ export default function PosPage() {
               onClick={() => {
                 void checkoutSale();
               }}
-              disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
+              disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen || Boolean(selectedReservation)}
               className="w-full rounded-xl brand-primary-btn text-white py-3 font-bold disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {" "}
               {checkoutLoading ? "Traitement..." : "Passer a la caisse"}{" "}
             </button>{" "}
+            {selectedReservation ? (
+              <p className="text-xs text-indigo-700">
+                Une chambre est sélectionnée : utilisez « Porter à la chambre » ci-dessous.
+                Pour un paiement immédiat, revenez au mode Client comptoir / table.
+              </p>
+            ) : null}
+            {selectedReservation && canChargeRoom ? (
+              <button
+                type="button"
+                onClick={() => void chargeSelectedRoom()}
+                disabled={postingRoomCharge || checkoutLoading || !isOnline || cart.length === 0}
+                className="w-full rounded-xl border border-indigo-300 bg-indigo-50 py-3 text-sm font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+              >
+                {postingRoomCharge
+                  ? "Ajout au folio en cours..."
+                  : `Porter ${formatMoney(grandTotal, saleCurrency)} à la chambre ${selectedReservation.room?.room_number || ""}`}
+              </button>
+            ) : null}
           </section>{" "}
           <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
             {" "}
-            <div className="font-bold text-slate-900">
-              Panier en attente
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-bold text-slate-900">
+                Fiches en attente ({parkedTotalOpen})
+              </div>
+              <span className="text-xs text-slate-500">Sauvegarde sur serveur</span>
             </div>{" "}
+            {activeParkedId ? (
+              <p className="rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-xs text-indigo-800">
+                Fiche en cours de modification. Elle reste enregistrée sur le serveur
+                tant que vous ne l'annulez pas ou ne finalisez pas la facture.
+                Cliquez sur « Enregistrer la fiche » pour conserver les modifications.
+              </p>
+            ) : null}
+            {parkedTotalOpen > 10 ? (
+              <label className="block space-y-1 text-xs font-semibold text-slate-700">
+                Rechercher parmi toutes les fiches
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                  <input
+                    value={parkedSearchInput}
+                    onChange={(event) => setParkedSearchInput(event.target.value)}
+                    placeholder="Client, chambre, table, référence..."
+                    className="w-full rounded-xl border border-slate-300 py-2.5 pl-9 pr-3 text-sm font-normal"
+                  />
+                </div>
+              </label>
+            ) : null}
             <input
               value={parkNote}
               onChange={(event) => setParkNote(event.target.value)}
               placeholder="Note (ex: Client table 5)"
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />{" "}
+            <label className="block text-xs font-semibold text-slate-700">
+              Plafond de consommation facultatif ({activeSpendingLimit !== null ? activeSpendingCurrency : saleCurrency})
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={spendingLimitInput}
+                disabled={activeSpendingLimit !== null}
+                onChange={(event) => setSpendingLimitInput(event.target.value)}
+                placeholder="Sans limite par défaut"
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+              />
+              <span className="mt-1 block font-normal text-amber-700">
+                Limite de dépense uniquement : ne constitue pas un dépôt encaissé. Pour une chambre, utilisez l'encaissement du folio ci-dessus.
+              </span>
+            </label>
+            {activeSpendingLimit !== null ? (
+              <div className="rounded-lg bg-slate-50 p-2 text-xs text-slate-700">
+                Plafond : {formatMoney(spendingLimitInSaleCurrency ?? 0, saleCurrency)}.
+                Reste estimé : {formatMoney(Math.max(0, (spendingLimitInSaleCurrency ?? 0) - cartGrossTotal(sourceCart)), saleCurrency)}.
+                Les ajouts au-delà sont bloqués.
+              </div>
+            ) : null}
             <button
               onClick={() => {
                 void parkCurrentCart();
               }}
-              disabled={cart.length === 0}
+              disabled={savingParked || !isOnline || (!activeParkedId && cart.length === 0)}
               className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
             >
               {" "}
-              <PauseCircle className="h-4 w-4" /> Mettre le panier en
-              attente{" "}
+              <PauseCircle className="h-4 w-4" />{" "}
+              {savingParked ? "Enregistrement..." : activeParkedId ? "Enregistrer la fiche en attente" : "Mettre le panier en attente"}{" "}
             </button>{" "}
+            {parkedLoading ? <p className="text-xs text-slate-500">Actualisation des fiches...</p> : null}
             {parkedCarts.length > 0 ? (
               <div className="space-y-2 max-h-[180px] overflow-y-auto">
                 {" "}
@@ -2176,6 +2774,10 @@ export default function PosPage() {
                       {parked.note}
                     </div>{" "}
                     <div className="text-xs text-slate-500">
+                      {parked.customerName ? `Client : ${parked.customerName} · ` : ""}
+                      {parked.reservationId ? `Séjour #${parked.reservationId} · ` : ""}
+                      {parked.roomLabel ? `Chambre ${parked.roomLabel} · ` : ""}
+                      {parked.spendingLimit != null ? `Plafond : ${formatMoney(parked.spendingLimit, parked.spendingCurrency || saleCurrency)} · ` : ""}
                       {" "}
                       {parked.items.reduce(
                         (sum, item) => sum + item.qty,
@@ -2204,7 +2806,7 @@ export default function PosPage() {
                         className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                       >
                         {" "}
-                        Suppr{" "}
+                        Annuler{" "}
                       </button>{" "}
                     </div>{" "}
                   </div>
@@ -2212,9 +2814,26 @@ export default function PosPage() {
               </div>
             ) : (
               <div className="text-xs text-slate-500">
-                Aucun panier en attente.
+                {parkedSearch ? "Aucune fiche correspondant à cette recherche." : "Aucune fiche en attente."}
               </div>
             )}{" "}
+            {parkedLastPage > 1 ? (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setParkedPage((page) => Math.max(1, page - 1))}
+                  disabled={parkedPage <= 1 || parkedLoading}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+                >Précédent</button>
+                <span>{parkedTotal} résultat(s) · Page {parkedPage} / {parkedLastPage}</span>
+                <button
+                  type="button"
+                  onClick={() => setParkedPage((page) => Math.min(parkedLastPage, page + 1))}
+                  disabled={parkedPage >= parkedLastPage || parkedLoading}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+                >Suivant</button>
+              </div>
+            ) : null}
           </section>{" "}
         </aside>{" "}
       </div>{" "}

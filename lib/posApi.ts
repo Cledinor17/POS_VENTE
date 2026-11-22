@@ -19,9 +19,41 @@ export type PosCartItem = {
 
 export type PosParkedCart = {
   id: string;
+  revision: number;
+  status: "open" | "cancelled" | "completed";
   note: string;
   createdAt: string;
+  updatedAt: string;
   items: PosCartItem[];
+  customerName: string | null;
+  customerId: string | null;
+  reservationId: number | null;
+  roomLabel: string | null;
+  spendingLimit: number | null;
+  spendingCurrency: string | null;
+  depositTotal: number;
+  depositBalance: number;
+  depositCurrency: string | null;
+};
+
+export type PosParkedCartInput = {
+  note: string;
+  items: PosCartItem[];
+  clientToken?: string;
+  customerName?: string | null;
+  customerId?: string | number | null;
+  reservationId?: number | null;
+  roomLabel?: string | null;
+  spendingLimit?: number | null;
+  spendingCurrency?: string | null;
+};
+
+export type PosParkedCartPage = {
+  items: PosParkedCart[];
+  total: number;
+  totalOpen: number;
+  page: number;
+  lastPage: number;
 };
 
 export type PosPaymentMethodConfig = {
@@ -49,6 +81,8 @@ export type PosApprovalPayload = {
 };
 
 export type PosCheckoutInput = {
+  parkedCartId?: string;
+  parkedCartRevision?: number;
   branchId?: string;
   cashSessionId?: string;
   currency?: string;
@@ -84,6 +118,8 @@ export type PosCheckoutResult = {
   businessInvoiceFooter: string | null;
   paymentCurrency: string;
   paymentAmount: number;
+  advanceApplied: number;
+  advanceBalance: number;
   paymentDateLabel: string | null;
   receiptQrPayload: string | null;
   receiptQrCodeDataUri: string | null;
@@ -307,9 +343,21 @@ function normalizeParkedCart(raw: unknown): PosParkedCart {
   const obj = isObject(raw) ? raw : {};
   const itemsRaw = Array.isArray(obj.items) ? obj.items : Array.isArray(obj.lines) ? obj.lines : [];
   return {
-    id: toString(obj.id ?? obj.uuid ?? obj.reference, `P-${Date.now()}`),
+    id: toString(obj.id ?? obj.uuid ?? obj.reference, ""),
+    revision: toNumber(obj.revision, 1),
+    status: toString(obj.status, "open") as PosParkedCart["status"],
     note: toString(obj.note ?? obj.label ?? obj.title, "Panier en attente"),
-    createdAt: toString(obj.created_at ?? obj.createdAt, new Date().toISOString()),
+    createdAt: toString(obj.created_at ?? obj.createdAt, ""),
+    updatedAt: toString(obj.updated_at ?? obj.updatedAt, ""),
+    customerName: toString(obj.customer_name ?? obj.customerName, "") || null,
+    customerId: toString(obj.customer_id ?? obj.customerId, "") || null,
+    reservationId: toNumber(obj.reservation_id ?? obj.reservationId, 0) || null,
+    roomLabel: toString(obj.room_label ?? obj.roomLabel, "") || null,
+    spendingLimit: obj.spending_limit == null && obj.spendingLimit == null ? null : toNumber(obj.spending_limit ?? obj.spendingLimit, 0),
+    spendingCurrency: toString(obj.spending_currency ?? obj.spendingCurrency, "") || null,
+    depositTotal: toNumber(obj.deposit_total ?? obj.depositTotal, 0),
+    depositBalance: toNumber(obj.deposit_balance ?? obj.depositBalance, 0),
+    depositCurrency: toString(obj.deposit_currency ?? obj.depositCurrency, "") || null,
     items: itemsRaw.map(normalizeParkedItem),
   };
 }
@@ -336,6 +384,8 @@ function normalizeCheckoutResult(raw: unknown): PosCheckoutResult {
       toString(obj.business_invoice_footer ?? obj.businessInvoiceFooter ?? obj.invoice_footer ?? obj.invoiceFooter, "") || null,
     paymentCurrency: toString(obj.payment_currency ?? obj.paymentCurrency, "HTG"),
     paymentAmount: toNumber(obj.payment_amount ?? obj.paymentAmount, 0),
+    advanceApplied: toNumber(obj.advance_applied ?? obj.advanceApplied, 0),
+    advanceBalance: toNumber(obj.advance_balance ?? obj.advanceBalance, 0),
     paymentDateLabel: toString(obj.payment_date_label ?? obj.paymentDateLabel, "") || null,
     receiptQrPayload: toString(obj.receipt_qr_payload ?? obj.receiptQrPayload, "") || null,
     receiptQrCodeDataUri: toString(obj.receipt_qr_code_data_uri ?? obj.receiptQrCodeDataUri, "") || null,
@@ -522,9 +572,8 @@ function paymentMethodPaths(business: string): string[] {
   return [`${base}/pos/payment-methods`, `${base}/payment-methods`, `${base}/settings/payment-methods`];
 }
 
-function parkedCartPaths(business: string): string[] {
-  const base = basePath(business);
-  return [`${base}/parked-carts`, `${base}/pos/parked-carts`, `${base}/sales/parked-carts`];
+function parkedCartPath(business: string): string {
+  return `${basePath(business)}/pos/parked-carts`;
 }
 
 function salePaths(business: string): string[] {
@@ -546,50 +595,108 @@ export async function getPosPaymentMethods(
   return list;
 }
 
-export async function listPosParkedCarts(business: string): Promise<PosParkedCart[] | null> {
-  const raw = await tryApiFetch<unknown>(parkedCartPaths(business));
-  if (raw === null) return null;
-
-  return getCollection(raw).map(normalizeParkedCart);
-}
-
-export async function createPosParkedCart(
-  business: string,
-  input: Pick<PosParkedCart, "note" | "items">
-): Promise<PosParkedCart | null> {
-  const payload = {
+function parkedCartPayload(input: PosParkedCartInput): Record<string, unknown> {
+  return {
+    client_token: input.clientToken ?? null,
     note: input.note,
-    items: input.items.map((item) => ({
-      product_id: item.productId,
-      productId: item.productId,
-      name: item.name,
-      sku: item.sku,
-      qty: item.qty,
-      quantity: item.qty,
-      unit_price: item.price,
-      currency: item.currency ?? "HTG",
-      discount_currency: item.discountCurrency ?? item.currency ?? "HTG",
-      price: item.price,
-      tax_rate: item.taxRate,
-      type: item.type,
-      stock_quantity: item.stock,
-      image_path: item.imagePath,
-      discount_type: item.discountType ?? null,
-      discount_value: item.discountValue ?? null,
-    })),
+    customer_name: input.customerName ?? null,
+    customer_id: input.customerId ?? null,
+    reservation_id: input.reservationId ?? null,
+    room_label: input.roomLabel ?? null,
+    spending_limit: input.spendingLimit ?? null,
+    spending_currency: input.spendingCurrency ?? null,
+    items: input.items,
   };
-
-  const raw = await tryApiFetch<unknown>(parkedCartPaths(business), { method: "POST", json: payload });
-  if (raw === null) return null;
-  return normalizeParkedCart(getResource(raw, ["parked_cart", "parkedCart"]));
 }
 
-export async function deletePosParkedCart(business: string, parkedId: string): Promise<boolean> {
-  const encoded = encodeURIComponent(parkedId);
-  const paths = parkedCartPaths(business).map((path) => `${path}/${encoded}`);
+/** Authoritative database listing; never silently fall back to local-only carts. */
+export async function listPosParkedCarts(
+  business: string,
+  options: { q?: string; page?: number; perPage?: number } = {},
+): Promise<PosParkedCartPage> {
+  const params = new URLSearchParams();
+  if (options.q?.trim()) params.set("q", options.q.trim());
+  if (options.page) params.set("page", String(options.page));
+  if (options.perPage) params.set("per_page", String(options.perPage));
+  const path = parkedCartPath(business) + (params.size ? `?${params.toString()}` : "");
+  const raw = await apiFetch<unknown>(path);
+  const root = isObject(raw) ? raw : {};
+  const meta = isObject(root.meta) ? root.meta : {};
+  const items = getCollection(raw).map(normalizeParkedCart);
+  return {
+    items,
+    total: toNumber(meta.total, items.length),
+    totalOpen: toNumber(meta.total_open, items.length),
+    page: toNumber(meta.current_page, options.page || 1),
+    lastPage: toNumber(meta.last_page, 1),
+  };
+}
 
-  const result = await tryApiFetch<unknown>(paths, { method: "DELETE" });
-  return result !== null;
+export async function createPosParkedCart(business: string, input: PosParkedCartInput): Promise<PosParkedCart> {
+  const raw = await apiFetch<unknown>(parkedCartPath(business), {
+    method: "POST",
+    json: parkedCartPayload(input),
+  });
+  return normalizeParkedCart(getResource(raw, ["parked_cart"]));
+}
+
+export async function updatePosParkedCart(
+  business: string, id: string, revision: number, input: PosParkedCartInput,
+): Promise<PosParkedCart> {
+  const raw = await apiFetch<unknown>(`${parkedCartPath(business)}/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    json: { ...parkedCartPayload(input), revision },
+  });
+  return normalizeParkedCart(getResource(raw, ["parked_cart"]));
+}
+
+export type PosTabDepositResult = {
+  event: { id: number; type: "deposit" | "refund"; amount: number; currency: string; method: string; created_at: string };
+  balance: number;
+  received: number;
+  ticket_revision: number;
+};
+
+/** Actual money movement. Do not call this for a mere client-entered ceiling. */
+export async function recordPosTabMoneyMovement(
+  business: string,
+  ticketId: string,
+  type: "deposit" | "refund",
+  input: {
+    amount: number;
+    currency: "HTG" | "USD";
+    method: "cash" | "card" | "bank" | "mobile";
+    idempotencyKey: string;
+    reference?: string;
+  },
+): Promise<PosTabDepositResult> {
+  const path = `${parkedCartPath(business)}/${encodeURIComponent(ticketId)}/${type === "deposit" ? "deposits" : "refunds"}`;
+  return apiFetch<PosTabDepositResult>(path, {
+    method: "POST",
+    json: {
+      amount: input.amount,
+      currency: input.currency,
+      method: input.method,
+      idempotency_key: input.idempotencyKey,
+      reference: input.reference || null,
+    },
+  });
+}
+
+/** Explicit cancel: backend archives the record; it is not physically erased. */
+export async function cancelPosParkedCart(business: string, id: string): Promise<void> {
+  await apiFetch<unknown>(`${parkedCartPath(business)}/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function completePosParkedHotelCart(
+  business: string, id: string, orderId: number,
+): Promise<void> {
+  await apiFetch<unknown>(`${parkedCartPath(business)}/${encodeURIComponent(id)}/complete-hotel`, {
+    method: "POST",
+    json: { order_id: orderId },
+  });
 }
 
 export async function checkoutPosSale(
@@ -597,6 +704,8 @@ export async function checkoutPosSale(
   input: PosCheckoutInput
 ): Promise<PosCheckoutResult | null> {
   const payload = {
+    parked_cart_id: input.parkedCartId ?? null,
+    parked_cart_revision: input.parkedCartRevision ?? null,
     cash_session_id: input.cashSessionId ?? null,
     cashier_id: input.cashierId ?? null,
     customer_id: input.customerId ?? null,
