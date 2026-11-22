@@ -2374,7 +2374,7 @@ export default function HotelReservationsPage() {
     printWindow.document.close();
 
     // Wait for the tenant logo to load (or fail) before invoking the print dialog.
-    const image = printWindow.document.querySelector("img.logo");
+    const image = printWindow.document.querySelector<HTMLImageElement>("img.logo");
     if (image && !image.complete) {
       await Promise.race([
         new Promise<void>(resolve => {
