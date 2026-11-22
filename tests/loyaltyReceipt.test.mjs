@@ -17,12 +17,17 @@ runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/receiptI18n.ts',
     throw new Error('Unexpected receipt translation import: ' + name);
   },
 });
+const templates = { exports: {} };
+runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/printTemplateModel.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText, { module: templates, exports: templates.exports });
 const loaded = { exports: {} };
 runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/posReceipt.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText, {
   module: loaded, exports: loaded.exports,
   require: name => name === './currency' ? { formatMoney: (n, c) => `${n} ${c}` }
+    : name === './printTemplateModel' ? templates.exports
     : name === './receiptI18n' ? i18n.exports
     : { printHtmlDocument() {} },
 });
