@@ -22,6 +22,8 @@ export type PosParkedCart = {
   note: string;
   createdAt: string;
   items: PosCartItem[];
+  version: number;
+  depositTotals: { HTG: number; USD: number };
 };
 
 export type PosPaymentMethodConfig = {
@@ -51,6 +53,8 @@ export type PosApprovalPayload = {
 export type PosCheckoutInput = {
   branchId?: string;
   cashSessionId?: string;
+  parkedCartId?: string;
+  parkedCartVersion?: number;
   currency?: string;
   cashierId?: string | number;
   customerId?: string | number | null;
@@ -311,6 +315,11 @@ function normalizeParkedCart(raw: unknown): PosParkedCart {
     note: toString(obj.note ?? obj.label ?? obj.title, "Panier en attente"),
     createdAt: toString(obj.created_at ?? obj.createdAt, new Date().toISOString()),
     items: itemsRaw.map(normalizeParkedItem),
+    version: toNumber(obj.version, 1),
+    depositTotals: {
+      HTG: toNumber(isObject(obj.deposit_totals) ? obj.deposit_totals.HTG : 0, 0),
+      USD: toNumber(isObject(obj.deposit_totals) ? obj.deposit_totals.USD : 0, 0),
+    },
   };
 }
 
@@ -524,7 +533,7 @@ function paymentMethodPaths(business: string): string[] {
 
 function parkedCartPaths(business: string): string[] {
   const base = basePath(business);
-  return [`${base}/parked-carts`, `${base}/pos/parked-carts`, `${base}/sales/parked-carts`];
+  return [`${base}/pos/parked-carts`, `${base}/parked-carts`, `${base}/sales/parked-carts`];
 }
 
 function salePaths(business: string): string[] {
@@ -553,43 +562,65 @@ export async function listPosParkedCarts(business: string): Promise<PosParkedCar
   return getCollection(raw).map(normalizeParkedCart);
 }
 
-export async function createPosParkedCart(
-  business: string,
-  input: Pick<PosParkedCart, "note" | "items">
-): Promise<PosParkedCart | null> {
-  const payload = {
-    note: input.note,
-    items: input.items.map((item) => ({
-      product_id: item.productId,
-      productId: item.productId,
-      name: item.name,
-      sku: item.sku,
-      qty: item.qty,
-      quantity: item.qty,
-      unit_price: item.price,
-      currency: item.currency ?? "HTG",
-      discount_currency: item.discountCurrency ?? item.currency ?? "HTG",
-      price: item.price,
-      tax_rate: item.taxRate,
-      type: item.type,
-      stock_quantity: item.stock,
-      image_path: item.imagePath,
-      discount_type: item.discountType ?? null,
-      discount_value: item.discountValue ?? null,
-    })),
+function serializeParkedItem(item: PosCartItem) {
+  return {
+    productId: item.productId,
+    name: item.name, sku: item.sku,
+    qty: item.qty, price: item.price,
+    currency: item.currency ?? "HTG",
+    discountCurrency: item.discountCurrency ?? item.currency ?? "HTG",
+    discountType: item.discountType ?? null,
+    discountValue: item.discountValue ?? 0,
+    taxRate: item.taxRate,
+    type: item.type,
+    stock: item.stock,
+    imagePath: item.imagePath,
   };
-
-  const raw = await tryApiFetch<unknown>(parkedCartPaths(business), { method: "POST", json: payload });
-  if (raw === null) return null;
-  return normalizeParkedCart(getResource(raw, ["parked_cart", "parkedCart"]));
 }
 
-export async function deletePosParkedCart(business: string, parkedId: string): Promise<boolean> {
-  const encoded = encodeURIComponent(parkedId);
-  const paths = parkedCartPaths(business).map((path) => `${path}/${encoded}`);
+export async function createPosParkedCart(
+  business: string,
+  input: Pick<PosParkedCart, "id" | "note" | "items"> &
+    { depositAmount?: string | null; depositCurrency?: "HTG" | "USD" },
+): Promise<PosParkedCart | null> {
+  const raw = await tryApiFetch<unknown>(parkedCartPaths(business), {
+    method: "POST",
+    json: {
+      id: input.id, note: input.note,
+      items: input.items.map(serializeParkedItem),
+      deposit_amount: input.depositAmount ?? null,
+      deposit_currency: input.depositAmount ? (input.depositCurrency ?? "HTG") : null,
+    },
+  });
+  if (raw === null) return null;
+  return normalizeParkedCart(getResource(raw, ["data", "parked_cart", "parkedCart"]));
+}
 
-  const result = await tryApiFetch<unknown>(paths, { method: "DELETE" });
-  return result !== null;
+export async function updatePosParkedCart(
+  business: string, id: string,
+  input: { note: string; items: PosCartItem[]; version: number },
+): Promise<PosParkedCart> {
+  const raw = await apiFetch<unknown>(`${basePath(business)}/pos/parked-carts/${encodeURIComponent(id)}`, {
+    method: "PUT", json: { note: input.note, items: input.items.map(serializeParkedItem), version: input.version },
+  });
+  return normalizeParkedCart(getResource(raw, ["data", "parked_cart"]));
+}
+
+export async function setPosParkedDeposit(
+  business: string, id: string,
+  input: { version: number; amount: string; currency: "HTG" | "USD"; request_key: string },
+): Promise<PosParkedCart> {
+  const raw = await apiFetch<unknown>(`${basePath(business)}/pos/parked-carts/${encodeURIComponent(id)}/deposit`, {
+    method: "PUT", json: input,
+  });
+  return normalizeParkedCart(getResource(raw, ["data", "parked_cart"]));
+}
+
+export async function deletePosParkedCart(business: string, parkedId: string, version: number): Promise<boolean> {
+  const raw = await apiFetch<unknown>(`${basePath(business)}/pos/parked-carts/${encodeURIComponent(parkedId)}`, {
+    method: "DELETE", json: { version },
+  });
+  return raw !== null;
 }
 
 export async function checkoutPosSale(
@@ -598,6 +629,8 @@ export async function checkoutPosSale(
 ): Promise<PosCheckoutResult | null> {
   const payload = {
     cash_session_id: input.cashSessionId ?? null,
+    parked_cart_id: input.parkedCartId ?? null,
+    parked_cart_version: input.parkedCartVersion ?? null,
     cashier_id: input.cashierId ?? null,
     customer_id: input.customerId ?? null,
     note: input.note ?? null,
