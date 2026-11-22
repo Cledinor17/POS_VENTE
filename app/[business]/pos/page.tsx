@@ -337,12 +337,15 @@ export default function PosPage() {
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>([]);
   const [useRemoteParked, setUseRemoteParked] = useState(false);
   const [parkNote, setParkNote] = useState("");
+  const [parkModalOpen, setParkModalOpen] = useState(false);
+  const [parkSaving, setParkSaving] = useState(false);
   const [parkDepositInput, setParkDepositInput] = useState("");
   const [parkDepositCurrency, setParkDepositCurrency] = useState<"HTG" | "USD">("HTG");
   const [depositDrafts, setDepositDrafts] = useState<Record<string, { amount: string; currency: "HTG" | "USD"; requestKey?: string }>>({});
   const [deposits, setDeposits] = useState<UnpostedDepositMemo[]>([]);
   const [depositTotals, setDepositTotals] = useState<UnpostedDepositSummary["totals"]>({ HTG: "0.00", USD: "0.00" });
   const [depositReadStatus, setDepositReadStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [depositMemosComplete, setDepositMemosComplete] = useState(false);
   const [depositSavingId, setDepositSavingId] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState<ParkedCart | null>(null);
   const [discardingId, setDiscardingId] = useState<string | null>(null);
@@ -714,12 +717,14 @@ export default function PosPage() {
     const result = await listUnpostedDeposits(businessSlug);
     setDeposits(result.data);
     setDepositTotals(result.totals);
+    setDepositMemosComplete(!result.more_records);
     setDepositReadStatus("ready");
   }, [businessSlug, branchId]);
 
   useEffect(() => {
     let active = true;
     setDeposits([]);
+    setDepositMemosComplete(false);
     setDepositTotals({ HTG: "0.00", USD: "0.00" });
     setDepositReadStatus("unavailable");
     if (!businessSlug || !branchId || !isOnline) return undefined;
@@ -728,6 +733,7 @@ export default function PosPage() {
       if (active) {
         setDeposits(result.data);
         setDepositTotals(result.totals);
+        setDepositMemosComplete(!result.more_records);
         setDepositReadStatus("ready");
       }
     }).catch(() => {
@@ -845,6 +851,20 @@ export default function PosPage() {
   const valuationConfig = { exchangeRateValue: businessSettings?.exchange_sell_rate || businessSettings?.usd_to_htg_rate || 1 };
   const couponDiscountAmount = convertAmount(appliedCoupon?.discountAmount ?? 0, businessSettings?.currency || "HTG", saleCurrency, valuationConfig);
   const grandTotal = Math.max(0, subtotal - discountAmount - couponDiscountAmount) + taxTotal;
+  const previewDeposit = parseDepositAmount(parkDepositInput);
+  const hasExchangeConfigured = [
+    businessSettings?.exchange_buy_rate,
+    businessSettings?.exchange_sell_rate,
+    businessSettings?.exchange_rate_value,
+  ].some(value => Number(value) > 0);
+  const previewDepositInSaleCurrency = previewDeposit && (parkDepositCurrency === saleCurrency || hasExchangeConfigured)
+    ? convertAmount(Number(previewDeposit), parkDepositCurrency, saleCurrency, {
+        exchangeRateDirection: businessSettings?.exchange_rate_direction,
+        exchangeRateValue: businessSettings?.exchange_rate_value,
+        exchangeBuyRate: businessSettings?.exchange_buy_rate,
+        exchangeSellRate: businessSettings?.exchange_sell_rate,
+      })
+    : null;
   const itemCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.qty, 0),
     [cart],
@@ -1091,6 +1111,7 @@ export default function PosPage() {
   }
 
   async function parkCurrentCart() {
+    if (parkSaving) return;
     if (!branchId || branchLoading) {
       pushError(ui.noNetwork);
       return;
@@ -1113,6 +1134,7 @@ export default function PosPage() {
       pushError(ui.noRights);
       return;
     }
+    setParkSaving(true);
     const parked: ParkedCart = {
       id: `P-${generateClientId()}`,
       branchId,
@@ -1139,6 +1161,7 @@ export default function PosPage() {
         saveLocalParked([parked, ...parkedCarts]);
       }
       setCart([]);
+      setParkModalOpen(false);
       setParkNote("");
       setCashReceivedInput("");
       setError("");
@@ -1156,10 +1179,13 @@ export default function PosPage() {
           pushNotice(ui.parkFailed, "warning");
         }
       } else {
+        setParkDepositInput("");
         pushNotice(ui.savedPending, "info");
       }
     } catch (error) {
       pushError(getErrorMessage(error));
+    } finally {
+      setParkSaving(false);
     }
   }
   async function resumeParkedCart(parkId: string) {
@@ -1890,133 +1916,72 @@ export default function PosPage() {
                   const discountEditorOpen = discountEditorProductId === item.productId;
 
                   return (
-                  <div
-                    key={item.productId}
-                    className="rounded-xl border border-slate-200 p-3 space-y-2"
-                  >
-                    {" "}
-                    <div className="flex items-start justify-between gap-3">
-                      {" "}
-                      <div className="min-w-0 flex items-center gap-2">
-                        <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                          <Image
-                            src={imageSrc}
-                            alt={item.name}
-                            fill
-                            sizes="36px"
-                            className="h-full w-full object-cover"
-                            unoptimized
-                            onError={() => {
-                              setBrokenImages((prev) => ({
-                                ...prev,
-                                [item.productId]: true,
-                              }));
-                            }}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          {" "}
-                          <div className="text-sm font-semibold text-slate-800 truncate">
-                            {item.name}
-                          </div>{" "}
-                          <div className="text-xs text-slate-500">
-                            {item.sku}
-                          </div>{" "}
-                        </div>
-                      </div>{" "}
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() =>
-                            setDiscountEditorProductId(discountEditorOpen ? null : item.productId)
-                          }
-                          className={`hover:text-indigo-700 ${lineDiscount > 0 ? "text-indigo-600" : "text-slate-400"}`}
-                          title="Remise sur cet article"
-                        >
-                          <Tag className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => removeLine(item.productId)}
-                          className="text-rose-600 hover:text-rose-700"
-                          title="Retirer"
-                        >
-                          {" "}
-                          <Trash2 className="h-4 w-4" />{" "}
-                        </button>{" "}
-                      </div>
-                    </div>{" "}
-                    {discountEditorOpen ? (
-                      <div className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2">
-                        <select
-                          value={item.discountType ?? "none"}
-                          onChange={(event) => {
-                            const nextType =
-                              event.target.value === "percent" || event.target.value === "fixed"
-                                ? event.target.value
-                                : null;
-                            setLineDiscount(item.productId, nextType, item.discountValue ?? 0);
-                          }}
-                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
-                        >
-                          <option value="none">Aucune remise</option>
-                          <option value="percent">%</option>
-                          <option value="fixed">{saleCurrency}</option>
-                        </select>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          disabled={!item.discountType}
-                          value={item.discountValue ? String(item.discountValue) : ""}
-                          onChange={(event) =>
-                            setLineDiscount(
-                              item.productId,
-                              item.discountType ?? null,
-                              safeNumber(event.target.value),
-                            )
-                          }
-                          placeholder="0"
-                          className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-xs disabled:bg-slate-100"
-                        />
-                      </div>
-                    ) : null}
-                    <div className="flex items-center justify-between">
-                      {" "}
-                      <div className="inline-flex items-center gap-1">
-                        {" "}
-                        <button
-                          onClick={() =>
-                            updateQty(item.productId, item.qty - 1)
-                          }
-                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        >
-                          {" "}
-                          <Minus className="h-3.5 w-3.5" />{" "}
-                        </button>{" "}
-                        <span className="w-8 text-center text-sm font-semibold">
-                          {item.qty}
-                        </span>{" "}
-                        <button
-                          onClick={() =>
-                            updateQty(item.productId, item.qty + 1)
-                          }
-                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        >
-                          {" "}
-                          <Plus className="h-3.5 w-3.5" />{" "}
-                        </button>{" "}
-                      </div>{" "}
-                      <div className="text-right">
-                        {lineDiscount > 0 ? (
-                          <div className="text-xs text-slate-400 line-through">
-                            {formatMoney(lineGross, saleCurrency)}
+                    <div key={item.productId} className="space-y-1.5">
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                        <div className="flex min-w-[430px] items-center gap-2 px-2 py-2">
+                          <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                            <Image src={imageSrc} alt={item.name} fill sizes="28px"
+                              className="h-full w-full object-cover" unoptimized
+                              onError={() => setBrokenImages(prev => ({ ...prev, [item.productId]: true }))} />
                           </div>
-                        ) : null}
-                        <div className="text-sm font-bold text-slate-900">
-                          {formatMoney(lineNet, saleCurrency)}
+                          <div className="min-w-[70px] flex-1 truncate text-xs font-semibold text-slate-800"
+                            title={item.name + " · " + item.sku}>
+                            {item.name}{item.sku ? <span className="font-normal text-slate-400"> · {item.sku}</span> : null}
+                          </div>
+                          <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-600" title="Prix unitaire">
+                            {formatMoney(item.price, saleCurrency)}
+                          </span>
+                          <div className="inline-flex shrink-0 items-center gap-0.5" aria-label="Quantité">
+                            <button type="button" onClick={() => updateQty(item.productId, item.qty - 1)}
+                              aria-label={"Diminuer " + item.name}
+                              className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 hover:bg-slate-50">
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-5 text-center text-xs font-bold tabular-nums">{item.qty}</span>
+                            <button type="button" onClick={() => updateQty(item.productId, item.qty + 1)}
+                              aria-label={"Augmenter " + item.name}
+                              className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 hover:bg-slate-50">
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <span className="shrink-0 whitespace-nowrap text-right text-xs font-bold tabular-nums text-slate-900"
+                            title={lineDiscount > 0 ? "Prix avant remise : " + formatMoney(lineGross, saleCurrency) : "Total ligne"}>
+                            {formatMoney(lineNet, saleCurrency)}
+                          </span>
+                          <button type="button"
+                            onClick={() => setDiscountEditorProductId(discountEditorOpen ? null : item.productId)}
+                            className={lineDiscount > 0 ? "shrink-0 text-indigo-700" : "shrink-0 text-slate-400 hover:text-indigo-700"}
+                            aria-label={"Remise sur " + item.name} title="Remise">
+                            <Tag className="h-4 w-4" />
+                          </button>
+                          <button type="button" onClick={() => removeLine(item.productId)}
+                            className="shrink-0 text-rose-600 hover:text-rose-700"
+                            aria-label={"Retirer " + item.name} title="Retirer">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
-                      </div>{" "}
-                    </div>{" "}
-                  </div>
+                      </div>
+                      {discountEditorOpen ? (
+                        <div className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2">
+                          <select value={item.discountType ?? "none"}
+                            onChange={event => {
+                              const nextType = event.target.value === "percent" || event.target.value === "fixed"
+                                ? event.target.value : null;
+                              setLineDiscount(item.productId, nextType, item.discountValue ?? 0);
+                            }}
+                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                            <option value="none">Aucune remise</option>
+                            <option value="percent">%</option>
+                            <option value="fixed">{saleCurrency}</option>
+                          </select>
+                          <input type="number" min="0" step="0.01" disabled={!item.discountType}
+                            value={item.discountValue ? String(item.discountValue) : ""}
+                            onChange={event => setLineDiscount(item.productId, item.discountType ?? null, safeNumber(event.target.value))}
+                            placeholder="0" aria-label="Valeur de la remise"
+                            className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-xs disabled:bg-slate-100" />
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })
               )}{" "}
@@ -2060,14 +2025,15 @@ export default function PosPage() {
           </section>{" "}
           <ParkedCartsPanel
             locale={locale}
-            count={cart.length}
             carts={parkedCarts}
-            note={parkNote}
-            onNote={setParkNote}
-            depositAmount={parkDepositInput}
-            onDepositAmount={setParkDepositInput}
-            depositCurrency={parkDepositCurrency}
-            onDepositCurrency={setParkDepositCurrency}
+            preferredCurrency={saleCurrency === "USD" ? "USD" : "HTG"}
+            exchange={{
+              exchangeRateDirection: businessSettings?.exchange_rate_direction,
+              exchangeRateValue: businessSettings?.exchange_rate_value,
+              exchangeBuyRate: businessSettings?.exchange_buy_rate,
+              exchangeSellRate: businessSettings?.exchange_sell_rate,
+            }}
+            memosComplete={depositMemosComplete}
             drafts={depositDrafts}
             onDraft={(id, value) => setDepositDrafts(prev => ({ ...prev, [id]: value }))}
             totals={depositTotals}
@@ -2078,7 +2044,6 @@ export default function PosPage() {
             canRecord={hasPermission(permissions, "billing.manage")}
             online={isOnline}
             branchReady={Boolean(branchId)}
-            onPark={() => void parkCurrentCart()}
             onResume={id => void resumeParkedCart(id)}
             onRecord={(id, draft) => void recordDepositForCart(id, draft)}
             onRequestDelete={id => setConfirmDiscard(parkedCarts.find(park => park.id === id) ?? null)}
@@ -2355,16 +2320,22 @@ export default function PosPage() {
                 Caisse fermee - ouvrez-la ci-dessus pour pouvoir encaisser.
               </div>
             ) : null}
-            <button
-              onClick={() => {
-                void checkoutSale();
-              }}
-              disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
-              className="w-full rounded-xl brand-primary-btn text-white py-3 font-bold disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {" "}
-              {checkoutLoading ? "Traitement..." : "Passer a la caisse"}{" "}
-            </button>{" "}
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button"
+                onClick={() => {
+                  setParkDepositCurrency(saleCurrency === "USD" ? "USD" : "HTG");
+                  setParkModalOpen(true);
+                }}
+                disabled={cart.length === 0 || branchLoading || !branchId || parkSaving}
+                className="inline-flex min-w-0 items-center justify-center gap-1 rounded-xl border-2 border-indigo-200 bg-indigo-50 px-2 py-3 text-xs font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 sm:text-sm">
+                <PauseCircle className="h-4 w-4 shrink-0" />{ui.park}
+              </button>
+              <button type="button" onClick={() => void checkoutSale()}
+                disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
+                className="min-w-0 rounded-xl brand-primary-btn px-2 py-3 text-xs font-bold text-white disabled:opacity-60 disabled:cursor-not-allowed sm:text-sm">
+                {checkoutLoading ? "Traitement..." : "Passer à la caisse"}
+              </button>
+            </div>{" "}
           </section>{" "}
 
         </aside>{" "}
@@ -2375,6 +2346,84 @@ export default function PosPage() {
         <span>{ui.cart} · {itemCount} {ui.items}</span>
         <span className="tabular-nums">{formatMoney(grandTotal, saleCurrency)}</span>
       </a>
+      {parkModalOpen ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-3 sm:p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="park-modal-title"
+            onKeyDown={event => {
+              if (event.key === "Escape" && !parkSaving && depositSavingId === null) setParkModalOpen(false);
+            }}
+            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-4 shadow-2xl sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="park-modal-title" className="text-lg font-extrabold text-slate-900">{ui.park}</h2>
+              <button type="button" aria-label={ui.close}
+                disabled={parkSaving || depositSavingId !== null}
+                onClick={() => setParkModalOpen(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <label className="block space-y-1 text-sm font-semibold text-slate-700">
+              {ui.note}
+              <input autoFocus type="text" value={parkNote} maxLength={190}
+                onChange={event => setParkNote(event.target.value)}
+                placeholder={ui.note} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500" />
+            </label>
+            <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2">
+              <label className="min-w-0 space-y-1 text-sm font-semibold text-slate-700">
+                {ui.downDeposit} <span className="font-normal text-slate-500">({ui.optional})</span>
+                <input type="text" inputMode="decimal" value={parkDepositInput}
+                  onChange={event => setParkDepositInput(event.target.value)}
+                  placeholder="0.00" className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="space-y-1 text-sm font-semibold text-slate-700">
+                {ui.currency}
+                <select value={parkDepositCurrency}
+                  onChange={event => setParkDepositCurrency(event.target.value as "HTG" | "USD")}
+                  className="w-full rounded-lg border border-slate-300 px-2 py-2.5 text-sm">
+                  <option value="HTG">HTG</option><option value="USD">USD</option>
+                </select>
+              </label>
+            </div>
+            {parkDepositInput.trim() && !previewDeposit ? (
+              <p role="alert" className="text-xs font-semibold text-rose-700">{ui.invalidAmount}</p>
+            ) : null}
+            <div className="space-y-1 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-950">
+              <div className="flex justify-between gap-2">
+                <span>{ui.subtotal}</span><strong>{formatMoney(grandTotal, saleCurrency)}</strong>
+              </div>
+              {previewDeposit ? (
+                <>
+                  <div className="flex justify-between gap-2">
+                    <span>{ui.declaredOnSlip}</span>
+                    <strong>{formatMoney(Number(previewDeposit), parkDepositCurrency)}</strong>
+                  </div>
+                  <div className="flex justify-between gap-2 border-t border-indigo-200 pt-1 font-bold">
+                    <span>{ui.estimatedDue}</span>
+                    <span>{previewDepositInSaleCurrency == null ? "—" :
+                      formatMoney(Math.max(0, grandTotal - previewDepositInSaleCurrency), saleCurrency)}</span>
+                  </div>
+                </>
+              ) : null}
+              <p className="text-[11px] text-indigo-700">{ui.unpostedInfo}</p>
+            </div>
+            {parkDepositInput.trim() && (!isOnline || !hasPermission(permissions, "billing.manage")) ? (
+              <p className="text-xs font-semibold text-amber-700">{!isOnline ? ui.noNetwork : ui.noRights}</p>
+            ) : null}
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={parkSaving || depositSavingId !== null}
+                onClick={() => setParkModalOpen(false)}
+                className="rounded-xl border border-slate-300 py-2.5 text-sm font-bold text-slate-700 disabled:opacity-50">
+                {ui.no}
+              </button>
+              <button type="button" disabled={parkSaving || depositSavingId !== null || cart.length === 0
+                  || Boolean(parkDepositInput.trim() && (!previewDeposit || !isOnline || !hasPermission(permissions, "billing.manage")))}
+                onClick={() => void parkCurrentCart()}
+                className="rounded-xl brand-primary-btn py-2.5 text-sm font-bold text-white disabled:opacity-50">
+                {parkSaving ? ui.loading : ui.park}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <SensitiveActionApprovalModal
         open={Boolean(approvalDialog)}
         title={approvalDialog?.title ?? "Autorisation requise"}
