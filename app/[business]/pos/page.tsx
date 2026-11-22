@@ -1092,6 +1092,64 @@ export default function PosPage() {
     setDiscountEditorProductId(null);
     setError("");
   }
+  async function postTabMoney(type: "deposit" | "refund", ticketId?: string) {
+    const id = ticketId ?? activeParkedId;
+    if (!id || postingTabMoney || !isOnline || parkedCheckoutUncertain) return;
+    if (!registerOpen || !cashSession) {
+      pushError("Ouvrez votre session de caisse avant d'encaisser ou rembourser un dépôt.");
+      return;
+    }
+    const businessCurrency = businessSettings?.currency === "USD" ? "USD" : "HTG";
+    if (id === activeParkedId && activeDepositBalance > 0 && activeDepositCurrency !== saleCurrency) {
+      pushError("Revenez à la devise du dépôt pour modifier cette fiche.");
+      return;
+    }
+    const value = Number(tabMoneyAmountInput);
+    if (!Number.isFinite(value) || value <= 0 || Math.round(value * 100) !== value * 100) {
+      pushError("Saisissez un montant positif à deux décimales maximum.");
+      return;
+    }
+    const amount = Math.round(value * 100) / 100;
+    const balance = id === activeParkedId ? activeDepositBalance : recentCompletedTab?.balance ?? 0;
+    if (type === "refund" && amount > balance + 0.001) {
+      pushError("Le remboursement dépasse l'avance encore remboursable.");
+      return;
+    }
+    const signature = `${id}:${type}:${amount}:${businessCurrency}:${tabMoneyMethod}`;
+    if (pendingTabMoneyKey.current?.signature !== signature) {
+      pendingTabMoneyKey.current = { type, signature, key: generateClientId() };
+    }
+    const idempotencyKey = pendingTabMoneyKey.current.key;
+    setPostingTabMoney(true);
+    try {
+      const result = await recordPosTabMoneyMovement(businessSlug, id, type, {
+        amount, currency: businessCurrency, method: tabMoneyMethod, idempotencyKey,
+      });
+      pendingTabMoneyKey.current = null;
+      setTabMoneyAmountInput("");
+      if (id === activeParkedId) {
+        setActiveDepositTotal(result.received);
+        setActiveDepositBalance(result.balance);
+        setActiveDepositCurrency(businessCurrency);
+        setActiveParkedRevision(result.ticket_revision);
+        setPaymentCurrency(businessCurrency);
+      }
+      if (recentCompletedTab?.id === id) {
+        setRecentCompletedTab(result.balance > 0
+          ? { ...recentCompletedTab, balance: result.balance }
+          : null);
+      }
+      await loadParkedCarts();
+      pushNotice(type === "refund"
+        ? `Remboursement de ${formatMoney(amount, businessCurrency)} enregistré en caisse.`
+        : `Dépôt de ${formatMoney(amount, businessCurrency)} encaissé comme avance, sans vente.`,
+        "success");
+    } catch (error) {
+      pushError(`Opération non confirmée : ${getErrorMessage(error)}. Vérifiez la caisse avant de réessayer ; le même identifiant sera réutilisé.`);
+    } finally {
+      setPostingTabMoney(false);
+    }
+  }
   async function parkCurrentCart() {
     if (!isOnline) {
       pushError("Connexion requise : impossible de garantir la sauvegarde permanente de la fiche.");
