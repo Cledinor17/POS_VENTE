@@ -74,7 +74,7 @@ test("the receipt labels and language attributes track all six app locales", () 
     fr: ["Sous-total", "Merci"],
     en: ["Subtotal", "Thank you"],
     ht: ["Sou-total", "Mèsi"],
-    es: ["Descuento", "Gracias"],
+    es: ["Subtotal", "Gracias"],
     zh: ["小计", "感谢惠顾"],
     ar: ["المجموع الفرعي", "شكرًا"],
   };
