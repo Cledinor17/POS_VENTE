@@ -2,6 +2,7 @@
 
 import { useId, useState, type ComponentType, type KeyboardEvent } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import {
   Building2, DatabaseBackup, KeyRound, LoaderCircle,
@@ -85,6 +86,12 @@ export default function BusinessSettingsHub({ business }: { business: string }) 
             <p className="mt-1 text-sm text-slate-500">{t("description")}</p>
           </div>
         </div>
+        {user?.is_platform_admin === true ? (
+          <Link href="/platform/initialization"
+            className="mt-4 inline-flex rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+            Super Admin — Initialiser un business
+          </Link>
+        ) : null}
         {visibleTabs.length > 0 && <div role="tablist" aria-label={t("tabsLabel")}
           className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
           {visibleTabs.map((tab, index) => {
