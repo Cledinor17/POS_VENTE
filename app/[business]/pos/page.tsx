@@ -43,6 +43,8 @@ import {
   resolveScannedProduct,
 } from "@/lib/productBarcode";
 import { printReceipt, type PosReceipt } from "@/lib/posReceipt";
+import { receiptLabels } from "@/lib/receiptI18n";
+import { useAppLocale } from "@/context/LocaleContext";
 import {
   listBusinessApprovers,
   type BusinessApproverAbility,
@@ -295,6 +297,8 @@ export default function PosPage() {
   const businessSlug = params?.business ?? "";
 
   const { user, activeBusiness, permissions } = useAuth();
+  const { locale } = useAppLocale();
+  const receiptText = receiptLabels(locale);
   const { currentBranch, loading: branchLoading } = useBranch();
   const branchId = currentBranch?.id;
   const [products, setProducts] = useState<CatalogProduct[]>([]);
@@ -1018,11 +1022,11 @@ export default function PosPage() {
   }
   async function printSaleReceipt(sale: CompletedSale) {
     if (!defaultPrinter || !businessSlug) {
-      printReceipt(sale);
+      printReceipt({ ...sale, locale });
       return;
     }
     try {
-      const result = await printReceiptOnPrinter(businessSlug, defaultPrinter.id, sale.saleId);
+      const result = await printReceiptOnPrinter(businessSlug, defaultPrinter.id, sale.saleId, locale);
       if (result.printed) {
         pushNotice(`Ticket envoye a l'imprimante "${defaultPrinter.name}".`, "success");
         return;
@@ -1037,7 +1041,7 @@ export default function PosPage() {
         `Impression thermique impossible (${getErrorMessage(e)}), aperçu navigateur ouvert.`,
         "warning",
       );
-      printReceipt(sale);
+      printReceipt({ ...sale, locale });
     }
   }
   async function handleOpenDrawer() {
@@ -1198,6 +1202,7 @@ export default function PosPage() {
         "Caissier",
       );
       const sale: CompletedSale = {
+        locale,
         customerName: selectedCustomer?.name,
         loyaltyEnabled: Boolean(selectedCustomer) && (offline ? loyaltyEnabled : backendResult?.loyaltyEnabled === true),
         loyaltyPointsEarned: backendResult?.loyaltyPointsEarned,
@@ -1392,7 +1397,16 @@ export default function PosPage() {
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 {" "}
-                <Printer className="h-4 w-4" /> Reimprimer dernier ticket{" "}
+                <Printer className="h-4 w-4" /> {receiptText.print80}{" "}
+              </button>
+            ) : null}
+            {lastSale ? (
+              <button
+                type="button"
+                onClick={() => printReceipt({ ...lastSale, locale }, { paper: "a4" })}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Printer className="h-4 w-4" /> {receiptText.printA4}
               </button>
             ) : null}{" "}
           </div>{" "}
