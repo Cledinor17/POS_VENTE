@@ -9,7 +9,7 @@ import PhoneField from "@/components/PhoneField";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
-import { buildHotelBookingPrintHtml, type ReservationPaper } from "@/lib/hotelReservationPrint";
+import { buildHotelBookingPrintHtml, thermalReceiptPageHeightMm, type ReservationPaper } from "@/lib/hotelReservationPrint";
 import { createCustomer, listCustomers, type CustomerAddress, type CustomerItem } from "@/lib/customersApi";
 import { formatMoney } from "@/lib/currency";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -2385,6 +2385,17 @@ export default function HotelReservationsPage() {
       ]);
     }
     if (printWindow.closed) return;
+    if (paper === "80mm") {
+      // Keep the 80mm roll width, adapt length to this actual reservation
+      // instead of feeding a fixed 200mm sheet (printer driver may override).
+      const sheet = printWindow.document.querySelector<HTMLElement>(".sheet");
+      if (sheet) {
+        const paperHeight = thermalReceiptPageHeightMm(sheet.getBoundingClientRect().height);
+        const paperStyle = printWindow.document.createElement("style");
+        paperStyle.textContent = `@page { size: 80mm ${paperHeight}mm; margin: 0; }`;
+        printWindow.document.head.appendChild(paperStyle);
+      }
+    }
     printWindow.focus();
     printWindow.print();
   }
