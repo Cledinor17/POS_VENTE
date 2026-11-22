@@ -1162,6 +1162,10 @@ export default function PosPage() {
   async function discardParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
     if (!found) return;
+    if (activeParkedId === parkId && parkedCheckoutUncertain) {
+      pushError("Cette fiche pourrait être en cours de finalisation. Vérifiez d'abord la synchronisation des ventes.");
+      return;
+    }
     if (!window.confirm(`Annuler définitivement la fiche « ${found.note} » ? L'historique restera archivé.`)) return;
     try {
       await cancelPosParkedCart(businessSlug, parkId);
@@ -1566,6 +1570,19 @@ export default function PosPage() {
     setPostingRoomCharge(true);
     let createdOrderId: number | null = null;
     try {
+      if (activeParkedId) {
+        const draft = await updatePosParkedCart(businessSlug, activeParkedId, activeParkedRevision, {
+          note: parkNote.trim() || "Fiche en attente",
+          items: sourceCart,
+          customerName: customerNameForSale || null,
+          customerId: selectedCustomer?.id ?? parkedCustomerId,
+          reservationId: selectedReservationId,
+          roomLabel: selectedReservation.room.room_number,
+          spendingLimit: activeSpendingLimit,
+          spendingCurrency: activeSpendingCurrency,
+        });
+        setActiveParkedRevision(draft.revision);
+      }
       const order = await createHotelOrder(businessSlug, {
         roomId: selectedReservation.room_id,
         reservationId: selectedReservation.id,
@@ -1583,6 +1600,13 @@ export default function PosPage() {
       createdOrderId = order.id;
       if (order.status !== "completed") {
         throw new Error("La commande n'a pas été confirmée.");
+      }
+      if (activeParkedId) {
+        await completePosParkedHotelCart(businessSlug, activeParkedId, order.id);
+        setActiveParkedId(null);
+        setActiveParkedRevision(1);
+        setParkedCustomerId(null);
+        void loadParkedCarts();
       }
       setProducts((prev) => prev.map((product) => {
         const line = cart.find((item) => item.productId === String(product.id));
