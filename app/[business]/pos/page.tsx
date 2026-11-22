@@ -1492,7 +1492,7 @@ export default function PosPage() {
         customerId: selectedReservation.customer_id,
         currency: saleCurrency === "USD" ? "USD" : "HTG",
         status: "completed",
-        note: `Commande POS - ${(customerNameForSale || selectedReservation.guest_name).slice(0, 100)}`,
+        note: `Commande POS - ${selectedReservation.guest_name.slice(0, 100)}`,
         totalAmount: Math.round(grandTotal * 100) / 100,
         items: cart.map((item) => ({
           productId: Number(item.productId),
@@ -2437,12 +2437,18 @@ export default function PosPage() {
               onClick={() => {
                 void checkoutSale();
               }}
-              disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
+              disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen || Boolean(selectedReservation)}
               className="w-full rounded-xl brand-primary-btn text-white py-3 font-bold disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {" "}
               {checkoutLoading ? "Traitement..." : "Passer a la caisse"}{" "}
             </button>{" "}
+            {selectedReservation ? (
+              <p className="text-xs text-indigo-700">
+                Une chambre est sélectionnée : utilisez « Porter à la chambre » ci-dessous.
+                Pour un paiement immédiat, revenez au mode Client comptoir / table.
+              </p>
+            ) : null}
             {selectedReservation && canChargeRoom ? (
               <button
                 type="button"
