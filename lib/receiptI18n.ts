@@ -33,7 +33,7 @@ const dictionary: Record<Locale, ReceiptLabels> = {
     thanks:"Merci et à bientôt.", logoAlt:"Logo du business", qrAlt:"QR du ticket",
     print80:"Imprimer 80 mm", printA4:"Imprimer A4",
     statuses:{paid:"Payée",partially_paid:"Partiellement payée",void:"Annulée",refunded:"Remboursée",issued:"Ouverte"},
-    methods:{cash:"Espèces",card:"Carte",mobile_money:"Mobile",moncash:"MonCash",bank_transfer:"Virement",bank:"Virement",voucher:"Bon",cheque:"Chèque",loyalty:"Points fidélité"},
+    methods:{cash:"Espèces",card:"Carte",mobile_money:"Mobile",moncash:"MonCash",bank_transfer:"Virement",bank:"Virement",voucher:"Bon",cheque:"Chèque",loyalty:"Points fidélité",deposit_applied:"Acompte appliqué"},
   },
   en: {
     reprint:"REPRINT",ticket:"Receipt",date:"Date",cashier:"Cashier",payment:"Payment",
@@ -47,7 +47,7 @@ const dictionary: Record<Locale, ReceiptLabels> = {
     thanks:"Thank you and see you soon.",logoAlt:"Business logo",qrAlt:"Receipt QR",
     print80:"Print 80 mm",printA4:"Print A4",
     statuses:{paid:"Paid",partially_paid:"Partially paid",void:"Voided",refunded:"Refunded",issued:"Open"},
-    methods:{cash:"Cash",card:"Card",mobile_money:"Mobile money",moncash:"MonCash",bank_transfer:"Bank transfer",bank:"Bank transfer",voucher:"Voucher",cheque:"Cheque",loyalty:"Loyalty points"},
+    methods:{cash:"Cash",card:"Card",mobile_money:"Mobile money",moncash:"MonCash",bank_transfer:"Bank transfer",bank:"Bank transfer",voucher:"Voucher",cheque:"Cheque",loyalty:"Loyalty points",deposit_applied:"Deposit applied"},
   },
   ht: {
     reprint:"RE-ENPRIME",ticket:"Resi",date:"Dat",cashier:"Kesye",payment:"Peman",
@@ -61,7 +61,7 @@ const dictionary: Record<Locale, ReceiptLabels> = {
     thanks:"Mèsi, n a wè pita.",logoAlt:"Logo biznis la",qrAlt:"Kòd QR resi a",
     print80:"Enprime 80 mm",printA4:"Enprime A4",
     statuses:{paid:"Peye",partially_paid:"Peye an pati",void:"Anile",refunded:"Ranbouse",issued:"Ouvè"},
-    methods:{cash:"Kach",card:"Kat",mobile_money:"Lajan mobil",moncash:"MonCash",bank_transfer:"Transfè labank",bank:"Transfè labank",voucher:"Bon",cheque:"Chèk",loyalty:"Pwen fidelite"},
+    methods:{cash:"Kach",card:"Kat",mobile_money:"Lajan mobil",moncash:"MonCash",bank_transfer:"Transfè labank",bank:"Transfè labank",voucher:"Bon",cheque:"Chèk",loyalty:"Pwen fidelite",deposit_applied:"Depo aplike"},
   },
   es: {
     reprint:"REIMPRESIÓN",ticket:"Recibo",date:"Fecha",cashier:"Cajero",payment:"Pago",
@@ -75,7 +75,7 @@ const dictionary: Record<Locale, ReceiptLabels> = {
     thanks:"Gracias y hasta pronto.",logoAlt:"Logotipo del negocio",qrAlt:"QR del recibo",
     print80:"Imprimir 80 mm",printA4:"Imprimir A4",
     statuses:{paid:"Pagada",partially_paid:"Parcialmente pagada",void:"Anulada",refunded:"Reembolsada",issued:"Abierta"},
-    methods:{cash:"Efectivo",card:"Tarjeta",mobile_money:"Dinero móvil",moncash:"MonCash",bank_transfer:"Transferencia",bank:"Transferencia",voucher:"Vale",cheque:"Cheque",loyalty:"Puntos de fidelidad"},
+    methods:{cash:"Efectivo",card:"Tarjeta",mobile_money:"Dinero móvil",moncash:"MonCash",bank_transfer:"Transferencia",bank:"Transferencia",voucher:"Vale",cheque:"Cheque",loyalty:"Puntos de fidelidad",deposit_applied:"Anticipo aplicado"},
   },
   zh: {
     reprint:"补打小票",ticket:"小票",date:"日期",cashier:"收银员",payment:"付款方式",
@@ -89,7 +89,7 @@ const dictionary: Record<Locale, ReceiptLabels> = {
     thanks:"感谢惠顾，欢迎再来。",logoAlt:"商家标志",qrAlt:"小票二维码",
     print80:"打印 80 毫米",printA4:"打印 A4",
     statuses:{paid:"已支付",partially_paid:"部分支付",void:"已作废",refunded:"已退款",issued:"未结清"},
-    methods:{cash:"现金",card:"银行卡",mobile_money:"移动支付",moncash:"MonCash",bank_transfer:"银行转账",bank:"银行转账",voucher:"代金券",cheque:"支票",loyalty:"积分"},
+    methods:{cash:"现金",card:"银行卡",mobile_money:"移动支付",moncash:"MonCash",bank_transfer:"银行转账",bank:"银行转账",voucher:"代金券",cheque:"支票",loyalty:"积分",deposit_applied:"预付款抵扣"},
   },
   ar: {
     reprint:"إعادة طباعة",ticket:"إيصال",date:"التاريخ",cashier:"أمين الصندوق",payment:"الدفع",
@@ -103,7 +103,7 @@ const dictionary: Record<Locale, ReceiptLabels> = {
     thanks:"شكرًا لتعاملكم معنا، إلى اللقاء.",logoAlt:"شعار المتجر",qrAlt:"رمز QR للإيصال",
     print80:"طباعة 80 مم",printA4:"طباعة A4",
     statuses:{paid:"مدفوعة",partially_paid:"مدفوعة جزئيًا",void:"ملغاة",refunded:"مستردة",issued:"مفتوحة"},
-    methods:{cash:"نقدًا",card:"بطاقة",mobile_money:"دفع عبر الهاتف",moncash:"MonCash",bank_transfer:"تحويل بنكي",bank:"تحويل بنكي",voucher:"قسيمة",cheque:"شيك",loyalty:"نقاط الولاء"},
+    methods:{cash:"نقدًا",card:"بطاقة",mobile_money:"دفع عبر الهاتف",moncash:"MonCash",bank_transfer:"تحويل بنكي",bank:"تحويل بنكي",voucher:"قسيمة",cheque:"شيك",loyalty:"نقاط الولاء",deposit_applied:"العربون المحتسب"},
   },
 };
 
