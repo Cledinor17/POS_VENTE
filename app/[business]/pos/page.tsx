@@ -1545,6 +1545,7 @@ export default function PosPage() {
         paymentMethod,
         paymentCurrency,
         paymentAmount: backendResult?.paymentAmount ?? amountDueInPaymentCurrency,
+        depositApplied: backendResult?.depositApplied || activeDepositApplied,
         paymentDateLabel:
           backendResult?.paymentDateLabel ||
           new Date(backendResult?.createdAt ?? new Date().toISOString()).toLocaleString("fr-FR"),
