@@ -1,5 +1,7 @@
 import { formatMoney } from "./currency";
 import { printHtmlDocument } from "./printHtml";
+import { receiptLabels, receiptLocale, RECEIPT_LOCALE_TAG } from "./receiptI18n";
+import type { Locale } from "./locale";
 
 export type PosReceiptItem = {
   name: string;
@@ -12,6 +14,7 @@ export type PosReceiptItem = {
 };
 
 export type PosReceipt = {
+  locale?: Locale;
   loyaltyEnabled?: boolean;
   loyaltyPointsEarned?: number;
   loyaltyPointsBalanceAfter?: number | null;
@@ -64,16 +67,25 @@ function computeItemDiscount(
   const amount = discountType === "percent" ? (lineGross * value) / 100 : value;
   return Math.min(lineGross, Math.max(0, amount));
 }
-function paymentMethodLabel(method: string): string {
-  const labels: Record<string, string> = {
-    cash: "Cash", card: "Carte", mobile_money: "Mobile", moncash: "Mobile",
-    bank_transfer: "Virement", bank: "Virement", voucher: "Bon", cheque: "Cheque",
-    loyalty: "Points fidelite",
-  };
-  return labels[method] ?? method;
+// Reject executable SVGs, javascript: URLs and injected attributes from
+// user-configurable logos/QR data. The same brand data is used on reprints.
+function safeImageSrc(value: string | null | undefined): string {
+  const src = String(value ?? "").trim();
+  if (/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(src)) return src;
+  if (/^https?:\/\/[^<>"'\s]+$/i.test(src)) return src;
+  if (/^\/(?!\/)[^<>"'\s]+$/.test(src)) return src;
+  return "";
 }
 
-export function buildReceiptHtml(sale: PosReceipt): string {
+export type ReceiptPaper = "80mm" | "a4";
+export type ReceiptPrintOptions = { paper?: ReceiptPaper };
+
+export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions = {}): string {
+  const locale = receiptLocale(sale.locale);
+  const t = receiptLabels(locale);
+  const dir = locale === "ar" ? "rtl" : "ltr";
+  const a4 = options.paper === "a4";
+  const localeTag = RECEIPT_LOCALE_TAG[locale];
   const linesHtml = sale.items
     .map((item) => {
       const lineGross = item.qty * item.price;
@@ -81,46 +93,50 @@ export function buildReceiptHtml(sale: PosReceipt): string {
       return `<tr><td><div class="item-name">${escapeHtml(item.name)}</div>${item.sku ? `<div class="item-meta">${escapeHtml(item.sku)}</div>` : ""}</td><td style="text-align:right">${escapeHtml(String(item.qty))} x ${escapeHtml(formatMoney(item.price, sale.saleCurrency))}</td><td style="text-align:right">${escapeHtml(formatMoney(lineTotal, sale.saleCurrency))}</td></tr>`;
     })
     .join("");
-  const paymentLabel = paymentMethodLabel(sale.paymentMethod);
-  const paymentSummary = `<div class="row"><span>Montant regle</span><strong>${escapeHtml(formatMoney(sale.paymentAmount, sale.paymentCurrency))}</strong></div>`;
+  const paymentLabel = t.methods[sale.paymentMethod] ?? sale.paymentMethod;
+  const paymentSummary = `<div class="row"><span>${escapeHtml(t.paid)}</span><strong>${escapeHtml(formatMoney(sale.paymentAmount, sale.paymentCurrency))}</strong></div>`;
   const discountBlock =
     sale.discountAmount > 0
-      ? `<div class="row"><span>Rabais</span><span>- ${escapeHtml(formatMoney(sale.discountAmount, sale.saleCurrency))}</span></div>`
+      ? `<div class="row"><span>${escapeHtml(t.discount)}</span><span>- ${escapeHtml(formatMoney(sale.discountAmount, sale.saleCurrency))}</span></div>`
       : "";
   const cashBlock =
     sale.paymentMethod === "cash" && sale.cashReceived !== null && sale.change !== null
-      ? `<div class="row"><span>Recu</span><strong>${escapeHtml(formatMoney(sale.cashReceived, sale.paymentCurrency))}</strong></div><div class="row"><span>Monnaie</span><strong>${escapeHtml(formatMoney(sale.change, sale.paymentCurrency))}</strong></div>`
+      ? `<div class="row"><span>${escapeHtml(t.received)}</span><strong>${escapeHtml(formatMoney(sale.cashReceived, sale.paymentCurrency))}</strong></div><div class="row"><span>${escapeHtml(t.change)}</span><strong>${escapeHtml(formatMoney(sale.change, sale.paymentCurrency))}</strong></div>`
       : "";
-  const logoBlock = sale.businessLogoSrc
-    ? `<div class="logo-wrap"><img src="${sale.businessLogoSrc}" alt="Logo entreprise" class="logo" /></div>`
+  const logoUrl = safeImageSrc(sale.businessLogoSrc);
+  const logoBlock = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(t.logoAlt)}" class="logo" />`
     : "";
-  const qrBlock = sale.receiptQrCodeDataUri
-    ? `<div class="qr-card"><div class="qr-title">QR paiement</div><img src="${sale.receiptQrCodeDataUri}" alt="QR ticket" class="qr-image" /><div class="muted small">Scanner pour voir le business, le montant paye et la date.</div></div>`
+  const qrUrl = safeImageSrc(sale.receiptQrCodeDataUri);
+  const qrBlock = qrUrl
+    ? `<div class="qr-card"><div class="qr-title">${escapeHtml(t.qrPayment)}</div><img src="${escapeHtml(qrUrl)}" alt="${escapeHtml(t.qrAlt)}" class="qr-image" /><div class="muted small">${escapeHtml(t.qrScan)}</div></div>`
     : "";
   const footerBlock = sale.invoiceFooter.trim()
     ? `<div class="footer-note">${escapeHtml(sale.invoiceFooter).replace(/\n/g, "<br />")}</div>`
     : "";
-  const statusLabels: Record<string, string> = {
-    paid: "Payee", partially_paid: "Partiellement payee", void: "Annulee",
-    refunded: "Remboursee", issued: "Ouverte",
-  };
-  const copyBlock = sale.reprint ? '<div class="center"><strong>REIMPRESSION</strong></div>' : "";
+  const statusLabels = t.statuses;
+  const copyBlock = sale.reprint ? `<div class="center copy"><strong>${escapeHtml(t.reprint)}</strong></div>` : "";
   const statusBlock = sale.status
-    ? `<div class="row"><span>Statut</span><strong>${escapeHtml(statusLabels[sale.status] ?? sale.status)}</strong></div>` : "";
+    ? `<div class="row"><span>${escapeHtml(t.status)}</span><strong>${escapeHtml(statusLabels[sale.status] ?? sale.status)}</strong></div>` : "";
   const customerBlock = sale.customerName
-    ? `<div class="row"><span>Client</span><span>${escapeHtml(sale.customerName)}</span></div>` : "";
+    ? `<div class="row"><span>${escapeHtml(t.customer)}</span><span>${escapeHtml(sale.customerName)}</span></div>` : "";
   const balanceBlock = (sale.balanceDue ?? 0) > 0
-    ? `<div class="row"><span>Solde</span><strong>${escapeHtml(formatMoney(sale.balanceDue!, sale.saleCurrency))}</strong></div>` : "";
+    ? `<div class="row"><span>${escapeHtml(t.balance)}</span><strong>${escapeHtml(formatMoney(sale.balanceDue!, sale.saleCurrency))}</strong></div>` : "";
   const refundsBlock = (sale.refundedTotal ?? 0) > 0
-    ? `<div class="row"><span>Rembourse</span><strong>${escapeHtml(formatMoney(sale.refundedTotal!, sale.saleCurrency))}</strong></div>` : "";
+    ? `<div class="row"><span>${escapeHtml(t.refunded)}</span><strong>${escapeHtml(formatMoney(sale.refundedTotal!, sale.saleCurrency))}</strong></div>` : "";
   const paymentsBlock = (sale.payments?.length ?? 0) > 1
-    ? sale.payments!.map((payment) => `<div class="row"><span>${payment.kind === "refund" ? "Remboursement" : "Paiement"} ${escapeHtml(paymentMethodLabel(payment.method))}</span><span>${escapeHtml(formatMoney(payment.amount, payment.currency))}</span></div>${payment.cashReceived != null ? `<div class="row"><span>Espèces reçues</span><span>${escapeHtml(formatMoney(payment.cashReceived, payment.currency))}</span></div>` : ""}${payment.change != null ? `<div class="row"><span>Monnaie rendue</span><span>${escapeHtml(formatMoney(payment.change, payment.currency))}</span></div>` : ""}`).join("") : "";
-  const paymentDateLabel = sale.paymentDateLabel || new Date(sale.createdAt).toLocaleString("fr-FR");
+    ? sale.payments!.map((payment) => `<div class="row"><span>${escapeHtml(payment.kind === "refund" ? t.refund : t.paymentLine)} ${escapeHtml(t.methods[payment.method] ?? payment.method)}</span><span>${escapeHtml(formatMoney(payment.amount, payment.currency))}</span></div>${payment.cashReceived != null ? `<div class="row"><span>${escapeHtml(t.cashReceived)}</span><span>${escapeHtml(formatMoney(payment.cashReceived, payment.currency))}</span></div>` : ""}${payment.change != null ? `<div class="row"><span>${escapeHtml(t.changeGiven)}</span><span>${escapeHtml(formatMoney(payment.change, payment.currency))}</span></div>` : ""}`).join("") : "";
+  const date = new Date(sale.createdAt);
+  const paymentDateLabel = Number.isNaN(date.getTime())
+    ? (sale.paymentDateLabel || "")
+    : new Intl.DateTimeFormat(localeTag, {
+        dateStyle: "short", timeStyle: "short", timeZone: "America/Port-au-Prince",
+      }).format(date);
   const loyaltyBlock = sale.loyaltyEnabled
     ? sale.loyaltyPending
-      ? '<div class="sep"></div><div class="small">Points de fidélité : calcul et solde disponibles après synchronisation.</div>'
+      ? `<div class="sep"></div><div class="small">${escapeHtml(t.pointsPending)}</div>`
       : sale.loyaltyPointsBalanceAfter != null && Number.isFinite(sale.loyaltyPointsBalanceAfter)
-        ? `<div class="sep"></div><div class="row"><span>Nouveaux points gagnés :</span><strong>${Math.max(0, Math.trunc(sale.loyaltyPointsEarned ?? 0))}</strong></div><div class="row"><span>Solde total des points :</span><strong>${Math.max(0, Math.trunc(sale.loyaltyPointsBalanceAfter))}</strong></div>`
+        ? `<div class="sep"></div><div class="row"><span>${escapeHtml(t.earnedPoints)}</span><strong>${Math.max(0, Math.trunc(sale.loyaltyPointsEarned ?? 0))}</strong></div><div class="row"><span>${escapeHtml(t.pointsBalance)}</span><strong>${Math.max(0, Math.trunc(sale.loyaltyPointsBalanceAfter))}</strong></div>`
         : ''
     : '';
   return `
