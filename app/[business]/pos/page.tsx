@@ -1182,9 +1182,9 @@ export default function PosPage() {
     };
     function finishSale(backendResult: PosCheckoutResult | null, offline: boolean): CompletedSale {
       const businessName =
+        businessSettings?.name ||
         backendResult?.businessName ||
         businessSettings?.legal_name ||
-        businessSettings?.name ||
         getStringField(activeBusiness, ["name", "legal_name"], businessSlug.toUpperCase());
       const businessAddress =
         backendResult?.businessAddress || formatBusinessAddress(businessSettings);
