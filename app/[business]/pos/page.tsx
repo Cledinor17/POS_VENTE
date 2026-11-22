@@ -1456,7 +1456,10 @@ export default function PosPage() {
       });
       setRoomDepositInput("");
       if (activeSpendingLimit === null && spendingLimitInput.trim() === "") {
-        setSpendingLimitInput(String(Math.round(amount * 100) / 100));
+        const newLimit = Math.round(amount * 100) / 100;
+        setSpendingLimitInput(String(newLimit));
+        setActiveSpendingLimit(newLimit);
+        setActiveSpendingCurrency(saleCurrency);
       }
       pushNotice("Dépôt enregistré au folio de la chambre. Vérifiez son solde dans Hôtel > Folios.", "success");
     } catch (error) {
@@ -2177,6 +2180,9 @@ export default function PosPage() {
                       const id = Number(event.target.value);
                       const reservation = hotelReservations.find((item) => item.id === id);
                       setSelectedReservationId(reservation?.id ?? null);
+                      setRoomDepositInput("");
+                      setActiveSpendingLimit(null);
+                      setSpendingLimitInput("");
                       if (reservation) {
                         setSelectedCustomer(null);
                         setFreeCustomerName(reservation.guest_name);
