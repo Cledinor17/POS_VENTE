@@ -36,6 +36,13 @@ function dateLabel(value: string): string {
   return match ? match[3] + "/" + match[2] + "/" + match[1] : "-";
 }
 
+function dateTimeLabel(value: string): string {
+  if (!value) return "-";
+  const date = new Date(value.includes("T") ? value : value.replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return dateLabel(value);
+  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
 function nightsBetween(checkIn: string, checkOut: string): number {
   const a = String(checkIn).match(/^(\d{4})-(\d{2})-(\d{2})/);
   const b = String(checkOut).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -155,8 +162,8 @@ export function buildHotelBookingPrintHtml(input: BookingPrintInput): string {
     line("Départ prévu", dateLabel(reservation.check_out)) +
     line("Nuits", String(nights)) +
     line("Personnes", String(reservation.guests || 1)) +
-    (reservation.actual_check_in_at ? line("Arrivée effective", dateLabel(reservation.actual_check_in_at)) : "") +
-    (reservation.actual_check_out_at ? line("Départ effectif", dateLabel(reservation.actual_check_out_at)) : "");
+    (reservation.actual_check_in_at ? line("Arrivée effective", dateTimeLabel(reservation.actual_check_in_at)) : "") +
+    (reservation.actual_check_out_at ? line("Départ effectif", dateTimeLabel(reservation.actual_check_out_at)) : "");
 
   const financeRows = line("Hébergement", money(roomAmount, currency)) +
     (folio && Number(folio.extras_amount) > 0 ? line("Services / suppléments", money(folio.extras_amount, currency)) : "") +
