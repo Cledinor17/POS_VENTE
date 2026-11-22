@@ -9,7 +9,7 @@ import type { UnpostedDepositMemo } from "@/lib/posDepositMemosApi";
 import { calculateParkedBalance, type ParkedBalanceItem } from "@/lib/posParkedBalance";
 
 type Currency = "HTG" | "USD";
-type ParkedItem = { id: string; note: string; createdAt: string; items: ParkedBalanceItem[] };
+type ParkedItem = { id: string; note: string; createdAt: string; items: ParkedBalanceItem[]; version?: number; depositTotals?: { HTG: number; USD: number } };
 type DepositDraft = { amount: string; currency: Currency; requestKey?: string };
 
 export type ParkedCartsPanelProps = {
@@ -107,7 +107,7 @@ export default function ParkedCartsPanel({
             {matchingCarts.map(parked => {
               const held = perCart[parked.id] ?? { HTG: 0, USD: 0 };
               const draft = drafts[parked.id] ?? { amount: "", currency: preferredCurrency };
-              const ready = status === "ready" && memosComplete;
+              const ready = Boolean(parked.version && parked.depositTotals) || (status === "ready" && memosComplete);
               const balance = ready
                 ? calculateParkedBalance(parked.items, held, preferredCurrency, exchange)
                 : null;
@@ -138,14 +138,14 @@ export default function ParkedCartsPanel({
                     {balance?.overpayment != null && balance.overpayment > 0 ? (
                       <p className="font-semibold text-amber-700">{ui.overpaid} : {formatMoney(balance.overpayment, balance.currency)}</p>
                     ) : null}
-                    <p className="text-[10px] leading-snug text-slate-500">{!memosComplete && status === "ready" ? ui.incompleteDeposits : ui.estimateInfo}</p>
+                    <p className="text-[10px] leading-snug text-slate-500">{!ready && status === "ready" ? ui.incompleteDeposits : ui.estimateInfo}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-xs font-semibold text-indigo-800">{ui.downDeposit}</p>
+                    <p className="text-xs font-semibold text-indigo-800">{ui.downDeposit} · Total souhaité (0 pour annuler)</p>
                     <div className="flex flex-wrap gap-2">
                       <input
                         type="text" inputMode="decimal" aria-label={ui.downDeposit}
-                        title={ui.downDeposit} placeholder={ui.amount} value={draft.amount}
+                        title={ui.downDeposit} placeholder={held[draft.currency].toFixed(2)} value={draft.amount}
                         disabled={Boolean(draft.requestKey) || savingDepositId === parked.id}
                         onChange={event => onDraft(parked.id, { amount: event.target.value, currency: draft.currency })}
                         className="min-w-0 flex-1 basis-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60"
@@ -163,7 +163,7 @@ export default function ParkedCartsPanel({
                         disabled={!draft.amount || !online || !branchReady || !canRecord || savingDepositId !== null}
                         className="rounded-lg border border-indigo-300 bg-white px-2 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
                       >
-                        {savingDepositId === parked.id ? ui.loading : ui.record}
+                        {savingDepositId === parked.id ? ui.loading : "Modifier"}
                       </button>
                     </div>
                   </div>
