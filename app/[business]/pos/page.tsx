@@ -340,6 +340,7 @@ export default function PosPage() {
   const [deposits, setDeposits] = useState<UnpostedDepositMemo[]>([]);
   const [depositTotals, setDepositTotals] = useState<UnpostedDepositSummary["totals"]>({ HTG: "0.00", USD: "0.00" });
   const [depositsLoading, setDepositsLoading] = useState(false);
+  const [depositReadStatus, setDepositReadStatus] = useState<"loading" | "ready" | "unavailable">("loading");
   const [depositSavingId, setDepositSavingId] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState<ParkedCart | null>(null);
   const [discardingId, setDiscardingId] = useState<string | null>(null);
@@ -708,21 +709,26 @@ export default function PosPage() {
     const result = await listUnpostedDeposits(businessSlug);
     setDeposits(result.data);
     setDepositTotals(result.totals);
+    setDepositReadStatus("ready");
   }, [businessSlug, branchId]);
 
   useEffect(() => {
     let active = true;
     setDeposits([]);
     setDepositTotals({ HTG: "0.00", USD: "0.00" });
+    setDepositReadStatus("unavailable");
     if (!businessSlug || !branchId || !isOnline) return undefined;
+    setDepositReadStatus("loading");
     setDepositsLoading(true);
     void listUnpostedDeposits(businessSlug).then(result => {
       if (active) {
         setDeposits(result.data);
         setDepositTotals(result.totals);
+        setDepositReadStatus("ready");
       }
     }).catch(() => {
       // A read error must not block sales or imply that no deposits exist.
+      if (active) setDepositReadStatus("unavailable");
     }).finally(() => { if (active) setDepositsLoading(false); });
     return () => { active = false; };
   }, [businessSlug, branchId, isOnline]);
@@ -1159,6 +1165,8 @@ export default function PosPage() {
   }
   async function discardParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
+    if (!found || depositSavingId === parkId) return;
+    setDiscardingId(parkId);
     try {
       if (useRemoteParked) {
         const deleted = await deletePosParkedCart(businessSlug, parkId);
@@ -1173,6 +1181,8 @@ export default function PosPage() {
       setConfirmDiscard(null);
     } catch (e) {
       pushError(getErrorMessage(e));
+    } finally {
+      setDiscardingId(null);
     }
   }
   async function printSaleReceipt(sale: CompletedSale) {
