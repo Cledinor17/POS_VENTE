@@ -77,7 +77,7 @@ function safeImageSrc(value: string | null | undefined): string {
   return "";
 }
 
-export type ReceiptPaper = "80mm" | "a4";
+export type ReceiptPaper = "58mm" | "80mm" | "a4";
 export type ReceiptPrintOptions = { paper?: ReceiptPaper };
 
 export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions = {}): string {
@@ -85,6 +85,7 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
   const t = receiptLabels(locale);
   const dir = locale === "ar" ? "rtl" : "ltr";
   const a4 = options.paper === "a4";
+  const narrow = options.paper === "58mm";
   const localeTag = RECEIPT_LOCALE_TAG[locale];
   const linesHtml = sale.items
     .map((item) => {
@@ -151,7 +152,7 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
     *, *::before, *::after { box-sizing: border-box; }
     html { color-scheme: light; }
     body { font-family: Arial, "Noto Sans", "Noto Naskh Arabic", sans-serif;
-      font-size: 11px; color:#111827; width:72mm; margin:0 auto;
+      font-size: 11px; color:#111827; width:${narrow ? "50mm" : "72mm"}; margin:0 auto;
       overflow-wrap:anywhere; line-height:1.35; background:#fff; }
     body.paper-a4 { width:100%; max-width:185mm; font-size:13px; }
     .center {text-align:center;} .muted {color:#64748b;} .small {font-size:.87em;line-height:1.45;}
@@ -159,8 +160,8 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
     .brand-header {text-align:center; margin:0 0 13px; break-inside:avoid;}
     .brand-main {display:flex; flex-direction:row; gap:9px; align-items:center; justify-content:center;
       min-height:60px; margin-bottom:7px;}
-    .brand-main .logo {width:60px;height:60px;flex:none;object-fit:contain;object-position:center;}
-    .brand-name {font-size:18px;line-height:1.12;font-weight:800;overflow-wrap:anywhere;
+    .brand-main .logo {width:${narrow ? "43px" : "60px"};height:${narrow ? "43px" : "60px"};flex:none;object-fit:contain;object-position:center;}
+    .brand-name {font-size:${narrow ? "15px" : "18px"};line-height:1.12;font-weight:800;overflow-wrap:anywhere;
       text-align:start; flex:1; }
     .brand-main:not(:has(.logo)) .brand-name {text-align:center;}
     .brand-rule {border-top:2px solid #172554;margin:7px 0 6px;width:100%;}
@@ -221,7 +222,7 @@ ${paymentsBlock}${paymentSummary}${refundsBlock}${balanceBlock}${cashBlock}${loy
 }
 export function printReceipt(sale: PosReceipt, options: ReceiptPrintOptions = {}) {
   const paper = options.paper ?? "80mm";
-  printHtmlDocument(buildReceiptHtml(sale, { paper }), paper === "80mm"
-    ? { paperWidthMm: 80, marginMm: 4 }
-    : {});
+  printHtmlDocument(buildReceiptHtml(sale, { paper }), paper === "a4"
+    ? {}
+    : { paperWidthMm: paper === "58mm" ? 58 : 80, marginMm: paper === "58mm" ? 3 : 4 });
 }
