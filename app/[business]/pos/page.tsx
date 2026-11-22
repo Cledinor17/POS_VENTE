@@ -1206,7 +1206,7 @@ export default function PosPage() {
       const cashierName = getStringField(
         user,
         ["name", "full_name"],
-        "Caissier",
+        receiptText.cashier,
       );
       const sale: CompletedSale = {
         locale,
