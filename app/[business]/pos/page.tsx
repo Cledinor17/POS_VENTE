@@ -687,39 +687,78 @@ export default function PosPage() {
     let mounted = true;
     async function loadParkedCarts() {
       if (!businessSlug || !branchId || branchLoading) return;
-      setParkedCarts([]);
       try {
         const remote = await listPosParkedCarts(businessSlug);
         if (!mounted) return;
         if (remote) {
           setUseRemoteParked(true);
-          setParkedCarts(remote.map(item => ({ ...fromApiParkedCart(item), branchId })));
+          // Migrate older browser-only slips without changing their original
+          // reference: their existing memo deposits remain attached to it.
+          const key = `pos_parked_carts:${businessSlug}`;
+          let local: ParkedCart[] = [];
+          try {
+            const parsed: unknown = JSON.parse(safeGetItem(key) || "[]");
+            local = Array.isArray(parsed) ? parsed as ParkedCart[] : [];
+          } catch { /* Leave unreadable local data untouched. */ }
+          const visible = visibleParkedForBranch(local, branchId, Boolean(currentBranch?.isMain));
+          const migrated: string[] = [];
+          for (const item of visible) {
+            if (!mounted) return;
+            if (remote.some(serverCart => serverCart.id === item.id)) {
+              migrated.push(item.id);
+              continue;
+            }
+            try {
+              const moved = await createPosParkedCart(businessSlug, {
+                id: item.id, note: item.note, items: item.items,
+              });
+              if (moved) migrated.push(item.id);
+            } catch {
+              // Do not silently discard legacy slips; keep them on this device
+              // until the server accepts them.
+              break;
+            }
+          }
+          if (migrated.length) {
+            safeSetItem(key, JSON.stringify(local.filter(item => !migrated.includes(item.id))));
+          }
+          const latest = migrated.length ? (await listPosParkedCarts(businessSlug)) : remote;
+          if (mounted) setParkedCarts((latest ?? remote).map(item => ({ ...fromApiParkedCart(item), branchId })));
           return;
         }
       } catch (e) {
-        if (mounted) pushError(getErrorMessage(e));
+        if (mounted && isOnline) {
+          pushError("Les fiches partagées ne sont pas accessibles. Vérifiez l’API avant d’enregistrer.");
+          return;
+        }
       }
       if (!mounted) return;
       setUseRemoteParked(false);
       const raw = safeGetItem(`pos_parked_carts:${businessSlug}`);
-      if (!raw) {
-        setParkedCarts([]);
-        return;
-      }
+      if (!raw) { setParkedCarts([]); return; }
       try {
         const parsed = JSON.parse(raw);
         setParkedCarts(Array.isArray(parsed)
           ? visibleParkedForBranch(parsed as ParkedCart[], branchId, Boolean(currentBranch?.isMain))
           : []);
-      } catch {
-        setParkedCarts([]);
-      }
+      } catch { setParkedCarts([]); }
     }
     void loadParkedCarts();
-    return () => {
-      mounted = false;
+    return () => { mounted = false; };
+  }, [businessSlug, branchId, branchLoading, currentBranch?.isMain, pushError, isOnline]);
+
+  useEffect(() => {
+    if (!businessSlug || !branchId || !useRemoteParked || !isOnline) return undefined;
+    let active = true;
+    const refresh = () => {
+      void listPosParkedCarts(businessSlug).then(carts => {
+        if (active && carts) setParkedCarts(carts.map(cart => ({ ...fromApiParkedCart(cart), branchId })));
+      }).catch(() => { /* A transient poll must not erase valid cashier data. */ });
     };
-  }, [businessSlug, branchId, branchLoading, currentBranch?.isMain, pushError]);
+    const timer = window.setInterval(refresh, 12000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [businessSlug, branchId, useRemoteParked, isOnline]);
+
   const reloadDepositMemos = useCallback(async () => {
     if (!businessSlug || !branchId) return;
     const result = await listUnpostedDeposits(businessSlug);
