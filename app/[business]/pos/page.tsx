@@ -1455,13 +1455,10 @@ export default function PosPage() {
         notes: "Dépôt encaissé depuis la caisse POS",
       });
       setRoomDepositInput("");
-      if (activeSpendingLimit === null && spendingLimitInput.trim() === "") {
-        const newLimit = Math.round(amount * 100) / 100;
-        setSpendingLimitInput(String(newLimit));
-        setActiveSpendingLimit(newLimit);
-        setActiveSpendingCurrency(saleCurrency);
-      }
-      pushNotice("Dépôt enregistré au folio de la chambre. Vérifiez son solde dans Hôtel > Folios.", "success");
+      // The hotel folio can also contain accommodation charges. A room payment
+      // is NOT an earmarked available budget for POS consumption; do not
+      // silently advertise its amount as a spendable balance.
+      pushNotice("Paiement inscrit au folio hôtel. Son solde prend aussi en compte l'hébergement : vérifiez Hôtel > Folios.", "success");
     } catch (error) {
       pushError(`Enregistrement du dépôt non confirmé : ${getErrorMessage(error)}. Vérifiez le folio avant de recommencer.`);
     } finally {
@@ -2236,7 +2233,7 @@ export default function PosPage() {
                             {recordingRoomDeposit ? "En cours..." : "Enregistrer dépôt"}
                           </button>
                         </div>
-                        <p className="text-slate-500">Ce paiement est comptabilisé au niveau du folio hôtel, pas comme paiement immédiat d'une vente comptoir.</p>
+                        <p className="text-slate-500">Paiement affecté au folio complet (chambre + extras). Il ne constitue pas automatiquement un crédit disponible pour les achats. Le plafond facultatif de la fiche en attente est séparé.</p>
                       </div>
                     ) : null}
                   </div>
