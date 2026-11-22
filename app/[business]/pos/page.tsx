@@ -1268,6 +1268,7 @@ export default function PosPage() {
       setParkDepositInput("");
       setCashReceivedInput("");
       parkCreateId.current = null;
+      checkoutRequestKey.current = null;
       pushNotice(ui.savedPending, "success");
     } catch (error) {
       // Keep the cart, stable reference and deposit intact on any failure.
@@ -1284,6 +1285,7 @@ export default function PosPage() {
       pushError("Mettez d’abord votre panier actuel en attente ou finalisez-le.");
       return;
     }
+    checkoutRequestKey.current = null;
     setCart(found.items);
     setActiveParked(found);
     setParkNote(found.note || "");
@@ -1610,6 +1612,7 @@ export default function PosPage() {
       try { await removePendingSale(idempotencyKey); }
       catch { pushNotice("Vente confirmée. La référence locale sera vérifiée à la prochaine synchronisation.", "warning"); }
       finishSale(backendResult, false);
+      if (activeParked) void reloadDepositMemos().catch(() => {});
       return true;
     } catch (e) {
       if (activeParked) {
