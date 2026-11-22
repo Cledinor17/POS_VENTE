@@ -2025,14 +2025,15 @@ export default function PosPage() {
           </section>{" "}
           <ParkedCartsPanel
             locale={locale}
-            count={cart.length}
             carts={parkedCarts}
-            note={parkNote}
-            onNote={setParkNote}
-            depositAmount={parkDepositInput}
-            onDepositAmount={setParkDepositInput}
-            depositCurrency={parkDepositCurrency}
-            onDepositCurrency={setParkDepositCurrency}
+            preferredCurrency={saleCurrency === "USD" ? "USD" : "HTG"}
+            exchange={{
+              exchangeRateDirection: businessSettings?.exchange_rate_direction,
+              exchangeRateValue: businessSettings?.exchange_rate_value,
+              exchangeBuyRate: businessSettings?.exchange_buy_rate,
+              exchangeSellRate: businessSettings?.exchange_sell_rate,
+            }}
+            memosComplete={depositMemosComplete}
             drafts={depositDrafts}
             onDraft={(id, value) => setDepositDrafts(prev => ({ ...prev, [id]: value }))}
             totals={depositTotals}
@@ -2043,7 +2044,6 @@ export default function PosPage() {
             canRecord={hasPermission(permissions, "billing.manage")}
             online={isOnline}
             branchReady={Boolean(branchId)}
-            onPark={() => void parkCurrentCart()}
             onResume={id => void resumeParkedCart(id)}
             onRecord={(id, draft) => void recordDepositForCart(id, draft)}
             onRequestDelete={id => setConfirmDiscard(parkedCarts.find(park => park.id === id) ?? null)}
@@ -2320,16 +2320,22 @@ export default function PosPage() {
                 Caisse fermee - ouvrez-la ci-dessus pour pouvoir encaisser.
               </div>
             ) : null}
-            <button
-              onClick={() => {
-                void checkoutSale();
-              }}
-              disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
-              className="w-full rounded-xl brand-primary-btn text-white py-3 font-bold disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {" "}
-              {checkoutLoading ? "Traitement..." : "Passer a la caisse"}{" "}
-            </button>{" "}
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button"
+                onClick={() => {
+                  setParkDepositCurrency(saleCurrency === "USD" ? "USD" : "HTG");
+                  setParkModalOpen(true);
+                }}
+                disabled={cart.length === 0 || branchLoading || !branchId || parkSaving}
+                className="inline-flex min-w-0 items-center justify-center gap-1 rounded-xl border-2 border-indigo-200 bg-indigo-50 px-2 py-3 text-xs font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 sm:text-sm">
+                <PauseCircle className="h-4 w-4 shrink-0" />{ui.park}
+              </button>
+              <button type="button" onClick={() => void checkoutSale()}
+                disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
+                className="min-w-0 rounded-xl brand-primary-btn px-2 py-3 text-xs font-bold text-white disabled:opacity-60 disabled:cursor-not-allowed sm:text-sm">
+                {checkoutLoading ? "Traitement..." : "Passer à la caisse"}
+              </button>
+            </div>{" "}
           </section>{" "}
 
         </aside>{" "}
