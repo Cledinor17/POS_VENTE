@@ -1094,8 +1094,12 @@ export default function PosPage() {
       pushError(ui.noNetwork);
       return;
     }
+    if (hasDeposit && !hasPermission(permissions, "billing.manage")) {
+      pushError(ui.noRights);
+      return;
+    }
     const parked: ParkedCart = {
-      id: `P-${Date.now().toString(36).toUpperCase()}`,
+      id: `P-${generateClientId()}`,
       note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
       createdAt: new Date().toISOString(),
       items: sourceCart,
@@ -2330,6 +2334,7 @@ export default function PosPage() {
             onDraft={(id, value) => setDepositDrafts(prev => ({ ...prev, [id]: value }))}
             totals={depositTotals}
             perCart={depositByCart}
+            memos={deposits}
             status={depositReadStatus}
             savingDepositId={depositSavingId}
             canRecord={hasPermission(permissions, "billing.manage")}
