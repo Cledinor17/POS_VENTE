@@ -59,7 +59,9 @@ import {
 import {
   checkoutPosSale,
   createPosParkedCart,
-  deletePosParkedCart,
+  cancelPosParkedCart,
+  completePosParkedHotelCart,
+  updatePosParkedCart,
   getPosPaymentMethods,
   listPosParkedCarts,
   type PosApprovalPayload,
@@ -112,11 +114,14 @@ type ParkedCart = {
   id: string;
   note: string;
   createdAt: string;
+  updatedAt?: string;
+  revision?: number;
   items: CartItem[];
   customerName?: string;
   customerId?: string | number | null;
   registeredCustomer?: CustomerItem | null;
   reservationId?: number | null;
+  roomLabel?: string;
   // Optional spending limit only. This field is NOT a recorded payment.
   spendingLimit?: number | null;
   spendingCurrency?: string;
@@ -296,7 +301,15 @@ function fromApiParkedCart(cart: PosParkedCartApi): ParkedCart {
     id: cart.id,
     note: cart.note,
     createdAt: cart.createdAt,
+    updatedAt: cart.updatedAt,
+    revision: cart.revision,
     items: cart.items,
+    customerName: cart.customerName ?? undefined,
+    customerId: cart.customerId,
+    reservationId: cart.reservationId,
+    roomLabel: cart.roomLabel ?? undefined,
+    spendingLimit: cart.spendingLimit,
+    spendingCurrency: cart.spendingCurrency ?? undefined,
   };
 }
 export default function PosPage() {
@@ -330,7 +343,17 @@ export default function PosPage() {
     {},
   );
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>([]);
-  const [useRemoteParked, setUseRemoteParked] = useState(false);
+  const [parkedSearchInput, setParkedSearchInput] = useState("");
+  const [parkedSearch, setParkedSearch] = useState("");
+  const [parkedPage, setParkedPage] = useState(1);
+  const [parkedTotal, setParkedTotal] = useState(0);
+  const [parkedTotalOpen, setParkedTotalOpen] = useState(0);
+  const [parkedLastPage, setParkedLastPage] = useState(1);
+  const [parkedLoading, setParkedLoading] = useState(false);
+  const [savingParked, setSavingParked] = useState(false);
+  const [activeParkedId, setActiveParkedId] = useState<string | null>(null);
+  const [activeParkedRevision, setActiveParkedRevision] = useState(1);
+  const pendingParkedToken = useRef<string | null>(null);
   const [parkNote, setParkNote] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS,
