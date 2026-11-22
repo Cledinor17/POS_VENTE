@@ -1501,24 +1501,16 @@ export default function PosPage() {
     await runCheckoutSale();
   }
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {" "}
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
         {" "}
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           {" "}
-          <div>
-            {" "}
-            <h1 className="text-2xl font-bold text-slate-900">
-              Nouvelle vente
-            </h1>{" "}
-            <p className="text-slate-500 text-sm mt-1">
-              {" "}
-              Caissier:{" "}
-              <span className="font-semibold text-slate-700">
-                {getStringField(user, ["name"], "Utilisateur")}
-              </span>{" "}
-            </p>{" "}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+            <a href="#pos-cart-section" className="rounded-lg bg-indigo-50 px-3 py-2 font-bold text-indigo-800 hover:bg-indigo-100">
+              {ui.cart} · {itemCount} · {formatMoney(grandTotal, saleCurrency)}
+            </a>
             {!isOnline ? (
               <p className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
                 <AlertCircle className="h-3.5 w-3.5" />
@@ -1662,9 +1654,9 @@ export default function PosPage() {
           </section>
         </div>
       ) : null}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(410px,2fr)] 2xl:grid-cols-[minmax(0,5fr)_minmax(480px,3fr)]">
         {" "}
-        <section className="xl:col-span-2 space-y-4">
+        <section className="min-w-0 space-y-3">
           {" "}
           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
             {" "}
@@ -1720,7 +1712,7 @@ export default function PosPage() {
                 Aucun produit trouve.
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                 {" "}
                 {visibleProducts.map((product) => {
                   const productId = String(product.id);
@@ -1823,9 +1815,7 @@ export default function PosPage() {
                       </div>
                       <div className="text-[10px] text-slate-500">
                         {" "}
-                        Stock:{" "}
-                        {product.type === "service" ? "N/A" : product.stock} |
-                        Cat: {product.category}{" "}
+                        {product.type === "service" ? "" : `Stock: ${product.stock}`}{" "}
                       </div>{" "}
                       <button
                         onClick={() => addToCart(product, requestedQty)}
@@ -1842,18 +1832,18 @@ export default function PosPage() {
             )}{" "}
           </div>{" "}
         </section>{" "}
-        <aside id="pos-cart-section" className="space-y-4">
+        <aside id="pos-cart-section" className="min-w-0 space-y-3 scroll-mt-4">
           {" "}
-          <section className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+          <section className="bg-white rounded-2xl border-2 border-indigo-200 shadow-md">
             {" "}
-            <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between">
               {" "}
-              <div className="font-bold text-slate-900">Panier</div>{" "}
+              <div className="text-base font-extrabold text-indigo-950">{ui.cart}</div>{" "}
               <div className="text-sm text-slate-500">
                 {itemCount} article(s)
               </div>{" "}
             </div>{" "}
-            <div className="p-4 space-y-3 max-h-[320px] overflow-y-auto">
+            <div className="p-3 space-y-2 min-h-[140px] max-h-[45vh] overflow-y-auto">
               {" "}
               {cart.length === 0 ? (
                 <div className="text-sm text-slate-500 text-center py-6">
@@ -2001,7 +1991,7 @@ export default function PosPage() {
                 })
               )}{" "}
             </div>{" "}
-            <div className="p-4 border-t space-y-1 text-sm">
+            <div className="p-3 border-t border-indigo-100 bg-indigo-50/50 space-y-1 text-sm">
               {" "}
               <div className="flex justify-between text-slate-600">
                 {" "}
@@ -2032,7 +2022,7 @@ export default function PosPage() {
                   <span>- {formatMoney(couponDiscountAmount, saleCurrency)}</span>{" "}
                 </div>
               ) : null}{" "}
-              <div className="flex justify-between text-lg font-bold text-slate-900 pt-1">
+              <div className="flex justify-between gap-2 text-xl font-extrabold text-indigo-950 pt-2 border-t border-indigo-200">
                 {" "}
                 <span>Total</span> <span>{formatMoney(grandTotal, saleCurrency)}</span>{" "}
               </div>{" "}
