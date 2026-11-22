@@ -724,7 +724,17 @@ export default function PosPage() {
             safeSetItem(key, JSON.stringify(local.filter(item => !migrated.includes(item.id))));
           }
           const latest = migrated.length ? (await listPosParkedCarts(businessSlug)) : remote;
-          if (mounted) setParkedCarts((latest ?? remote).map(item => ({ ...fromApiParkedCart(item), branchId })));
+          if (mounted) {
+            const shared = (latest ?? remote).map(item => ({ ...fromApiParkedCart(item), branchId }));
+            const localRemaining = visible.filter(item =>
+              !migrated.includes(item.id) && !shared.some(server => server.id === item.id),
+            );
+            setParkedCarts([...shared, ...localRemaining.map(item => ({ ...item, version: undefined }))]);
+            if (localRemaining.length) pushNotice(
+              localRemaining.length + " fiche(s) locales non synchronisées : repassez-les en attente pour les partager.",
+              "warning",
+            );
+          }
           return;
         }
       } catch (e) {
@@ -753,7 +763,10 @@ export default function PosPage() {
     let active = true;
     const refresh = () => {
       void listPosParkedCarts(businessSlug).then(carts => {
-        if (active && carts) setParkedCarts(carts.map(cart => ({ ...fromApiParkedCart(cart), branchId })));
+        if (active && carts) setParkedCarts(prev => {
+          const shared = carts.map(cart => ({ ...fromApiParkedCart(cart), branchId }));
+          return [...shared, ...prev.filter(item => !item.version && !shared.some(server => server.id === item.id))];
+        });
       }).catch(() => { /* A transient poll must not erase valid cashier data. */ });
     };
     const timer = window.setInterval(refresh, 12000);
