@@ -51,6 +51,7 @@ import { posCompactLabels } from "@/lib/posCompactI18n";
 import { listUnpostedDeposits, recordUnpostedDeposit,
   type UnpostedDepositMemo, type UnpostedDepositSummary } from "@/lib/posDepositMemosApi";
 import { parseDepositAmount } from "@/lib/posDepositMemoUtils";
+import { mergeParkedForBranch, visibleParkedForBranch } from "@/lib/posParkedBranchStorage";
 import { useAppLocale } from "@/context/LocaleContext";
 import {
   listBusinessApprovers,
@@ -117,6 +118,7 @@ function computeItemDiscount(
 }
 type ParkedCart = {
   id: string;
+  branchId?: string;
   note: string;
   createdAt: string;
   items: CartItem[];
@@ -673,13 +675,14 @@ export default function PosPage() {
   useEffect(() => {
     let mounted = true;
     async function loadParkedCarts() {
-      if (!businessSlug) return;
+      if (!businessSlug || !branchId || branchLoading) return;
+      setParkedCarts([]);
       try {
         const remote = await listPosParkedCarts(businessSlug);
         if (!mounted) return;
         if (remote) {
           setUseRemoteParked(true);
-          setParkedCarts(remote.map(fromApiParkedCart));
+          setParkedCarts(remote.map(item => ({ ...fromApiParkedCart(item), branchId })));
           return;
         }
       } catch (e) {
@@ -694,7 +697,9 @@ export default function PosPage() {
       }
       try {
         const parsed = JSON.parse(raw);
-        setParkedCarts(Array.isArray(parsed) ? parsed : []);
+        setParkedCarts(Array.isArray(parsed)
+          ? visibleParkedForBranch(parsed as ParkedCart[], branchId, Boolean(currentBranch?.isMain))
+          : []);
       } catch {
         setParkedCarts([]);
       }
@@ -703,7 +708,7 @@ export default function PosPage() {
     return () => {
       mounted = false;
     };
-  }, [businessSlug, pushError]);
+  }, [businessSlug, branchId, branchLoading, currentBranch?.isMain, pushError]);
   const reloadDepositMemos = useCallback(async () => {
     if (!businessSlug || !branchId) return;
     const result = await listUnpostedDeposits(businessSlug);
@@ -733,11 +738,17 @@ export default function PosPage() {
   }, [businessSlug, branchId, isOnline]);
 
   function saveLocalParked(next: ParkedCart[]) {
+    const key = `pos_parked_carts:${businessSlug}`;
+    let all: ParkedCart[] = [];
+    try {
+      const raw = safeGetItem(key);
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      all = Array.isArray(parsed) ? parsed : [];
+    } catch { /* Damaged local cache must not block parking. */ }
     setParkedCarts(next);
-    safeSetItem(
-      `pos_parked_carts:${businessSlug}`,
-      JSON.stringify(next),
-    );
+    safeSetItem(key, JSON.stringify(
+      mergeParkedForBranch(all, next, branchId ?? "", Boolean(currentBranch?.isMain)),
+    ));
   }
   const getSaleUnitPrice = useCallback((product: CatalogProduct): number => {
     return convertAmount(product.price, product.priceCurrency, saleCurrency, {
@@ -1080,6 +1091,10 @@ export default function PosPage() {
   }
 
   async function parkCurrentCart() {
+    if (!branchId || branchLoading) {
+      pushError(ui.noNetwork);
+      return;
+    }
     if (cart.length === 0) {
       pushError("Le panier est vide.");
       return;
@@ -1100,6 +1115,7 @@ export default function PosPage() {
     }
     const parked: ParkedCart = {
       id: `P-${generateClientId()}`,
+      branchId,
       note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
       createdAt: new Date().toISOString(),
       items: sourceCart,
@@ -1148,7 +1164,7 @@ export default function PosPage() {
   }
   async function resumeParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
-    if (!found) return;
+    if (!found || !branchId) return;
     setCart(found.items);
     setParkNote(found.note ?? "");
     try {
