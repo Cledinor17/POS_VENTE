@@ -347,6 +347,7 @@ export default function PosPage() {
   const [parkModalOpen, setParkModalOpen] = useState(false);
   const [parkSaving, setParkSaving] = useState(false);
   const parkCreateId = useRef<string | null>(null);
+  const checkoutRequestKey = useRef<string | null>(null);
   const [parkDepositInput, setParkDepositInput] = useState("");
   const [parkDepositCurrency, setParkDepositCurrency] = useState<"HTG" | "USD">("HTG");
   const [depositDrafts, setDepositDrafts] = useState<Record<string, { amount: string; currency: "HTG" | "USD"; requestKey?: string }>>({});
@@ -1438,15 +1439,26 @@ export default function PosPage() {
       pushError("Ajoute des produits avant de passer a la caisse.");
       return false;
     }
+    if (activeParked && (!activeParked.version || !useRemoteParked || !isOnline)) {
+      pushError("Connexion au serveur requise pour finaliser une fiche avec son acompte.");
+      return false;
+    }
+    if (activeParked && activeDepositApplied > remainingAfterPoints + 0.01) {
+      pushError("L’acompte dépasse le total de la vente. Corrigez l’acompte avant l’encaissement.");
+      return false;
+    }
     if (paymentMethod === "cash" && cashReceived < amountDueInPaymentCurrency) {
       pushError(`Montant insuffisant: manque ${formatMoney(cashMissing, paymentCurrency)}.`);
       return false;
     }
     setCheckoutLoading(true);
     setError("");
-    const idempotencyKey = generateClientId();
+    const idempotencyKey = checkoutRequestKey.current || generateClientId();
+    checkoutRequestKey.current = idempotencyKey;
     const checkoutInput: PosCheckoutInput = {
       branchId,
+      parkedCartId: activeParked?.version ? activeParked.id : undefined,
+      parkedCartVersion: activeParked?.version,
       cashSessionId: String(cashSession.id),
       currency: saleCurrency,
       cashierId: user?.id ?? undefined,
@@ -1554,6 +1566,9 @@ export default function PosPage() {
         }),
       );
       setLastSale(sale);
+      if (activeParked) setParkedCarts(prev => prev.filter(item => item.id !== activeParked.id));
+      setActiveParked(null);
+      checkoutRequestKey.current = null;
       clearCurrentCart();
       if (offline) {
         pushNotice(`Vente enregistree hors-ligne. Ticket provisoire ${sale.receiptNo}.`, "warning");
@@ -1578,11 +1593,13 @@ export default function PosPage() {
     let queued = false;
     try {
       // Persist before sending: closing the tab during the request must be recoverable.
-      await enqueuePendingSale({
-        id: idempotencyKey, business: businessSlug, payload: checkoutInput, status: "pending", error: null,
-        createdAt: new Date().toISOString(), totalDisplay: grandTotal, currencyDisplay: saleCurrency,
-      });
-      queued = true;
+      if (!activeParked) {
+        await enqueuePendingSale({
+          id: idempotencyKey, business: businessSlug, payload: checkoutInput, status: "pending", error: null,
+          createdAt: new Date().toISOString(), totalDisplay: grandTotal, currencyDisplay: saleCurrency,
+        });
+        queued = true;
+      }
       const backendResult = await checkoutPosSale(businessSlug, checkoutInput);
       if (!backendResult) throw new Error("Le serveur n’a pas confirmé la vente.");
       try { await removePendingSale(idempotencyKey); }
@@ -1590,6 +1607,11 @@ export default function PosPage() {
       finishSale(backendResult, false);
       return true;
     } catch (e) {
+      if (activeParked) {
+        pushError("Vente non confirmée : " + getErrorMessage(e) +
+          ". Vérifiez les ventes avant de réessayer ; l’acompte et la fiche sont conservés.");
+        return false;
+      }
       if (queued && (!(e instanceof ApiError) || e.status >= 500 || e.status === 408)) {
         try {
           await enqueuePendingSale({
