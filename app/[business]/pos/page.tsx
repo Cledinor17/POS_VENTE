@@ -37,7 +37,7 @@ import { ApiError } from "@/lib/api";
 import { getPosSettings, type BusinessSettings } from "@/lib/businessApi";
 import { hasPermission } from "@/lib/businessAccess";
 import { listCustomers, type CustomerItem } from "@/lib/customersApi";
-import { getHotelReservations, type HotelReservation } from "@/lib/hotelApi";
+import { addHotelReservationPayment, getHotelReservations, type HotelReservation } from "@/lib/hotelApi";
 import { createHotelOrder, updateHotelOrderStatus } from "@/lib/hotelOrdersApi";
 import { validateCoupon } from "@/lib/couponsApi";
 import {
@@ -352,6 +352,9 @@ export default function PosPage() {
   const [hotelReservations, setHotelReservations] = useState<HotelReservation[]>([]);
   const [selectedReservationId, setSelectedReservationId] = useState<number | null>(null);
   const [postingRoomCharge, setPostingRoomCharge] = useState(false);
+  const [recordingRoomDeposit, setRecordingRoomDeposit] = useState(false);
+  const [roomDepositInput, setRoomDepositInput] = useState("");
+  const [roomDepositMethod, setRoomDepositMethod] = useState<"cash" | "card" | "bank" | "mobile">("cash");
   const [spendingLimitInput, setSpendingLimitInput] = useState("");
   const [activeSpendingLimit, setActiveSpendingLimit] = useState<number | null>(null);
   const [activeSpendingCurrency, setActiveSpendingCurrency] = useState("HTG");
@@ -1063,6 +1066,7 @@ export default function PosPage() {
       } else {
         const next = [parked, ...parkedCarts];
         saveLocalParked(next);
+        if (useRemoteParked) setUseRemoteParked(false);
       }
       setCart([]);
       setParkNote("");
@@ -1259,6 +1263,7 @@ export default function PosPage() {
       currency: saleCurrency,
       cashierId: user?.id ?? undefined,
       customerId: selectedCustomer?.id ?? undefined,
+      note: !selectedCustomer && customerNameForSale ? `Client: ${customerNameForSale.slice(0, 190)}` : undefined,
       subtotal,
       tax: taxTotal,
       total: grandTotal,
@@ -1307,7 +1312,7 @@ export default function PosPage() {
         "Caissier",
       );
       const sale: CompletedSale = {
-        customerName: selectedCustomer?.name,
+        customerName: customerNameForSale || undefined,
         loyaltyEnabled: Boolean(selectedCustomer) && (offline ? loyaltyEnabled : backendResult?.loyaltyEnabled === true),
         loyaltyPointsEarned: backendResult?.loyaltyPointsEarned,
         loyaltyPointsBalanceAfter: backendResult?.loyaltyPointsBalanceAfter ?? null,
@@ -1374,7 +1379,11 @@ export default function PosPage() {
         }
       }
       setSelectedCustomer(null);
+      setFreeCustomerName("");
       setCustomerQuery("");
+      setSelectedReservationId(null);
+      setActiveSpendingLimit(null);
+      setSpendingLimitInput("");
       setRedeemPointsInput("");
       setAppliedCoupon(null);
       setCouponCodeInput("");
@@ -1428,7 +1437,93 @@ export default function PosPage() {
     }
   }
 
+  async function recordRoomDeposit() {
+    if (!selectedReservation || !canUseRoomDeposit || !isOnline || recordingRoomDeposit) return;
+    const amount = Number(roomDepositInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      pushError("Saisissez un dépôt positif à recevoir sur le folio de la chambre.");
+      return;
+    }
+    setRecordingRoomDeposit(true);
+    try {
+      await addHotelReservationPayment(businessSlug, selectedReservation.id, {
+        amount: Math.round(amount * 100) / 100,
+        paymentCurrency: saleCurrency === "USD" ? "USD" : "HTG",
+        paymentMethod: roomDepositMethod,
+        notes: "Dépôt encaissé depuis la caisse POS",
+      });
+      setRoomDepositInput("");
+      pushNotice("Dépôt enregistré au folio de la chambre. Vérifiez son solde dans Hôtel > Folios.", "success");
+    } catch (error) {
+      pushError(`Enregistrement du dépôt non confirmé : ${getErrorMessage(error)}. Vérifiez le folio avant de recommencer.`);
+    } finally {
+      setRecordingRoomDeposit(false);
+    }
+  }
+  async function chargeSelectedRoom() {
+    if (!canChargeRoom || !isOnline || postingRoomCharge || !selectedReservation || !selectedReservation.room) return;
+    if (cart.length === 0 || grandTotal <= 0) {
+      pushError("Ajoutez des articles pour porter une addition sur la chambre.");
+      return;
+    }
+    // Existing hotel orders do not model POS taxes/discounts/loyalty or mixed
+    // product currencies. Refuse instead of silently posting a wrong folio.
+    const currencies = new Set(sourceCart.map((item) => (item.currency || saleCurrency).toUpperCase()));
+    if (currencies.size > 1 || discountAmount > 0 || itemDiscountTotal > 0 || taxTotal > 0 ||
+        couponDiscountAmount > 0 || pointsDiscountAmount > 0) {
+      pushError("Pour une addition sur chambre, utilisez des articles dans une seule devise, sans taxe ni rabais. Sinon, passez par le module Commandes hôtel.");
+      return;
+    }
+    if (spendingLimitInSaleCurrency !== null && cartGrossTotal(sourceCart) > spendingLimitInSaleCurrency + 0.001) {
+      pushError("Le plafond de consommation de cette fiche est dépassé.");
+      return;
+    }
+    setPostingRoomCharge(true);
+    let createdOrderId: number | null = null;
+    try {
+      const order = await createHotelOrder(businessSlug, {
+        roomId: selectedReservation.room_id,
+        reservationId: selectedReservation.id,
+        customerId: selectedReservation.customer_id,
+        currency: saleCurrency,
+        note: `Commande POS - ${(customerNameForSale || selectedReservation.guest_name).slice(0, 100)}`,
+        totalAmount: Math.round(grandTotal * 100) / 100,
+        items: cart.map((item) => ({
+          productId: Number(item.productId),
+          quantity: item.qty,
+          unitPrice: item.price,
+        })),
+      });
+      createdOrderId = order.id;
+      await updateHotelOrderStatus(businessSlug, order.id, { status: "completed" });
+      setProducts((prev) => prev.map((product) => {
+        const line = cart.find((item) => item.productId === String(product.id));
+        return !line || product.type === "service" ? product : {
+          ...product, stock: Math.max(0, product.stock - line.qty),
+        };
+      }));
+      clearCurrentCart();
+      setSelectedReservationId(null);
+      setFreeCustomerName("");
+      setCustomerQuery("");
+      setSelectedCustomer(null);
+      setActiveSpendingLimit(null);
+      setSpendingLimitInput("");
+      pushNotice(`Addition portée sur chambre ${selectedReservation.room.room_number} (commande #${order.id}).`, "success");
+    } catch (error) {
+      const message = createdOrderId
+        ? `Commande hôtel #${createdOrderId} créée mais confirmation non vérifiée. Contrôlez-la dans Commandes hôtel avant toute nouvelle tentative.`
+        : "Commande non confirmée. Vérifiez Commandes hôtel avant de recommencer.";
+      pushError(`${message} ${getErrorMessage(error)}`);
+    } finally {
+      setPostingRoomCharge(false);
+    }
+  }
   async function checkoutSale() {
+    if (spendingLimitInSaleCurrency !== null && cartGrossTotal(sourceCart) > spendingLimitInSaleCurrency + 0.001) {
+      pushError("Le plafond de consommation de cette fiche est dépassé.");
+      return;
+    }
     if ((discountAmount > 0 || itemDiscountTotal > 0) && !canApplyDiscount) {
       setApprovalDialog({
         title: "Validation manager requise",
