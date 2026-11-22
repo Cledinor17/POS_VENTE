@@ -79,6 +79,7 @@ export type PosApprovalPayload = {
 
 export type PosCheckoutInput = {
   parkedCartId?: string;
+  parkedCartRevision?: number;
   branchId?: string;
   cashSessionId?: string;
   currency?: string;
@@ -661,6 +662,7 @@ export async function checkoutPosSale(
 ): Promise<PosCheckoutResult | null> {
   const payload = {
     parked_cart_id: input.parkedCartId ?? null,
+    parked_cart_revision: input.parkedCartRevision ?? null,
     cash_session_id: input.cashSessionId ?? null,
     cashier_id: input.cashierId ?? null,
     customer_id: input.customerId ?? null,
