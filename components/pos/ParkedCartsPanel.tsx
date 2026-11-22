@@ -1,6 +1,7 @@
 "use client";
 
-import { PauseCircle, PlayCircle, Trash2 } from "lucide-react";
+import { PauseCircle, PlayCircle, Search, Trash2 } from "lucide-react";
+import { useState } from "react";
 import type { Locale } from "@/lib/locale";
 import { posCompactLabels } from "@/lib/posCompactI18n";
 import { formatMoney } from "@/lib/currency";
@@ -47,10 +48,14 @@ export default function ParkedCartsPanel({
   onRequestDelete, confirming, deletingId, onCancelDelete, onConfirmDelete,
 }: ParkedCartsPanelProps) {
   const ui = posCompactLabels(locale);
+  const [tabSearch, setTabSearch] = useState("");
+  const matchingCarts = carts.filter(parked =>
+    `${parked.note} ${parked.id}`.toLocaleLowerCase().includes(tabSearch.trim().toLocaleLowerCase()),
+  );
 
   return (
     <>
-      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <section id="pos-pending-section" className="scroll-mt-4 space-y-3 rounded-2xl border-2 border-indigo-100 bg-white p-3 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-bold text-slate-900">{ui.pending}</h2>
           <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{carts.length}</span>
@@ -68,9 +73,9 @@ export default function ParkedCartsPanel({
               </>
             ) : <span>{status === "loading" ? ui.loading : "—"}</span>}
           </div>
-          <p className="mt-1 text-[11px] leading-snug text-indigo-700">{ui.unpostedInfo}</p>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-indigo-800">{ui.createTab}</p>
           <input
             value={note} onChange={event => onNote(event.target.value)}
             placeholder={ui.note} aria-label={ui.note} maxLength={190}
@@ -78,7 +83,7 @@ export default function ParkedCartsPanel({
           />
           <div className="grid grid-cols-[minmax(0,1fr)_95px] gap-2">
             <label className="min-w-0 text-xs font-semibold text-slate-700">
-              {ui.downDeposit}
+              {ui.downDeposit} <span className="font-normal text-slate-500">({ui.optional})</span>
               <input
                 type="text" inputMode="decimal" value={depositAmount}
                 onChange={event => onDepositAmount(event.target.value)}
@@ -122,9 +127,19 @@ export default function ParkedCartsPanel({
             </div>
           </details>
         ) : null}
+        {carts.length >= 5 ? (
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <span className="sr-only">{ui.findTab}</span>
+            <input value={tabSearch} onChange={event => setTabSearch(event.target.value)}
+              placeholder={ui.findTab} aria-label={ui.findTab}
+              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500" />
+          </label>
+        ) : null}
         {carts.length > 0 ? (
           <div className="max-h-[420px] space-y-2 overflow-y-auto">
-            {carts.map(parked => {
+            {matchingCarts.length === 0 ? <p className="py-2 text-xs text-slate-500">{ui.pendingEmpty}</p> : null}
+            {matchingCarts.map(parked => {
               const held = perCart[parked.id];
               const draft = drafts[parked.id] ?? { amount: "", currency: "HTG" as const };
               return (
@@ -142,7 +157,9 @@ export default function ParkedCartsPanel({
                       {held.USD > 0 ? formatMoney(held.USD, "USD") : ""}
                     </div>
                   ) : null}
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs font-semibold text-indigo-800">{ui.downDeposit}</p>
+                    <div className="flex flex-wrap gap-2">
                     <input
                       type="text" inputMode="decimal" aria-label={ui.downDeposit}
                       title={ui.downDeposit} placeholder={ui.amount} value={draft.amount}
@@ -165,6 +182,7 @@ export default function ParkedCartsPanel({
                     >
                       {savingDepositId === parked.id ? ui.loading : ui.record}
                     </button>
+                  </div>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
                     <button type="button" onClick={() => onResume(parked.id)}
