@@ -49,6 +49,7 @@ import { receiptLabels } from "@/lib/receiptI18n";
 import { posCompactLabels } from "@/lib/posCompactI18n";
 import { listUnpostedDeposits, recordUnpostedDeposit,
   type UnpostedDepositMemo, type UnpostedDepositSummary } from "@/lib/posDepositMemosApi";
+import { parseDepositAmount } from "@/lib/posDepositMemoUtils";
 import { useAppLocale } from "@/context/LocaleContext";
 import {
   listBusinessApprovers,
@@ -1029,9 +1030,63 @@ export default function PosPage() {
     setDiscountEditorProductId(null);
     setError("");
   }
+  async function recordDepositForCart(
+    cartReference: string, draft: { amount: string; currency: "HTG" | "USD"; requestKey?: string },
+  ): Promise<boolean> {
+    const amount = parseDepositAmount(draft.amount);
+    if (!amount) {
+      pushError(ui.invalidAmount);
+      return false;
+    }
+    if (!isOnline || !branchId) {
+      pushError(ui.noNetwork);
+      return false;
+    }
+    const requestKey = draft.requestKey || (typeof crypto !== "undefined" ? crypto.randomUUID?.() : undefined);
+    if (!requestKey) {
+      pushError(ui.noNetwork);
+      return false;
+    }
+    setDepositDrafts(previous => ({
+      ...previous,
+      [cartReference]: { ...draft, requestKey },
+    }));
+    setDepositSavingId(cartReference);
+    try {
+      await recordUnpostedDeposit(businessSlug, {
+        cart_reference: cartReference,
+        amount,
+        currency: draft.currency,
+        request_key: requestKey,
+        note: parkedCarts.find(item => item.id === cartReference)?.note ?? parkNote.trim(),
+      });
+      await reloadDepositMemos();
+      setDepositDrafts(previous => ({
+        ...previous, [cartReference]: { amount: "", currency: draft.currency },
+      }));
+      pushNotice(ui.recorded, "success");
+      return true;
+    } catch (error) {
+      pushError(getErrorMessage(error));
+      return false;
+    } finally {
+      setDepositSavingId(null);
+    }
+  }
+
   async function parkCurrentCart() {
     if (cart.length === 0) {
       pushError("Le panier est vide.");
+      return;
+    }
+    const hasDeposit = parkDepositInput.trim().length > 0;
+    const normalizedDeposit = hasDeposit ? parseDepositAmount(parkDepositInput) : null;
+    if (hasDeposit && !normalizedDeposit) {
+      pushError(ui.invalidAmount);
+      return;
+    }
+    if (hasDeposit && (!isOnline || !branchId)) {
+      pushError(ui.noNetwork);
       return;
     }
     const parked: ParkedCart = {
@@ -1041,29 +1096,45 @@ export default function PosPage() {
       items: sourceCart,
     };
     try {
+      let saved = parked;
       if (useRemoteParked) {
         const created = await createPosParkedCart(businessSlug, {
           note: parked.note,
           items: parked.items,
         });
         if (created) {
-          setParkedCarts((prev) => [fromApiParkedCart(created), ...prev]);
+          saved = fromApiParkedCart(created);
+          setParkedCarts((prev) => [saved, ...prev]);
         } else {
           const next = [parked, ...parkedCarts];
           saveLocalParked(next);
           setUseRemoteParked(false);
         }
       } else {
-        const next = [parked, ...parkedCarts];
-        saveLocalParked(next);
+        saveLocalParked([parked, ...parkedCarts]);
       }
       setCart([]);
       setParkNote("");
       setCashReceivedInput("");
       setError("");
-      pushNotice(`Panier mis en attente: ${parked.note}.`, "info");
-    } catch (e) {
-      pushError(getErrorMessage(e));
+      if (normalizedDeposit) {
+        const ok = await recordDepositForCart(saved.id, {
+          amount: normalizedDeposit,
+          currency: parkDepositCurrency,
+        });
+        if (ok) setParkDepositInput("");
+        else {
+          setDepositDrafts(prev => ({
+            ...prev,
+            [saved.id]: { ...prev[saved.id], amount: normalizedDeposit, currency: parkDepositCurrency },
+          }));
+          pushNotice(ui.parkFailed, "warning");
+        }
+      } else {
+        pushNotice(ui.savedPending, "info");
+      }
+    } catch (error) {
+      pushError(getErrorMessage(error));
     }
   }
   async function resumeParkedCart(parkId: string) {
@@ -1080,7 +1151,8 @@ export default function PosPage() {
       setParkedCarts(next);
       if (!useRemoteParked) saveLocalParked(next);
       setError("");
-      pushNotice(`Panier repris: ${found.note}.`, "success");
+      pushNotice(depositByCart[parkId]?.HTG || depositByCart[parkId]?.USD
+        ? ui.alreadyUnposted : `Panier repris: ${found.note}.`, "info");
     } catch (e) {
       pushError(getErrorMessage(e));
     }
@@ -1096,7 +1168,9 @@ export default function PosPage() {
       setParkedCarts(next);
       if (!useRemoteParked) saveLocalParked(next);
       setError("");
-      if (found) pushNotice(`Panier supprime: ${found.note}.`, "info");
+      if (found) pushNotice(depositByCart[parkId]?.HTG || depositByCart[parkId]?.USD
+        ? ui.alreadyUnposted : `Panier supprime: ${found.note}.`, "info");
+      setConfirmDiscard(null);
     } catch (e) {
       pushError(getErrorMessage(e));
     }
