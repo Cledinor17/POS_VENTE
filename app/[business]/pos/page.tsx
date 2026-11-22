@@ -59,7 +59,7 @@ import {
   type BusinessApproverItem,
 } from "@/lib/businessUsersApi";
 import { getProducts, type CatalogProduct } from "@/lib/catalogApi";
-import { getExchangeRate, convertAmount, formatMoney } from "@/lib/currency";
+import { getExchangeRate, convertAmount, convertPayment, formatMoney } from "@/lib/currency";
 import {
   DEFAULT_PRODUCT_AVATAR_PATH,
   resolveProductImageUrl,
@@ -67,6 +67,8 @@ import {
 import {
   checkoutPosSale,
   createPosParkedCart,
+  updatePosParkedCart,
+  setPosParkedDeposit,
   deletePosParkedCart,
   getPosPaymentMethods,
   listPosParkedCarts,
@@ -122,6 +124,8 @@ type ParkedCart = {
   note: string;
   createdAt: string;
   items: CartItem[];
+  version?: number;
+  depositTotals?: { HTG: number; USD: number };
 };
 type PaymentMethodId =
   | "cash"
@@ -299,6 +303,8 @@ function fromApiParkedCart(cart: PosParkedCartApi): ParkedCart {
     note: cart.note,
     createdAt: cart.createdAt,
     items: cart.items,
+    version: cart.version,
+    depositTotals: cart.depositTotals,
   };
 }
 export default function PosPage() {
@@ -335,10 +341,12 @@ export default function PosPage() {
     {},
   );
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>([]);
+  const [activeParked, setActiveParked] = useState<ParkedCart | null>(null);
   const [useRemoteParked, setUseRemoteParked] = useState(false);
   const [parkNote, setParkNote] = useState("");
   const [parkModalOpen, setParkModalOpen] = useState(false);
   const [parkSaving, setParkSaving] = useState(false);
+  const parkCreateId = useRef<string | null>(null);
   const [parkDepositInput, setParkDepositInput] = useState("");
   const [parkDepositCurrency, setParkDepositCurrency] = useState<"HTG" | "USD">("HTG");
   const [depositDrafts, setDepositDrafts] = useState<Record<string, { amount: string; currency: "HTG" | "USD"; requestKey?: string }>>({});
