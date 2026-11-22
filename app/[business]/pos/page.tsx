@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import BarcodeScannerModal from "@/components/BarcodeScannerModal";
+import ParkedCartsPanel from "@/components/pos/ParkedCartsPanel";
 import SensitiveActionApprovalModal, {
   type SensitiveActionApproval,
 } from "@/components/SensitiveActionApprovalModal";
@@ -46,6 +47,11 @@ import { printReceipt, type PosReceipt } from "@/lib/posReceipt";
 import { listPrintTemplates } from "@/lib/printTemplatesApi";
 import { defaultPrintTemplate, safePrintTemplate, type PrintPaper, type PrintTemplate } from "@/lib/printTemplateModel";
 import { receiptLabels } from "@/lib/receiptI18n";
+import { posCompactLabels } from "@/lib/posCompactI18n";
+import { listUnpostedDeposits, recordUnpostedDeposit,
+  type UnpostedDepositMemo, type UnpostedDepositSummary } from "@/lib/posDepositMemosApi";
+import { parseDepositAmount } from "@/lib/posDepositMemoUtils";
+import { mergeParkedForBranch, visibleParkedForBranch } from "@/lib/posParkedBranchStorage";
 import { useAppLocale } from "@/context/LocaleContext";
 import {
   listBusinessApprovers,
@@ -112,6 +118,7 @@ function computeItemDiscount(
 }
 type ParkedCart = {
   id: string;
+  branchId?: string;
   note: string;
   createdAt: string;
   items: CartItem[];
@@ -301,6 +308,7 @@ export default function PosPage() {
   const { user, activeBusiness, permissions } = useAuth();
   const { locale } = useAppLocale();
   const receiptText = receiptLabels(locale);
+  const ui = posCompactLabels(locale);
   const { currentBranch, loading: branchLoading } = useBranch();
   const branchId = currentBranch?.id;
   const [products, setProducts] = useState<CatalogProduct[]>([]);
@@ -329,6 +337,16 @@ export default function PosPage() {
   const [parkedCarts, setParkedCarts] = useState<ParkedCart[]>([]);
   const [useRemoteParked, setUseRemoteParked] = useState(false);
   const [parkNote, setParkNote] = useState("");
+  const [parkDepositInput, setParkDepositInput] = useState("");
+  const [parkDepositCurrency, setParkDepositCurrency] = useState<"HTG" | "USD">("HTG");
+  const [depositDrafts, setDepositDrafts] = useState<Record<string, { amount: string; currency: "HTG" | "USD"; requestKey?: string }>>({});
+  const [deposits, setDeposits] = useState<UnpostedDepositMemo[]>([]);
+  const [depositTotals, setDepositTotals] = useState<UnpostedDepositSummary["totals"]>({ HTG: "0.00", USD: "0.00" });
+  const [depositReadStatus, setDepositReadStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [depositSavingId, setDepositSavingId] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState<ParkedCart | null>(null);
+  const [discardingId, setDiscardingId] = useState<string | null>(null);
+
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS,
   );
@@ -657,13 +675,14 @@ export default function PosPage() {
   useEffect(() => {
     let mounted = true;
     async function loadParkedCarts() {
-      if (!businessSlug) return;
+      if (!businessSlug || !branchId || branchLoading) return;
+      setParkedCarts([]);
       try {
         const remote = await listPosParkedCarts(businessSlug);
         if (!mounted) return;
         if (remote) {
           setUseRemoteParked(true);
-          setParkedCarts(remote.map(fromApiParkedCart));
+          setParkedCarts(remote.map(item => ({ ...fromApiParkedCart(item), branchId })));
           return;
         }
       } catch (e) {
@@ -678,7 +697,9 @@ export default function PosPage() {
       }
       try {
         const parsed = JSON.parse(raw);
-        setParkedCarts(Array.isArray(parsed) ? parsed : []);
+        setParkedCarts(Array.isArray(parsed)
+          ? visibleParkedForBranch(parsed as ParkedCart[], branchId, Boolean(currentBranch?.isMain))
+          : []);
       } catch {
         setParkedCarts([]);
       }
@@ -687,13 +708,47 @@ export default function PosPage() {
     return () => {
       mounted = false;
     };
-  }, [businessSlug, pushError]);
+  }, [businessSlug, branchId, branchLoading, currentBranch?.isMain, pushError]);
+  const reloadDepositMemos = useCallback(async () => {
+    if (!businessSlug || !branchId) return;
+    const result = await listUnpostedDeposits(businessSlug);
+    setDeposits(result.data);
+    setDepositTotals(result.totals);
+    setDepositReadStatus("ready");
+  }, [businessSlug, branchId]);
+
+  useEffect(() => {
+    let active = true;
+    setDeposits([]);
+    setDepositTotals({ HTG: "0.00", USD: "0.00" });
+    setDepositReadStatus("unavailable");
+    if (!businessSlug || !branchId || !isOnline) return undefined;
+    setDepositReadStatus("loading");
+    void listUnpostedDeposits(businessSlug).then(result => {
+      if (active) {
+        setDeposits(result.data);
+        setDepositTotals(result.totals);
+        setDepositReadStatus("ready");
+      }
+    }).catch(() => {
+      // A read error must not block sales or imply that no deposits exist.
+      if (active) setDepositReadStatus("unavailable");
+    }).finally(() => {});
+    return () => { active = false; };
+  }, [businessSlug, branchId, isOnline]);
+
   function saveLocalParked(next: ParkedCart[]) {
+    const key = `pos_parked_carts:${businessSlug}`;
+    let all: ParkedCart[] = [];
+    try {
+      const raw = safeGetItem(key);
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      all = Array.isArray(parsed) ? parsed : [];
+    } catch { /* Damaged local cache must not block parking. */ }
     setParkedCarts(next);
-    safeSetItem(
-      `pos_parked_carts:${businessSlug}`,
-      JSON.stringify(next),
-    );
+    safeSetItem(key, JSON.stringify(
+      mergeParkedForBranch(all, next, branchId ?? "", Boolean(currentBranch?.isMain)),
+    ));
   }
   const getSaleUnitPrice = useCallback((product: CatalogProduct): number => {
     return convertAmount(product.price, product.priceCurrency, saleCurrency, {
@@ -794,6 +849,17 @@ export default function PosPage() {
     () => cart.reduce((sum, item) => sum + item.qty, 0),
     [cart],
   );
+  const depositByCart = useMemo(() => {
+    const grouped: Record<string, { HTG: number; USD: number }> = {};
+    for (const memo of deposits) {
+      const amount = Number(memo.amount);
+      if (!Number.isFinite(amount) || amount < 0) continue;
+      const sum = grouped[memo.cart_reference] ?? { HTG: 0, USD: 0 };
+      sum[memo.currency] = Math.round((sum[memo.currency] + amount) * 100) / 100;
+      grouped[memo.cart_reference] = sum;
+    }
+    return grouped;
+  }, [deposits]);
   const canApplyDiscount = hasPermission(permissions, "billing.discount");
   useEffect(() => {
     if (!businessSlug || typeof window === "undefined") return;
@@ -980,46 +1046,125 @@ export default function PosPage() {
     setDiscountEditorProductId(null);
     setError("");
   }
+  async function recordDepositForCart(
+    cartReference: string, draft: { amount: string; currency: "HTG" | "USD"; requestKey?: string },
+  ): Promise<boolean> {
+    const amount = parseDepositAmount(draft.amount);
+    if (!amount) {
+      pushError(ui.invalidAmount);
+      return false;
+    }
+    if (!isOnline || !branchId) {
+      pushError(ui.noNetwork);
+      return false;
+    }
+    const requestKey = draft.requestKey || (typeof crypto !== "undefined" ? crypto.randomUUID?.() : undefined);
+    if (!requestKey) {
+      pushError(ui.noNetwork);
+      return false;
+    }
+    setDepositDrafts(previous => ({
+      ...previous,
+      [cartReference]: { ...draft, requestKey },
+    }));
+    setDepositSavingId(cartReference);
+    try {
+      await recordUnpostedDeposit(businessSlug, {
+        cart_reference: cartReference,
+        amount,
+        currency: draft.currency,
+        request_key: requestKey,
+        note: parkedCarts.find(item => item.id === cartReference)?.note ?? parkNote.trim(),
+      });
+      await reloadDepositMemos();
+      setDepositDrafts(previous => ({
+        ...previous, [cartReference]: { amount: "", currency: draft.currency },
+      }));
+      pushNotice(ui.recorded, "success");
+      return true;
+    } catch (error) {
+      pushError(getErrorMessage(error));
+      return false;
+    } finally {
+      setDepositSavingId(null);
+    }
+  }
+
   async function parkCurrentCart() {
+    if (!branchId || branchLoading) {
+      pushError(ui.noNetwork);
+      return;
+    }
     if (cart.length === 0) {
       pushError("Le panier est vide.");
       return;
     }
+    const hasDeposit = parkDepositInput.trim().length > 0;
+    const normalizedDeposit = hasDeposit ? parseDepositAmount(parkDepositInput) : null;
+    if (hasDeposit && !normalizedDeposit) {
+      pushError(ui.invalidAmount);
+      return;
+    }
+    if (hasDeposit && (!isOnline || !branchId)) {
+      pushError(ui.noNetwork);
+      return;
+    }
+    if (hasDeposit && !hasPermission(permissions, "billing.manage")) {
+      pushError(ui.noRights);
+      return;
+    }
     const parked: ParkedCart = {
-      id: `P-${Date.now().toString(36).toUpperCase()}`,
+      id: `P-${generateClientId()}`,
+      branchId,
       note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
       createdAt: new Date().toISOString(),
       items: sourceCart,
     };
     try {
+      let saved = parked;
       if (useRemoteParked) {
         const created = await createPosParkedCart(businessSlug, {
           note: parked.note,
           items: parked.items,
         });
         if (created) {
-          setParkedCarts((prev) => [fromApiParkedCart(created), ...prev]);
+          saved = fromApiParkedCart(created);
+          setParkedCarts((prev) => [saved, ...prev]);
         } else {
           const next = [parked, ...parkedCarts];
           saveLocalParked(next);
           setUseRemoteParked(false);
         }
       } else {
-        const next = [parked, ...parkedCarts];
-        saveLocalParked(next);
+        saveLocalParked([parked, ...parkedCarts]);
       }
       setCart([]);
       setParkNote("");
       setCashReceivedInput("");
       setError("");
-      pushNotice(`Panier mis en attente: ${parked.note}.`, "info");
-    } catch (e) {
-      pushError(getErrorMessage(e));
+      if (normalizedDeposit) {
+        const ok = await recordDepositForCart(saved.id, {
+          amount: normalizedDeposit,
+          currency: parkDepositCurrency,
+        });
+        if (ok) setParkDepositInput("");
+        else {
+          setDepositDrafts(prev => ({
+            ...prev,
+            [saved.id]: { ...prev[saved.id], amount: normalizedDeposit, currency: parkDepositCurrency },
+          }));
+          pushNotice(ui.parkFailed, "warning");
+        }
+      } else {
+        pushNotice(ui.savedPending, "info");
+      }
+    } catch (error) {
+      pushError(getErrorMessage(error));
     }
   }
   async function resumeParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
-    if (!found) return;
+    if (!found || !branchId) return;
     setCart(found.items);
     setParkNote(found.note ?? "");
     try {
@@ -1031,13 +1176,16 @@ export default function PosPage() {
       setParkedCarts(next);
       if (!useRemoteParked) saveLocalParked(next);
       setError("");
-      pushNotice(`Panier repris: ${found.note}.`, "success");
+      pushNotice(depositByCart[parkId]?.HTG || depositByCart[parkId]?.USD
+        ? ui.alreadyUnposted : `Panier repris: ${found.note}.`, "info");
     } catch (e) {
       pushError(getErrorMessage(e));
     }
   }
   async function discardParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
+    if (!found || depositSavingId === parkId) return;
+    setDiscardingId(parkId);
     try {
       if (useRemoteParked) {
         const deleted = await deletePosParkedCart(businessSlug, parkId);
@@ -1047,9 +1195,13 @@ export default function PosPage() {
       setParkedCarts(next);
       if (!useRemoteParked) saveLocalParked(next);
       setError("");
-      if (found) pushNotice(`Panier supprime: ${found.note}.`, "info");
+      if (found) pushNotice(depositByCart[parkId]?.HTG || depositByCart[parkId]?.USD
+        ? ui.alreadyUnposted : `Panier supprime: ${found.note}.`, "info");
+      setConfirmDiscard(null);
     } catch (e) {
       pushError(getErrorMessage(e));
+    } finally {
+      setDiscardingId(null);
     }
   }
   async function printSaleReceipt(sale: CompletedSale) {
@@ -1378,24 +1530,16 @@ export default function PosPage() {
     await runCheckoutSale();
   }
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {" "}
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
         {" "}
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           {" "}
-          <div>
-            {" "}
-            <h1 className="text-2xl font-bold text-slate-900">
-              Nouvelle vente
-            </h1>{" "}
-            <p className="text-slate-500 text-sm mt-1">
-              {" "}
-              Caissier:{" "}
-              <span className="font-semibold text-slate-700">
-                {getStringField(user, ["name"], "Utilisateur")}
-              </span>{" "}
-            </p>{" "}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+            <a href="#pos-cart-section" className="rounded-lg bg-indigo-50 px-3 py-2 font-bold text-indigo-800 hover:bg-indigo-100">
+              {ui.cart} · {itemCount} · {formatMoney(grandTotal, saleCurrency)}
+            </a>
             {!isOnline ? (
               <p className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
                 <AlertCircle className="h-3.5 w-3.5" />
@@ -1539,9 +1683,9 @@ export default function PosPage() {
           </section>
         </div>
       ) : null}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(410px,2fr)] 2xl:grid-cols-[minmax(0,5fr)_minmax(480px,3fr)]">
         {" "}
-        <section className="xl:col-span-2 space-y-4">
+        <section className="min-w-0 space-y-3">
           {" "}
           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
             {" "}
@@ -1597,7 +1741,7 @@ export default function PosPage() {
                 Aucun produit trouve.
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                 {" "}
                 {visibleProducts.map((product) => {
                   const productId = String(product.id);
@@ -1613,17 +1757,10 @@ export default function PosPage() {
                   return (
                     <article
                       key={productId}
-                      className={`rounded-xl border p-2 space-y-1.5 ${canSell ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-80"}`}
+                      className={`rounded-xl border p-2 space-y-1 ${canSell ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-80"}`}
                     >
                       {" "}
                       <div className="flex flex-col items-start justify-between gap-2">
-                        <div className="w-full flex justify-end">
-                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 sm:px-2 sm:text-[11px]">
-                          {" "}
-                          {product.type}{" "}
-                        </span>{" "}
-                        </div>
-                        {" "}
                         <div className="min-w-0 w-full flex flex-col gap-1.5">
                            <div className="min-w-0">
                             {" "}
@@ -1662,7 +1799,7 @@ export default function PosPage() {
                           </div>
                           {product.priceCurrency !== saleCurrency ? (
                             <div className="whitespace-normal [overflow-wrap:anywhere] text-[10px] text-slate-500">
-                              Facture: {formatMoney(getSaleUnitPrice(product), saleCurrency)}
+                              {ui.invoicePrice}: {formatMoney(getSaleUnitPrice(product), saleCurrency)}
                             </div>
                           ) : null}
                         </div>{" "}
@@ -1700,9 +1837,7 @@ export default function PosPage() {
                       </div>
                       <div className="text-[10px] text-slate-500">
                         {" "}
-                        Stock:{" "}
-                        {product.type === "service" ? "N/A" : product.stock} |
-                        Cat: {product.category}{" "}
+                        {product.type === "service" ? "" : `${ui.stock}: ${product.stock}`}{" "}
                       </div>{" "}
                       <button
                         onClick={() => addToCart(product, requestedQty)}
@@ -1710,7 +1845,7 @@ export default function PosPage() {
                         className="w-full rounded-lg brand-primary-btn py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                       >
                         {" "}
-                        Ajouter au panier{" "}
+                        <Plus className="mr-1 inline-block h-3.5 w-3.5" />{ui.add}{" "}
                       </button>{" "}
                     </article>
                   );
@@ -1719,18 +1854,18 @@ export default function PosPage() {
             )}{" "}
           </div>{" "}
         </section>{" "}
-        <aside id="pos-cart-section" className="space-y-4">
+        <aside id="pos-cart-section" className="min-w-0 space-y-3 scroll-mt-4">
           {" "}
-          <section className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+          <section className="bg-white rounded-2xl border-2 border-indigo-200 shadow-md">
             {" "}
-            <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between">
               {" "}
-              <div className="font-bold text-slate-900">Panier</div>{" "}
+              <div className="text-base font-extrabold text-indigo-950">{ui.cart}</div>{" "}
               <div className="text-sm text-slate-500">
                 {itemCount} article(s)
               </div>{" "}
             </div>{" "}
-            <div className="p-4 space-y-3 max-h-[320px] overflow-y-auto">
+            <div className="p-3 space-y-2 min-h-[140px] max-h-[45vh] overflow-y-auto">
               {" "}
               {cart.length === 0 ? (
                 <div className="text-sm text-slate-500 text-center py-6">
@@ -1878,7 +2013,7 @@ export default function PosPage() {
                 })
               )}{" "}
             </div>{" "}
-            <div className="p-4 border-t space-y-1 text-sm">
+            <div className="p-3 border-t border-indigo-100 bg-indigo-50/50 space-y-1 text-sm">
               {" "}
               <div className="flex justify-between text-slate-600">
                 {" "}
@@ -1909,7 +2044,7 @@ export default function PosPage() {
                   <span>- {formatMoney(couponDiscountAmount, saleCurrency)}</span>{" "}
                 </div>
               ) : null}{" "}
-              <div className="flex justify-between text-lg font-bold text-slate-900 pt-1">
+              <div className="flex justify-between gap-2 text-xl font-extrabold text-indigo-950 pt-2 border-t border-indigo-200">
                 {" "}
                 <span>Total</span> <span>{formatMoney(grandTotal, saleCurrency)}</span>{" "}
               </div>{" "}
@@ -2194,81 +2329,35 @@ export default function PosPage() {
               {checkoutLoading ? "Traitement..." : "Passer a la caisse"}{" "}
             </button>{" "}
           </section>{" "}
-          <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
-            {" "}
-            <div className="font-bold text-slate-900">
-              Panier en attente
-            </div>{" "}
-            <input
-              value={parkNote}
-              onChange={(event) => setParkNote(event.target.value)}
-              placeholder="Note (ex: Client table 5)"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />{" "}
-            <button
-              onClick={() => {
-                void parkCurrentCart();
-              }}
-              disabled={cart.length === 0}
-              className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-            >
-              {" "}
-              <PauseCircle className="h-4 w-4" /> Mettre le panier en
-              attente{" "}
-            </button>{" "}
-            {parkedCarts.length > 0 ? (
-              <div className="space-y-2 max-h-[180px] overflow-y-auto">
-                {" "}
-                {parkedCarts.map((parked) => (
-                  <div
-                    key={parked.id}
-                    className="rounded-xl border border-slate-200 p-2.5"
-                  >
-                    {" "}
-                    <div className="text-sm font-semibold text-slate-800">
-                      {parked.note}
-                    </div>{" "}
-                    <div className="text-xs text-slate-500">
-                      {" "}
-                      {parked.items.reduce(
-                        (sum, item) => sum + item.qty,
-                        0,
-                      )}{" "}
-                      article(s) -{" "}
-                      {new Date(parked.createdAt).toLocaleTimeString(
-                        "fr-FR",
-                      )}{" "}
-                    </div>{" "}
-                    <div className="mt-2 flex items-center gap-2">
-                      {" "}
-                      <button
-                        onClick={() => {
-                          void resumeParkedCart(parked.id);
-                        }}
-                        className="flex-1 rounded-lg brand-primary-btn text-white text-xs font-semibold py-1.5 inline-flex items-center justify-center gap-1"
-                      >
-                        {" "}
-                        <PlayCircle className="h-3.5 w-3.5" /> Reprendre{" "}
-                      </button>{" "}
-                      <button
-                        onClick={() => {
-                          void discardParkedCart(parked.id);
-                        }}
-                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                      >
-                        {" "}
-                        Suppr{" "}
-                      </button>{" "}
-                    </div>{" "}
-                  </div>
-                ))}{" "}
-              </div>
-            ) : (
-              <div className="text-xs text-slate-500">
-                Aucun panier en attente.
-              </div>
-            )}{" "}
-          </section>{" "}
+          <ParkedCartsPanel
+            locale={locale}
+            count={cart.length}
+            carts={parkedCarts}
+            note={parkNote}
+            onNote={setParkNote}
+            depositAmount={parkDepositInput}
+            onDepositAmount={setParkDepositInput}
+            depositCurrency={parkDepositCurrency}
+            onDepositCurrency={setParkDepositCurrency}
+            drafts={depositDrafts}
+            onDraft={(id, value) => setDepositDrafts(prev => ({ ...prev, [id]: value }))}
+            totals={depositTotals}
+            perCart={depositByCart}
+            memos={deposits}
+            status={depositReadStatus}
+            savingDepositId={depositSavingId}
+            canRecord={hasPermission(permissions, "billing.manage")}
+            online={isOnline}
+            branchReady={Boolean(branchId)}
+            onPark={() => void parkCurrentCart()}
+            onResume={id => void resumeParkedCart(id)}
+            onRecord={(id, draft) => void recordDepositForCart(id, draft)}
+            onRequestDelete={id => setConfirmDiscard(parkedCarts.find(park => park.id === id) ?? null)}
+            confirming={confirmDiscard}
+            deletingId={discardingId}
+            onCancelDelete={() => setConfirmDiscard(null)}
+            onConfirmDelete={id => void discardParkedCart(id)}
+          />
         </aside>{" "}
       </div>{" "}
       <SensitiveActionApprovalModal
