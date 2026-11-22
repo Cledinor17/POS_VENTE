@@ -18,6 +18,9 @@ import {
 import { formatExchangeRateSummary } from "@/lib/currency";
 import PhoneField from "@/components/PhoneField";
 import DataSpaceSettings from "../DataSpaceSettings";
+import BusinessCycleInitializer from "../BusinessCycleInitializer";
+import { useAuth } from "@/context/AuthContext";
+import { useBusinessPermissions } from "@/lib/useBusinessPermissions";
 
 const BUSINESS_TYPE_LABELS: Record<BusinessType, string> = {
   hotel: "Hotel",
@@ -190,6 +193,10 @@ export default function BusinessSettingsPanel({ embedded = false }: SettingsPane
   const { allowed, loading: permLoading } = usePermissionGuard("business.read");
   const params = useParams<{ business: string }>();
   const business = params?.business ?? "";
+  const { user } = useAuth();
+  const { currentBusinessEntry } = useBusinessPermissions(business);
+  const canInitialize = currentBusinessEntry?.slug === business
+    && (currentBusinessEntry?.pivot?.role === "owner" || user?.is_platform_admin === true);
 
   const [form, setForm] = useState<BusinessFormState>(initialFormState);
   const [savedBusinessType, setSavedBusinessType] = useState<BusinessType>("other");
@@ -749,6 +756,7 @@ export default function BusinessSettingsPanel({ embedded = false }: SettingsPane
         </div>
       </form>
       <DataSpaceSettings business={business} />
+      {canInitialize ? <BusinessCycleInitializer business={business} /> : null}
     </div>
   );
 }

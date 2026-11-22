@@ -55,6 +55,13 @@ test("business configuration does not display hotel modules or currency advice f
       "@/lib/currency": { formatExchangeRateSummary: () => "HTG / USD" },
       "@/components/PhoneField": () => null,
       "../DataSpaceSettings": () => null,
+      "../BusinessCycleInitializer": () => null,
+      "@/context/AuthContext": { useAuth: () => ({ user: { is_platform_admin: false } }) },
+      "@/lib/useBusinessPermissions": {
+        useBusinessPermissions: () => ({
+          currentBusinessEntry: { slug: "demo", pivot: { role: "manager" } },
+        }),
+      },
     }).default;
     const dom = parse(renderToStaticMarkup(React.createElement(Panel, { embedded: true })));
     // The activity selector still allows the owner to change to another business type.

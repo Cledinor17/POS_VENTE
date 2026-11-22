@@ -39,6 +39,7 @@ function harness({ permissions = access.ALL_PERMISSIONS, platform = false, local
       return [state[index], value => { state[index] = typeof value === "function" ? value(state[index]) : value; }];
     } },
     "next-intl": { useLocale: () => locale, useTranslations: () => t },
+    "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "next/dynamic": loader => {
       // Panel boundaries are stubs: no API calls or business writes in these navigation tests.
       const name = loader.toString().match(/panels\/([\w]+)/)?.[1];
