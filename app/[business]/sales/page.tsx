@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { printReceipt, type ReceiptPaper } from "@/lib/posReceipt";
+import { listPrintTemplates } from "@/lib/printTemplatesApi";
 import { receiptLabels } from "@/lib/receiptI18n";
 import { useAppLocale } from "@/context/LocaleContext";
 import {
@@ -205,7 +206,13 @@ export default function SalesPage() {
       if (!detail.receipt) {
         throw new Error("Les donnees necessaires a la reimpression de ce ticket sont indisponibles.");
       }
-      printReceipt({ ...detail.receipt, locale }, { paper });
+      // Use the business's CURRENT template on reprints. A temporary API
+      // outage must not prevent printing an existing paid receipt.
+      const selected = await listPrintTemplates(businessSlug).then(
+        result => result.effective[paper],
+        () => undefined,
+      );
+      printReceipt({ ...detail.receipt, locale }, { paper, template: selected });
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
