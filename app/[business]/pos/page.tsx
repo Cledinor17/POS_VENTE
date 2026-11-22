@@ -326,6 +326,7 @@ export default function PosPage() {
   const [query, setQuery] = useState("");
   useSearchFromUrl(setQuery);
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [productPageSelection, setProductPageSelection] = useState({ key: "", page: 1 });
   const [sourceCart, setCart] = useState<CartItem[]>([]);
   const [paymentCurrency, setPaymentCurrency] = useState<"USD" | "HTG">("HTG");
   const pricedCart = useMemo(() => pricePosCart(sourceCart, paymentCurrency, businessSettings?.currency || "HTG", {
@@ -869,6 +870,18 @@ export default function PosPage() {
   const visibleProducts = useMemo(
     () => filteredProducts.filter((item) => !hiddenProductIds[String(item.id)]),
     [filteredProducts, hiddenProductIds],
+  );
+  const productPageSize = 10;
+  const productFilterKey = JSON.stringify([query.trim().toLowerCase(), categoryFilter]);
+  const productPageCount = Math.max(1, Math.ceil(visibleProducts.length / productPageSize));
+  const currentProductPage = productPageSelection.key === productFilterKey
+    ? Math.min(Math.max(1, productPageSelection.page), productPageCount)
+    : 1;
+  const paginatedProducts = useMemo(
+    () => visibleProducts.slice(
+      (currentProductPage - 1) * productPageSize, currentProductPage * productPageSize,
+    ),
+    [visibleProducts, currentProductPage],
   );
   const itemDiscountTotal = useMemo(
     () =>
@@ -1852,7 +1865,10 @@ export default function PosPage() {
               <input
                 ref={queryInputRef}
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setProductPageSelection({ key: "", page: 1 });
+                }}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
                   if (tryAddScannedProduct(query)) {
@@ -1874,7 +1890,10 @@ export default function PosPage() {
             </div>{" "}
             <select
               value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value)}
+              onChange={(event) => {
+                setCategoryFilter(event.target.value);
+                setProductPageSelection({ key: "", page: 1 });
+              }}
               className="w-full md:w-72 rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
               {" "}
@@ -1900,7 +1919,7 @@ export default function PosPage() {
             ) : (
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4">
                 {" "}
-                {visibleProducts.map((product) => {
+                {paginatedProducts.map((product) => {
                   const productId = String(product.id);
                   const imageSrc = brokenImages[productId]
                     ? DEFAULT_PRODUCT_AVATAR_PATH
@@ -2458,7 +2477,12 @@ export default function PosPage() {
                 Caisse fermee - ouvrez-la ci-dessus pour pouvoir encaisser.
               </div>
             ) : null}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2 border-t border-slate-200 pt-3">
+              <button type="button" onClick={() => void checkoutSale()}
+                disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
+                className="w-full rounded-xl brand-primary-btn px-3 py-3 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
+                {checkoutLoading ? "Traitement..." : "Passer à la caisse"}
+              </button>
               <button type="button"
                 onClick={() => {
                   setParkDepositInput("");
@@ -2466,13 +2490,8 @@ export default function PosPage() {
                   setParkModalOpen(true);
                 }}
                 disabled={cart.length === 0 || branchLoading || !branchId || parkSaving}
-                className="inline-flex min-w-0 items-center justify-center gap-1 rounded-xl border-2 border-indigo-200 bg-indigo-50 px-2 py-3 text-xs font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 sm:text-sm">
-                <PauseCircle className="h-4 w-4 shrink-0" />{ui.park}
-              </button>
-              <button type="button" onClick={() => void checkoutSale()}
-                disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
-                className="min-w-0 rounded-xl brand-primary-btn px-2 py-3 text-xs font-bold text-white disabled:opacity-60 disabled:cursor-not-allowed sm:text-sm">
-                {checkoutLoading ? "Traitement..." : "Passer à la caisse"}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-indigo-200 bg-indigo-50 px-3 py-2.5 text-sm font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50">
+                <PauseCircle className="h-4 w-4 shrink-0" />{activeParked ? "Remettre la fiche en attente" : ui.park}
               </button>
             </div>{" "}
           </section>{" "}
