@@ -830,6 +830,25 @@ export default function PosPage() {
       }),
     [businessSettings, remainingAfterPoints, paymentCurrency, saleCurrency],
   );
+  // A parked-tab ceiling is a spending guard, not an accounting entry.
+  const spendingLimitInSaleCurrency = activeSpendingLimit === null ? null : convertAmount(
+    activeSpendingLimit, activeSpendingCurrency, saleCurrency,
+    {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+      exchangeBuyRate: businessSettings?.exchange_buy_rate,
+      exchangeSellRate: businessSettings?.exchange_sell_rate,
+    },
+  );
+  const cartGrossTotal = useCallback((items: CartItem[]): number => {
+    const priced = pricePosCart(items, paymentCurrency, businessSettings?.currency || "HTG", {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+      exchangeBuyRate: businessSettings?.exchange_buy_rate,
+      exchangeSellRate: businessSettings?.exchange_sell_rate,
+    });
+    return priced.items.reduce((sum, item) => sum + item.qty * item.price * (1 + item.taxRate / 100), 0);
+  }, [businessSettings, paymentCurrency]);
   const cashReceived = safeNumber(cashReceivedInput);
   const cashDelta = cashReceived - amountDueInPaymentCurrency;
   const cashMissing = Math.max(-cashDelta, 0);
@@ -871,19 +890,23 @@ export default function PosPage() {
           pushError("Stock insuffisant pour ce produit.");
           return prev;
         }
-        qtyAdded = qtyToAdd;
-        return prev.map((item) =>
+        const next = prev.map((item) =>
           item.productId === String(product.id)
             ? { ...item, qty: item.qty + qtyToAdd }
             : item,
         );
+        if (spendingLimitInSaleCurrency !== null && cartGrossTotal(next) > spendingLimitInSaleCurrency + 0.001) {
+          pushError("Plafond de consommation atteint : impossible d'ajouter cet article.");
+          return prev;
+        }
+        qtyAdded = qtyToAdd;
+        return next;
       }
       if (stockLimit < qtyToAdd) {
         pushError("Stock indisponible pour ce produit.");
         return prev;
       }
-      qtyAdded = qtyToAdd;
-      return [
+      const next = [
         ...prev,
         {
           productId: String(product.id),
@@ -898,6 +921,12 @@ export default function PosPage() {
           currency: product.priceCurrency,
         },
       ];
+      if (spendingLimitInSaleCurrency !== null && cartGrossTotal(next) > spendingLimitInSaleCurrency + 0.001) {
+        pushError("Plafond de consommation atteint : impossible d'ajouter cet article.");
+        return prev;
+      }
+      qtyAdded = qtyToAdd;
+      return next;
     });
     if (qtyAdded > 0) {
       pushNotice(
@@ -905,7 +934,7 @@ export default function PosPage() {
         "success",
       );
     }
-  }, [pushError, pushNotice]);
+  }, [pushError, pushNotice, spendingLimitInSaleCurrency, cartGrossTotal]);
   const tryAddScannedProduct = useCallback((rawCode: string): boolean => {
     const found = resolveScannedProduct(scanIndex, rawCode);
     if (!found) return false;
@@ -944,8 +973,8 @@ export default function PosPage() {
       const current = cart.find((item) => item.productId === productId);
       if (current) pushNotice(`${current.name} retire du panier.`, "info");
     }
-    setCart((prev) =>
-      prev.flatMap((item) => {
+    setCart((prev) => {
+      const next = prev.flatMap((item) => {
         if (item.productId !== productId) return [item];
         if (nextQty <= 0) return [];
         if (item.type === "product" && nextQty > item.stock) {
@@ -953,8 +982,13 @@ export default function PosPage() {
           return [item];
         }
         return [{ ...item, qty: nextQty }];
-      }),
-    );
+      });
+      if (spendingLimitInSaleCurrency !== null && cartGrossTotal(next) > spendingLimitInSaleCurrency + 0.001) {
+        pushError("Plafond de consommation atteint : réduire la quantité.");
+        return prev;
+      }
+      return next;
+    });
   }
   function removeLine(productId: string) {
     const current = cart.find((item) => item.productId === productId);
@@ -985,14 +1019,36 @@ export default function PosPage() {
       pushError("Le panier est vide.");
       return;
     }
+    const enteredLimit = spendingLimitInput.trim() === "" ? null : Number(spendingLimitInput);
+    if (enteredLimit !== null && (!Number.isFinite(enteredLimit) || enteredLimit <= 0)) {
+      pushError("Le plafond de consommation doit être un montant positif.");
+      return;
+    }
+    const limit = activeSpendingLimit ?? enteredLimit;
+    const limitCurrency = activeSpendingLimit !== null ? activeSpendingCurrency : saleCurrency;
+    const effectiveLimit = limit === null ? null : convertAmount(limit, limitCurrency, saleCurrency, {
+      exchangeRateDirection: businessSettings?.exchange_rate_direction,
+      exchangeRateValue: businessSettings?.exchange_rate_value,
+      exchangeBuyRate: businessSettings?.exchange_buy_rate,
+      exchangeSellRate: businessSettings?.exchange_sell_rate,
+    });
+    if (effectiveLimit !== null && cartGrossTotal(sourceCart) > effectiveLimit + 0.001) {
+      pushError("La fiche dépasse le plafond. Réduire les articles avant de la mettre en attente.");
+      return;
+    }
     const parked: ParkedCart = {
       id: `P-${Date.now().toString(36).toUpperCase()}`,
       note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
       createdAt: new Date().toISOString(),
       items: sourceCart,
+      customerName: customerNameForSale || undefined,
+      customerId: selectedCustomer?.id ?? null,
+      reservationId: selectedReservationId,
+      spendingLimit: limit,
+      spendingCurrency: limitCurrency,
     };
     try {
-      if (useRemoteParked) {
+      if (useRemoteParked && !parked.customerName && !parked.reservationId && parked.spendingLimit === null) {
         const created = await createPosParkedCart(businessSlug, {
           note: parked.note,
           items: parked.items,
@@ -1011,6 +1067,12 @@ export default function PosPage() {
       setCart([]);
       setParkNote("");
       setCashReceivedInput("");
+      setSpendingLimitInput("");
+      setActiveSpendingLimit(null);
+      setSelectedReservationId(null);
+      setSelectedCustomer(null);
+      setFreeCustomerName("");
+      setCustomerQuery("");
       setError("");
       pushNotice(`Panier mis en attente: ${parked.note}.`, "info");
     } catch (e) {
@@ -1020,8 +1082,19 @@ export default function PosPage() {
   async function resumeParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
     if (!found) return;
+    if (cart.length > 0) {
+      pushError("Enregistrez ou videz le panier courant avant de reprendre une autre fiche.");
+      return;
+    }
     setCart(found.items);
     setParkNote(found.note ?? "");
+    setFreeCustomerName(found.customerName ?? "");
+    setCustomerQuery("");
+    setSelectedCustomer(null);
+    setSelectedReservationId(found.reservationId ?? null);
+    setActiveSpendingLimit(found.spendingLimit ?? null);
+    setActiveSpendingCurrency(found.spendingCurrency || saleCurrency);
+    setSpendingLimitInput(found.spendingLimit == null ? "" : String(found.spendingLimit));
     try {
       if (useRemoteParked) {
         const deleted = await deletePosParkedCart(businessSlug, parkId);
