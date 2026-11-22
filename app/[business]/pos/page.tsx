@@ -115,6 +115,7 @@ type ParkedCart = {
   items: CartItem[];
   customerName?: string;
   customerId?: string | number | null;
+  registeredCustomer?: CustomerItem | null;
   reservationId?: number | null;
   // Optional spending limit only. This field is NOT a recorded payment.
   spendingLimit?: number | null;
@@ -1046,6 +1047,7 @@ export default function PosPage() {
       items: sourceCart,
       customerName: customerNameForSale || undefined,
       customerId: selectedCustomer?.id ?? null,
+      registeredCustomer: selectedCustomer,
       reservationId: selectedReservationId,
       spendingLimit: limit,
       spendingCurrency: limitCurrency,
@@ -1094,7 +1096,7 @@ export default function PosPage() {
     setParkNote(found.note ?? "");
     setFreeCustomerName(found.customerName ?? "");
     setCustomerQuery("");
-    setSelectedCustomer(null);
+    setSelectedCustomer(found.registeredCustomer ?? null);
     setSelectedReservationId(found.reservationId ?? null);
     setActiveSpendingLimit(found.spendingLimit ?? null);
     setActiveSpendingCurrency(found.spendingCurrency || saleCurrency);
@@ -2076,18 +2078,21 @@ export default function PosPage() {
                   <UserRound className="h-4 w-4 shrink-0 text-slate-300" />
                   Indisponible hors-ligne (client comptoir)
                 </div>
-              ) : selectedCustomer ? (
+              ) : selectedCustomer || freeCustomerName ? (
                 <div className="flex items-center justify-between rounded-xl border border-slate-300 px-3 py-2.5">
                   <div className="flex min-w-0 items-center gap-2">
                     <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
                     <span className="truncate text-sm font-semibold text-slate-800">
-                      {selectedCustomer.name}
+                      {selectedCustomer?.name || freeCustomerName}
+                      {!selectedCustomer ? " (nom libre)" : ""}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedCustomer(null);
+                      setFreeCustomerName("");
+                      setCustomerQuery("");
                       setRedeemPointsInput("");
                     }}
                     className="text-slate-400 hover:text-slate-600"
@@ -2123,6 +2128,7 @@ export default function PosPage() {
                             type="button"
                             onClick={() => {
                               setSelectedCustomer(item);
+                              setFreeCustomerName("");
                               setCustomerDropdownOpen(false);
                               setCustomerQuery("");
                             }}
@@ -2133,11 +2139,98 @@ export default function PosPage() {
                           </button>
                         ))
                       )}
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setFreeCustomerName(customerQuery.trim().slice(0, 190));
+                          setSelectedCustomer(null);
+                          setRedeemPointsInput("");
+                          setCustomerQuery("");
+                          setCustomerDropdownOpen(false);
+                        }}
+                        className="block w-full border-t border-slate-100 px-3 py-2.5 text-left text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+                      >
+                        Utiliser « {customerQuery.trim()} » sans créer de fiche client
+                      </button>
                     </div>
+                  ) : null}
+                  {customerQuery.trim() ? (
+                    <p className="mt-1 text-xs text-slate-500">Sans sélection, le nom saisi sera repris sur le ticket, sans création de client.</p>
                   ) : null}
                 </div>
               )}
             </div>{" "}
+            {canChargeRoom ? (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-2">
+                <label className="block text-sm font-semibold text-indigo-900">
+                  Mettre l'addition sur une chambre (optionnel)
+                  <select
+                    value={selectedReservationId ?? ""}
+                    onChange={(event) => {
+                      const id = Number(event.target.value);
+                      const reservation = hotelReservations.find((item) => item.id === id);
+                      setSelectedReservationId(reservation?.id ?? null);
+                      if (reservation) {
+                        setSelectedCustomer(null);
+                        setFreeCustomerName(reservation.guest_name);
+                        setCustomerQuery("");
+                      }
+                    }}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"
+                  >
+                    <option value="">Client comptoir / table — encaissement normal</option>
+                    {hotelReservations.map((reservation) => (
+                      <option key={reservation.id} value={reservation.id}>
+                        Chambre {reservation.room?.room_number || reservation.room_id} — {reservation.guest_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedReservation ? (
+                  <div className="space-y-2 text-xs text-indigo-900">
+                    <div>Client hébergé : {selectedReservation.guest_name}. Les achats seront ajoutés à son folio sans encaissement en caisse.</div>
+                    {canUseRoomDeposit ? (
+                      <div className="space-y-2 rounded-lg border border-indigo-100 bg-white p-2">
+                        <label className="block font-semibold">
+                          Encaisser un dépôt sur le folio hôtel ({saleCurrency})
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={roomDepositInput}
+                            onChange={(event) => setRoomDepositInput(event.target.value)}
+                            placeholder="Montant reçu"
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                          />
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            value={roomDepositMethod}
+                            onChange={(event) => setRoomDepositMethod(event.target.value as typeof roomDepositMethod)}
+                            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                          >
+                            <option value="cash">Espèces</option>
+                            <option value="card">Carte</option>
+                            <option value="mobile">Mobile</option>
+                            <option value="bank">Banque</option>
+                          </select>
+                          <button
+                            type="button"
+                            disabled={recordingRoomDeposit || !isOnline || !roomDepositInput}
+                            onClick={() => void recordRoomDeposit()}
+                            className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                          >
+                            {recordingRoomDeposit ? "En cours..." : "Enregistrer dépôt"}
+                          </button>
+                        </div>
+                        <p className="text-slate-500">Ce paiement est comptabilisé au niveau du folio hôtel, pas comme paiement immédiat d'une vente comptoir.</p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {loyaltyEnabled && selectedCustomer && isOnline ? (
               <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-sm text-amber-900">
