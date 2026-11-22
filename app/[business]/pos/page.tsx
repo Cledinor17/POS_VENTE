@@ -1139,34 +1139,42 @@ export default function PosPage() {
   async function recordDepositForCart(
     cartReference: string, draft: { amount: string; currency: "HTG" | "USD"; requestKey?: string },
   ): Promise<boolean> {
-    const amount = parseDepositAmount(draft.amount);
-    if (!amount) {
-      pushError(ui.invalidAmount);
-      return false;
-    }
-    if (!isOnline || !branchId) {
-      pushError(ui.noNetwork);
-      return false;
-    }
-    const requestKey = draft.requestKey || (typeof crypto !== "undefined" ? crypto.randomUUID?.() : undefined);
-    if (!requestKey) {
-      pushError(ui.noNetwork);
-      return false;
-    }
+    const amount = /^(?:0|0[.,]0{1,2})$/.test(draft.amount.trim())
+      ? "0.00" : parseDepositAmount(draft.amount);
+    if (amount === null) { pushError(ui.invalidAmount); return false; }
+    if (!isOnline || !branchId) { pushError(ui.noNetwork); return false; }
+    const requestKey = draft.requestKey || crypto.randomUUID?.();
+    if (!requestKey) { pushError(ui.noNetwork); return false; }
+    const found = parkedCarts.find(item => item.id === cartReference)
+      ?? (activeParked?.id === cartReference ? activeParked : null);
     setDepositDrafts(previous => ({
-      ...previous,
-      [cartReference]: { ...draft, requestKey },
+      ...previous, [cartReference]: { ...draft, requestKey },
     }));
     setDepositSavingId(cartReference);
     try {
-      await recordUnpostedDeposit(businessSlug, {
-        cart_reference: cartReference,
-        amount,
-        currency: draft.currency,
-        request_key: requestKey,
-        note: parkedCarts.find(item => item.id === cartReference)?.note ?? parkNote.trim(),
-      });
-      await reloadDepositMemos();
+      if (found?.version && useRemoteParked) {
+        const updated = fromApiParkedCart(await setPosParkedDeposit(businessSlug, cartReference, {
+          version: found.version, amount, currency: draft.currency, request_key: requestKey,
+        }));
+        setParkedCarts(prev => prev.map(item => item.id === cartReference ? updated : item));
+        if (activeParked?.id === cartReference) setActiveParked(updated);
+      } else {
+        // Existing browser-only slips keep their original unposted memo reference
+        // until they can be migrated to the shared backend.
+        if (Number(amount) === 0) {
+          pushError("Pour corriger cet acompte, synchronisez d'abord la fiche avec le serveur.");
+          return false;
+        }
+        await recordUnpostedDeposit(businessSlug, {
+          cart_reference: cartReference,
+          amount,
+          currency: draft.currency,
+          request_key: requestKey,
+          note: found?.note ?? parkNote.trim(),
+        });
+      }
+      try { await reloadDepositMemos(); }
+      catch { pushNotice("Acompte sauvé. Actualisez la caisse pour afficher les derniers totaux.", "warning"); }
       setDepositDrafts(previous => ({
         ...previous, [cartReference]: { amount: "", currency: draft.currency },
       }));
@@ -1182,120 +1190,122 @@ export default function PosPage() {
 
   async function parkCurrentCart() {
     if (parkSaving) return;
-    if (!branchId || branchLoading) {
-      pushError(ui.noNetwork);
-      return;
-    }
-    if (cart.length === 0) {
-      pushError("Le panier est vide.");
-      return;
-    }
+    if (!branchId || branchLoading) { pushError("Succursale indisponible."); return; }
+    if (!cart.length) { pushError("Le panier est vide."); return; }
     const hasDeposit = parkDepositInput.trim().length > 0;
-    const normalizedDeposit = hasDeposit ? parseDepositAmount(parkDepositInput) : null;
-    if (hasDeposit && !normalizedDeposit) {
-      pushError(ui.invalidAmount);
+    const normalizedDeposit = !hasDeposit ? null
+      : /^(?:0|0[.,]0{1,2})$/.test(parkDepositInput.trim()) ? "0.00" : parseDepositAmount(parkDepositInput);
+    if (hasDeposit && normalizedDeposit === null) { pushError(ui.invalidAmount); return; }
+    if (hasDeposit && (!isOnline || !hasPermission(permissions, "billing.manage"))) {
+      pushError(!isOnline ? ui.noNetwork : ui.noRights);
       return;
     }
-    if (hasDeposit && (!isOnline || !branchId)) {
-      pushError(ui.noNetwork);
-      return;
-    }
-    if (hasDeposit && !hasPermission(permissions, "billing.manage")) {
-      pushError(ui.noRights);
+    if (!isOnline && (useRemoteParked || activeParked?.version)) {
+      pushError("Connexion nécessaire pour enregistrer la fiche partagée.");
       return;
     }
     setParkSaving(true);
     const parked: ParkedCart = {
-      id: `P-${generateClientId()}`,
+      id: activeParked?.id ?? (parkCreateId.current ||= `P-${generateClientId()}`),
       branchId,
-      note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
-      createdAt: new Date().toISOString(),
+      note: parkNote.trim() || activeParked?.note || `Panier ${parkedCarts.length + 1}`,
+      createdAt: activeParked?.createdAt ?? new Date().toISOString(),
       items: sourceCart,
+      version: activeParked?.version,
+      depositTotals: activeParked?.depositTotals,
     };
     try {
       let saved = parked;
       if (useRemoteParked) {
-        const created = await createPosParkedCart(businessSlug, {
-          note: parked.note,
-          items: parked.items,
-        });
-        if (created) {
-          saved = fromApiParkedCart(created);
-          setParkedCarts((prev) => [saved, ...prev]);
+        if (activeParked?.version) {
+          saved = fromApiParkedCart(await updatePosParkedCart(businessSlug, parked.id, {
+            note: parked.note, items: parked.items, version: activeParked.version,
+          }));
+          setActiveParked(saved);
+          if (hasDeposit && normalizedDeposit !== null) {
+            const updated = await setPosParkedDeposit(businessSlug, parked.id, {
+              version: saved.version!, amount: normalizedDeposit, currency: parkDepositCurrency,
+              request_key: crypto.randomUUID(),
+            });
+            saved = fromApiParkedCart(updated);
+            setActiveParked(saved);
+          }
         } else {
-          const next = [parked, ...parkedCarts];
-          saveLocalParked(next);
-          setUseRemoteParked(false);
+          const created = await createPosParkedCart(businessSlug, {
+            id: parked.id, note: parked.note, items: parked.items,
+            depositAmount: hasDeposit ? normalizedDeposit : null,
+            depositCurrency: parkDepositCurrency,
+          });
+          if (!created) throw new Error("Service des fiches partagées indisponible. La fiche reste dans le panier.");
+          saved = fromApiParkedCart(created);
         }
+        setParkedCarts(prev => [saved, ...prev.filter(item => item.id !== saved.id)]);
+        try { await reloadDepositMemos(); }
+        catch { pushNotice("Fiche sauvegardée, mais totaux non actualisés.", "warning"); }
       } else {
-        saveLocalParked([parked, ...parkedCarts]);
+        if (activeParked) {
+          saveLocalParked([saved, ...parkedCarts.filter(item => item.id !== saved.id)]);
+        } else {
+          saveLocalParked([saved, ...parkedCarts]);
+        }
+        if (hasDeposit && normalizedDeposit && Number(normalizedDeposit) > 0) {
+          // Offline/old-API fallback deliberately does not promise synced deposits.
+          setDepositDrafts(prev => ({
+            ...prev, [saved.id]: { amount: normalizedDeposit, currency: parkDepositCurrency },
+          }));
+          pushNotice("Fiche locale. Acompte à enregistrer dès que le serveur sera disponible.", "warning");
+        }
       }
       setCart([]);
+      setActiveParked(null);
       setParkModalOpen(false);
       setParkNote("");
+      setParkDepositInput("");
       setCashReceivedInput("");
-      setError("");
-      if (normalizedDeposit) {
-        const ok = await recordDepositForCart(saved.id, {
-          amount: normalizedDeposit,
-          currency: parkDepositCurrency,
-        });
-        setParkDepositInput("");
-        if (!ok) {
-          setDepositDrafts(prev => ({
-            ...prev,
-            [saved.id]: { ...prev[saved.id], amount: normalizedDeposit, currency: parkDepositCurrency },
-          }));
-          pushNotice(ui.parkFailed, "warning");
-        }
-      } else {
-        setParkDepositInput("");
-        pushNotice(ui.savedPending, "info");
-      }
+      parkCreateId.current = null;
+      pushNotice(ui.savedPending, "success");
     } catch (error) {
+      // Keep the cart, stable reference and deposit intact on any failure.
       pushError(getErrorMessage(error));
     } finally {
       setParkSaving(false);
     }
   }
-  async function resumeParkedCart(parkId: string) {
-    const found = parkedCarts.find((item) => item.id === parkId);
+
+  function resumeParkedCart(parkId: string) {
+    const found = parkedCarts.find(item => item.id === parkId);
     if (!found || !branchId) return;
-    setCart(found.items);
-    setParkNote(found.note ?? "");
-    try {
-      if (useRemoteParked) {
-        const deleted = await deletePosParkedCart(businessSlug, parkId);
-        if (!deleted) setUseRemoteParked(false);
-      }
-      const next = parkedCarts.filter((item) => item.id !== parkId);
-      setParkedCarts(next);
-      if (!useRemoteParked) saveLocalParked(next);
-      setError("");
-      pushNotice(depositByCart[parkId]?.HTG || depositByCart[parkId]?.USD
-        ? ui.alreadyUnposted : `Panier repris: ${found.note}.`, "info");
-    } catch (e) {
-      pushError(getErrorMessage(e));
+    if (cart.length || activeParked) {
+      pushError("Mettez d’abord votre panier actuel en attente ou finalisez-le.");
+      return;
     }
+    setCart(found.items);
+    setActiveParked(found);
+    setParkNote(found.note || "");
+    setParkDepositInput("");
+    setParkedCarts(prev => prev.filter(item => item.id !== parkId));
+    if (!useRemoteParked) saveLocalParked(parkedCarts.filter(item => item.id !== parkId));
+    setError("");
+    pushNotice("Fiche reprise avec ses acomptes : " + found.note, "info");
   }
+
   async function discardParkedCart(parkId: string) {
-    const found = parkedCarts.find((item) => item.id === parkId);
+    const found = parkedCarts.find(item => item.id === parkId);
     if (!found || depositSavingId === parkId) return;
     setDiscardingId(parkId);
     try {
-      if (useRemoteParked) {
-        const deleted = await deletePosParkedCart(businessSlug, parkId);
-        if (!deleted) setUseRemoteParked(false);
+      if (useRemoteParked && found.version) {
+        await deletePosParkedCart(businessSlug, parkId, found.version);
+      } else if (useRemoteParked) {
+        throw new Error("Actualisez la fiche avant de la supprimer.");
       }
-      const next = parkedCarts.filter((item) => item.id !== parkId);
-      setParkedCarts(next);
-      if (!useRemoteParked) saveLocalParked(next);
-      setError("");
-      if (found) pushNotice(depositByCart[parkId]?.HTG || depositByCart[parkId]?.USD
-        ? ui.alreadyUnposted : `Panier supprime: ${found.note}.`, "info");
+      const next = parkedCarts.filter(item => item.id !== parkId);
+      if (useRemoteParked) setParkedCarts(next);
+      else saveLocalParked(next);
       setConfirmDiscard(null);
-    } catch (e) {
-      pushError(getErrorMessage(e));
+      pushNotice("Fiche supprimée. Historique des acomptes conservé.", "info");
+    } catch (error) {
+      pushError(getErrorMessage(error));
     } finally {
       setDiscardingId(null);
     }
