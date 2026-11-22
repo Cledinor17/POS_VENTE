@@ -1069,10 +1069,11 @@ export default function PosPage() {
     setError("");
   }
   async function parkCurrentCart() {
-    if (cart.length === 0) {
-      pushError("Le panier est vide.");
+    if (!isOnline) {
+      pushError("Connexion requise : impossible de garantir la sauvegarde permanente de la fiche.");
       return;
     }
+    if (savingParked) return;
     const enteredLimit = spendingLimitInput.trim() === "" ? null : Number(spendingLimitInput);
     if (enteredLimit !== null && (!Number.isFinite(enteredLimit) || enteredLimit <= 0)) {
       pushError("Le plafond de consommation doit être un montant positif.");
@@ -1087,98 +1088,91 @@ export default function PosPage() {
       exchangeSellRate: businessSettings?.exchange_sell_rate,
     });
     if (effectiveLimit !== null && cartGrossTotal(sourceCart) > effectiveLimit + 0.001) {
-      pushError("La fiche dépasse le plafond. Réduire les articles avant de la mettre en attente.");
+      pushError("La fiche dépasse le plafond. Réduire les articles avant enregistrement.");
       return;
     }
-    const parked: ParkedCart = {
-      id: `P-${Date.now().toString(36).toUpperCase()}`,
-      note: parkNote.trim() || `Panier ${parkedCarts.length + 1}`,
-      createdAt: new Date().toISOString(),
+    if (!activeParkedId && !pendingParkedToken.current) {
+      pendingParkedToken.current = generateClientId();
+    }
+    const payload = {
+      clientToken: activeParkedId ? undefined : pendingParkedToken.current ?? undefined,
+      note: parkNote.trim() || `Fiche ${parkedTotalOpen + 1}`,
       items: sourceCart,
-      customerName: customerNameForSale || undefined,
-      customerId: selectedCustomer?.id ?? null,
-      registeredCustomer: selectedCustomer,
+      customerName: customerNameForSale || null,
+      customerId: selectedCustomer?.id ?? parkedCustomerId,
       reservationId: selectedReservationId,
+      roomLabel: selectedReservation?.room?.room_number || null,
       spendingLimit: limit,
       spendingCurrency: limitCurrency,
     };
+    setSavingParked(true);
     try {
-      if (useRemoteParked && !parked.customerName && !parked.reservationId && parked.spendingLimit === null) {
-        const created = await createPosParkedCart(businessSlug, {
-          note: parked.note,
-          items: parked.items,
-        });
-        if (created) {
-          setParkedCarts((prev) => [fromApiParkedCart(created), ...prev]);
-        } else {
-          const next = [parked, ...parkedCarts];
-          saveLocalParked(next);
-          setUseRemoteParked(false);
-        }
-      } else {
-        const next = [parked, ...parkedCarts];
-        saveLocalParked(next);
-        if (useRemoteParked) setUseRemoteParked(false);
-      }
-      setCart([]);
+      const saved = activeParkedId
+        ? await updatePosParkedCart(businessSlug, activeParkedId, activeParkedRevision, payload)
+        : await createPosParkedCart(businessSlug, payload);
+      pendingParkedToken.current = null;
+      clearCurrentCart();
       setParkNote("");
-      setCashReceivedInput("");
+      setActiveParkedId(null);
+      setActiveParkedRevision(1);
+      setParkedCustomerId(null);
       setSpendingLimitInput("");
       setActiveSpendingLimit(null);
       setSelectedReservationId(null);
       setSelectedCustomer(null);
       setFreeCustomerName("");
       setCustomerQuery("");
-      setError("");
-      pushNotice(`Panier mis en attente: ${parked.note}.`, "info");
-    } catch (e) {
-      pushError(getErrorMessage(e));
+      setParkedSearchInput("");
+      setParkedSearch("");
+      setParkedPage(1);
+      await loadParkedCarts();
+      pushNotice(`Fiche ${saved.note} sauvegardée sur le serveur.`, "success");
+    } catch (error) {
+      // No acknowledgement => preserve the basket and the idempotency token.
+      pushError(`Fiche NON enregistrée sur le serveur : ${getErrorMessage(error)}. Réessayez sans vider le panier.`);
+    } finally {
+      setSavingParked(false);
     }
   }
-  async function resumeParkedCart(parkId: string) {
+  function resumeParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
     if (!found) return;
-    if (cart.length > 0) {
-      pushError("Enregistrez ou videz le panier courant avant de reprendre une autre fiche.");
+    if (cart.length > 0 || activeParkedId) {
+      pushError("Enregistrez le panier en cours avant de reprendre une autre fiche.");
       return;
     }
+    setActiveParkedId(found.id);
+    setActiveParkedRevision(found.revision ?? 1);
     setCart(found.items);
     setParkNote(found.note ?? "");
     setFreeCustomerName(found.customerName ?? "");
     setCustomerQuery("");
     setSelectedCustomer(found.registeredCustomer ?? null);
+    setParkedCustomerId(found.customerId == null ? null : String(found.customerId));
     setSelectedReservationId(found.reservationId ?? null);
     setActiveSpendingLimit(found.spendingLimit ?? null);
     setActiveSpendingCurrency(found.spendingCurrency || saleCurrency);
     setSpendingLimitInput(found.spendingLimit == null ? "" : String(found.spendingLimit));
-    try {
-      if (useRemoteParked) {
-        const deleted = await deletePosParkedCart(businessSlug, parkId);
-        if (!deleted) setUseRemoteParked(false);
-      }
-      const next = parkedCarts.filter((item) => item.id !== parkId);
-      setParkedCarts(next);
-      if (!useRemoteParked) saveLocalParked(next);
-      setError("");
-      pushNotice(`Panier repris: ${found.note}.`, "success");
-    } catch (e) {
-      pushError(getErrorMessage(e));
-    }
+    setError("");
+    // The ticket MUST remain in the server database until cancel/finalize.
+    pushNotice(`Fiche reprise : ${found.note}. Modifications à enregistrer avant de quitter.`, "info");
   }
   async function discardParkedCart(parkId: string) {
     const found = parkedCarts.find((item) => item.id === parkId);
+    if (!found) return;
+    if (!window.confirm(`Annuler définitivement la fiche « ${found.note} » ? L'historique restera archivé.`)) return;
     try {
-      if (useRemoteParked) {
-        const deleted = await deletePosParkedCart(businessSlug, parkId);
-        if (!deleted) setUseRemoteParked(false);
+      await cancelPosParkedCart(businessSlug, parkId);
+      if (activeParkedId === parkId) {
+        clearCurrentCart();
+        setActiveParkedId(null);
+        setActiveParkedRevision(1);
+        setParkedCustomerId(null);
       }
-      const next = parkedCarts.filter((item) => item.id !== parkId);
-      setParkedCarts(next);
-      if (!useRemoteParked) saveLocalParked(next);
-      setError("");
-      if (found) pushNotice(`Panier supprime: ${found.note}.`, "info");
+      await loadParkedCarts();
+      pushNotice(`Fiche annulée : ${found.note}.`, "info");
     } catch (e) {
-      pushError(getErrorMessage(e));
+      pushError(`Annulation non confirmée : ${getErrorMessage(e)}`);
     }
   }
   async function printSaleReceipt(sale: CompletedSale) {
