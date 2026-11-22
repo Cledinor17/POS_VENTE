@@ -121,12 +121,12 @@ test("POS main interface prioritizes cart, limits product columns to four and do
   assert.doesNotMatch(page, /Nouvelle vente/);
   assert.doesNotMatch(page, /Caissier:\{/);
   assert.match(page, /setConfirmDiscard/);
-  assert.match(page, /min-w-\\[430px\\] items-center/);
-  assert.match(page, /aria-label=\\{"Augmenter " \\+ item.name\\}/);
-  assert.match(page, /aria-label=\\{"Diminuer " \\+ item.name\\}/);
+  assert.match(page, /min-w-\[430px\] items-center/);
+  assert.match(page, /aria-label=\{"Augmenter " \+ item.name\}/);
+  assert.match(page, /aria-label=\{"Diminuer " \+ item.name\}/);
   assert.match(page, /role="dialog" aria-modal="true" aria-labelledby="park-modal-title"/);
-  assert.match(page, /setParkModalOpen\\(true\\)/);
-  assert.match(page, /onClick=\\{\\(\\) => void parkCurrentCart\\(\\)\\}/);
+  assert.match(page, /setParkModalOpen\(true\)/);
+  assert.match(page, /onClick=\{\(\) => void parkCurrentCart\(\)\}/);
   assert.ok(page.indexOf("setParkModalOpen(true)") > page.indexOf(">Paiement</div>"), "hold action is next to checkout");
   assert.ok(page.indexOf("<ParkedCartsPanel") < page.indexOf(">Paiement</div>"), "parked slips precede payment");
   assert.match(page, /href="#pos-pending-section"/);
