@@ -2571,9 +2571,33 @@ export default function PosPage() {
           </section>{" "}
           <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
             {" "}
-            <div className="font-bold text-slate-900">
-              Panier en attente
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-bold text-slate-900">
+                Fiches en attente ({parkedTotalOpen})
+              </div>
+              <span className="text-xs text-slate-500">Sauvegarde sur serveur</span>
             </div>{" "}
+            {activeParkedId ? (
+              <p className="rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-xs text-indigo-800">
+                Fiche en cours de modification. Elle reste enregistrée sur le serveur
+                tant que vous ne l'annulez pas ou ne finalisez pas la facture.
+                Cliquez sur « Enregistrer la fiche » pour conserver les modifications.
+              </p>
+            ) : null}
+            {parkedTotalOpen > 10 ? (
+              <label className="block space-y-1 text-xs font-semibold text-slate-700">
+                Rechercher parmi toutes les fiches
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                  <input
+                    value={parkedSearchInput}
+                    onChange={(event) => setParkedSearchInput(event.target.value)}
+                    placeholder="Client, chambre, table, référence..."
+                    className="w-full rounded-xl border border-slate-300 py-2.5 pl-9 pr-3 text-sm font-normal"
+                  />
+                </div>
+              </label>
+            ) : null}
             <input
               value={parkNote}
               onChange={(event) => setParkNote(event.target.value)}
@@ -2607,13 +2631,14 @@ export default function PosPage() {
               onClick={() => {
                 void parkCurrentCart();
               }}
-              disabled={cart.length === 0}
+              disabled={savingParked || !isOnline || (!activeParkedId && cart.length === 0)}
               className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
             >
               {" "}
-              <PauseCircle className="h-4 w-4" /> Mettre le panier en
-              attente{" "}
+              <PauseCircle className="h-4 w-4" />{" "}
+              {savingParked ? "Enregistrement..." : activeParkedId ? "Enregistrer la fiche en attente" : "Mettre le panier en attente"}{" "}
             </button>{" "}
+            {parkedLoading ? <p className="text-xs text-slate-500">Actualisation des fiches...</p> : null}
             {parkedCarts.length > 0 ? (
               <div className="space-y-2 max-h-[180px] overflow-y-auto">
                 {" "}
@@ -2629,6 +2654,7 @@ export default function PosPage() {
                     <div className="text-xs text-slate-500">
                       {parked.customerName ? `Client : ${parked.customerName} · ` : ""}
                       {parked.reservationId ? `Séjour #${parked.reservationId} · ` : ""}
+                      {parked.roomLabel ? `Chambre ${parked.roomLabel} · ` : ""}
                       {parked.spendingLimit != null ? `Plafond : ${formatMoney(parked.spendingLimit, parked.spendingCurrency || saleCurrency)} · ` : ""}
                       {" "}
                       {parked.items.reduce(
@@ -2658,7 +2684,7 @@ export default function PosPage() {
                         className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                       >
                         {" "}
-                        Suppr{" "}
+                        Annuler{" "}
                       </button>{" "}
                     </div>{" "}
                   </div>
@@ -2666,9 +2692,26 @@ export default function PosPage() {
               </div>
             ) : (
               <div className="text-xs text-slate-500">
-                Aucun panier en attente.
+                {parkedSearch ? "Aucune fiche correspondant à cette recherche." : "Aucune fiche en attente."}
               </div>
             )}{" "}
+            {parkedLastPage > 1 ? (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setParkedPage((page) => Math.max(1, page - 1))}
+                  disabled={parkedPage <= 1 || parkedLoading}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+                >Précédent</button>
+                <span>{parkedTotal} résultat(s) · Page {parkedPage} / {parkedLastPage}</span>
+                <button
+                  type="button"
+                  onClick={() => setParkedPage((page) => Math.min(parkedLastPage, page + 1))}
+                  disabled={parkedPage >= parkedLastPage || parkedLoading}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 disabled:opacity-40"
+                >Suivant</button>
+              </div>
+            ) : null}
           </section>{" "}
         </aside>{" "}
       </div>{" "}
