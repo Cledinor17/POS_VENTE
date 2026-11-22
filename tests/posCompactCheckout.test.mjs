@@ -72,7 +72,7 @@ test("all languages have concise parked-tab and deposit prompts", () => {
   for (const locale of ["fr", "en", "ht", "es", "zh", "ar"]) {
     const t = labels(locale);
     assert.deepEqual(Object.keys(t), fr);
-    for (const key of ["confirmRemove", "yes", "no", "downDeposit", "declared", "unposted", "unpostedInfo"]) {
+    for (const key of ["confirmRemove", "yes", "no", "downDeposit", "declared", "unposted", "unpostedInfo", "createTab", "findTab", "optional"]) {
       assert.ok(t[key] && t[key].trim().length > 0, locale + ": " + key);
     }
   }
@@ -102,16 +102,21 @@ test("parked cart panel renders separate unposted totals and an explicit Yes/No 
   assert.match(result, /Oui, supprimer/);
   assert.match(result, />Non</);
   assert.match(result, /Table 3/);
+  assert.match(result, /Créer une fiche/);
+  assert.match(result, /facultatif/);
 });
 
 test("POS main interface prioritizes cart, limits product columns to four and does not render cashier heading", () => {
   const page = readFileSync(new URL("../app/[business]/pos/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /minmax\(410px,2fr\)/);
+  assert.match(page, /xl:grid-cols-\[minmax\(0,1\.05fr\)_minmax\(420px,1fr\)\]/);
   assert.match(page, /sm:grid-cols-3 xl:grid-cols-4/);
   assert.match(page, /<ParkedCartsPanel/);
   assert.doesNotMatch(page, /Nouvelle vente/);
   assert.doesNotMatch(page, /Caissier:\{/);
   assert.match(page, /setConfirmDiscard/);
+  assert.ok(page.indexOf("<ParkedCartsPanel") < page.indexOf(">Paiement</div>"), "deposit form must precede payment");
+  assert.match(page, /href="#pos-pending-section"/);
+  assert.match(page, /xl:hidden/);
 });
 
 test("saving one branch never wipes parked tabs from another branch or legacy Main", () => {
