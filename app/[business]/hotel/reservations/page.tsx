@@ -9,6 +9,7 @@ import PhoneField from "@/components/PhoneField";
 import { ApiError } from "@/lib/api";
 import { hasPermission } from "@/lib/businessAccess";
 import { getBusinessSettings, type BusinessSettings } from "@/lib/businessApi";
+import { buildHotelBookingPrintHtml, thermalReceiptPageHeightMm, type ReservationPaper } from "@/lib/hotelReservationPrint";
 import { createCustomer, listCustomers, type CustomerAddress, type CustomerItem } from "@/lib/customersApi";
 import { formatMoney } from "@/lib/currency";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -186,13 +187,17 @@ function getReservationSettlementStatus(
   return { label: "Partiellement payee", tone: "warning" };
 }
 
-function buildReservationPrintLoadingHtml(reservationCode: string): string {
+function buildReservationPrintLoadingHtml(reservationCode: string, kind: "booking" | "invoice" = "invoice"): string {
+  const documentLabel = kind === "booking" ? "fiche de réservation" : "facture de réservation";
+  const loadingLabel = kind === "booking"
+    ? "Chargement des données du séjour et des éventuels paiements"
+    : "Chargement du détail de facturation et des paiements";
   return `<!DOCTYPE html>
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Preparation facture reservation ${escapeHtml(reservationCode)}</title>
+    <title>Préparation ${escapeHtml(documentLabel)} ${escapeHtml(reservationCode)}</title>
     <style>
       html, body {
         margin: 0;
@@ -255,8 +260,8 @@ function buildReservationPrintLoadingHtml(reservationCode: string): string {
   <body>
     <section class="card">
       <div class="spinner"></div>
-      <h1>Preparation de la facture de reservation</h1>
-      <p>Chargement du detail de facturation et des paiements pour ${escapeHtml(reservationCode)}...</p>
+      <h1>Préparation de la ${escapeHtml(documentLabel)}</h1>
+      <p>${escapeHtml(loadingLabel)} pour ${escapeHtml(reservationCode)}...</p>
       <div class="reference">${escapeHtml(reservationCode)}</div>
     </section>
   </body>
@@ -1497,6 +1502,7 @@ export default function HotelReservationsPage() {
   const [rooms, setRooms] = useState<HotelRoom[]>([]);
   const [reservations, setReservations] = useState<HotelReservation[]>([]);
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
+  const [reservationPaper, setReservationPaper] = useState<ReservationPaper>("a4");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [updatingReservationId, setUpdatingReservationId] = useState<number | null>(null);
@@ -2320,9 +2326,9 @@ export default function HotelReservationsPage() {
         </button>
         <button
           type="button"
-          onClick={() => handlePrintReservation(reservation)}
-          title="Imprimer"
-          aria-label="Imprimer"
+          onClick={() => void handlePrintBooking(reservation, reservationPaper)}
+          title={`Imprimer la fiche de réservation ${reservationPaper === "a4" ? "A4" : "80 mm"}`}
+          aria-label={`Imprimer la fiche de réservation ${reservationPaper === "a4" ? "A4" : "80 mm"}`}
           className={`${actionButtonBaseClass} border-violet-200 text-violet-700 hover:bg-violet-50`}
         >
           <i className="fa-solid fa-print" aria-hidden="true" />
@@ -2337,6 +2343,61 @@ export default function HotelReservationsPage() {
         </Link>
       </div>
     );
+  }
+
+  async function handlePrintBooking(reservation: HotelReservation, paper: ReservationPaper) {
+    // Open immediately after a direct click to avoid browser popup blocking.
+    const printWindow = window.open("", "_blank", paper === "80mm" ? "width=420,height=760" : "width=960,height=900");
+    if (!printWindow) {
+      setError("Impossible d'ouvrir la fenêtre d'impression. Autorisez les pop-ups pour ce site.");
+      setSuccess("");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildReservationPrintLoadingHtml(getReservationCodeLabel(reservation), "booking"));
+    printWindow.document.close();
+
+    let folio: HotelReservationFolio | null = null;
+    try {
+      if (business) folio = await getHotelReservationFolio(business, reservation.id);
+    } catch {
+      // The booking can be printed, but no payment or balance will be invented.
+      folio = null;
+    }
+
+    if (printWindow.closed) return;
+    printWindow.document.open();
+    printWindow.document.write(buildHotelBookingPrintHtml({
+      reservation, settings: businessSettings, folio, paper,
+    }));
+    printWindow.document.close();
+
+    // Wait for the tenant logo to load (or fail) before invoking the print dialog.
+    const image = printWindow.document.querySelector<HTMLImageElement>("img.logo");
+    if (image && !image.complete) {
+      await Promise.race([
+        new Promise<void>(resolve => {
+          image.addEventListener("load", () => resolve(), { once: true });
+          image.addEventListener("error", () => resolve(), { once: true });
+        }),
+        new Promise<void>(resolve => window.setTimeout(resolve, 1500)),
+      ]);
+    }
+    if (printWindow.closed) return;
+    if (paper === "80mm") {
+      // Keep the 80mm roll width, adapt length to this actual reservation
+      // instead of feeding a fixed 200mm sheet (printer driver may override).
+      const sheet = printWindow.document.querySelector<HTMLElement>(".sheet");
+      if (sheet) {
+        const paperHeight = thermalReceiptPageHeightMm(sheet.getBoundingClientRect().height);
+        const paperStyle = printWindow.document.createElement("style");
+        paperStyle.textContent = `@page { size: 80mm ${paperHeight}mm; margin: 0; }`;
+        printWindow.document.head.appendChild(paperStyle);
+      }
+    }
+    printWindow.focus();
+    printWindow.print();
   }
 
   async function handlePrintReservation(reservation: HotelReservation) {
@@ -2391,6 +2452,20 @@ export default function HotelReservationsPage() {
             <p className="mt-1 text-sm text-slate-600">Gestion des reservations de chambres.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {canReadReservations ? (
+              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-700">
+                <span className="font-semibold">Format fiche</span>
+                <select
+                  aria-label="Format d'impression des fiches de réservation"
+                  value={reservationPaper}
+                  onChange={(event) => setReservationPaper(event.target.value as ReservationPaper)}
+                  className="bg-transparent py-1 text-sm font-semibold text-[#0a4d8f] outline-none"
+                >
+                  <option value="a4">A4</option>
+                  <option value="80mm">Ticket 80 mm</option>
+                </select>
+              </label>
+            ) : null}
             {canCreateReservations ? (
               <button
                 type="button"
@@ -3372,13 +3447,42 @@ export default function HotelReservationsPage() {
                   {detailReservation.room?.room_number || "-"}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={closeReservationDetails}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Fermer
-              </button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {canReadReservations ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handlePrintBooking(detailReservation, "a4")}
+                      className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                    >
+                      Fiche A4
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handlePrintBooking(detailReservation, "80mm")}
+                      className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                    >
+                      Ticket 80 mm
+                    </button>
+                  </>
+                ) : null}
+                {canManageReservations ? (
+                  <button
+                    type="button"
+                    onClick={() => void handlePrintReservation(detailReservation)}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Facture détaillée A4
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={closeReservationDetails}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Fermer
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
