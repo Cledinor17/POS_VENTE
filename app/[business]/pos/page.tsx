@@ -2346,6 +2346,84 @@ export default function PosPage() {
         <span>{ui.cart} · {itemCount} {ui.items}</span>
         <span className="tabular-nums">{formatMoney(grandTotal, saleCurrency)}</span>
       </a>
+      {parkModalOpen ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-3 sm:p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="park-modal-title"
+            onKeyDown={event => {
+              if (event.key === "Escape" && !parkSaving && depositSavingId === null) setParkModalOpen(false);
+            }}
+            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-4 shadow-2xl sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="park-modal-title" className="text-lg font-extrabold text-slate-900">{ui.park}</h2>
+              <button type="button" aria-label={ui.close}
+                disabled={parkSaving || depositSavingId !== null}
+                onClick={() => setParkModalOpen(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <label className="block space-y-1 text-sm font-semibold text-slate-700">
+              {ui.note}
+              <input autoFocus type="text" value={parkNote} maxLength={190}
+                onChange={event => setParkNote(event.target.value)}
+                placeholder={ui.note} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500" />
+            </label>
+            <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2">
+              <label className="min-w-0 space-y-1 text-sm font-semibold text-slate-700">
+                {ui.downDeposit} <span className="font-normal text-slate-500">({ui.optional})</span>
+                <input type="text" inputMode="decimal" value={parkDepositInput}
+                  onChange={event => setParkDepositInput(event.target.value)}
+                  placeholder="0.00" className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" />
+              </label>
+              <label className="space-y-1 text-sm font-semibold text-slate-700">
+                {ui.currency}
+                <select value={parkDepositCurrency}
+                  onChange={event => setParkDepositCurrency(event.target.value as "HTG" | "USD")}
+                  className="w-full rounded-lg border border-slate-300 px-2 py-2.5 text-sm">
+                  <option value="HTG">HTG</option><option value="USD">USD</option>
+                </select>
+              </label>
+            </div>
+            {parkDepositInput.trim() && !previewDeposit ? (
+              <p role="alert" className="text-xs font-semibold text-rose-700">{ui.invalidAmount}</p>
+            ) : null}
+            <div className="space-y-1 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-950">
+              <div className="flex justify-between gap-2">
+                <span>{ui.subtotal}</span><strong>{formatMoney(grandTotal, saleCurrency)}</strong>
+              </div>
+              {previewDeposit ? (
+                <>
+                  <div className="flex justify-between gap-2">
+                    <span>{ui.declaredOnSlip}</span>
+                    <strong>{formatMoney(Number(previewDeposit), parkDepositCurrency)}</strong>
+                  </div>
+                  <div className="flex justify-between gap-2 border-t border-indigo-200 pt-1 font-bold">
+                    <span>{ui.estimatedDue}</span>
+                    <span>{previewDepositInSaleCurrency == null ? "—" :
+                      formatMoney(Math.max(0, grandTotal - previewDepositInSaleCurrency), saleCurrency)}</span>
+                  </div>
+                </>
+              ) : null}
+              <p className="text-[11px] text-indigo-700">{ui.unpostedInfo}</p>
+            </div>
+            {parkDepositInput.trim() && (!isOnline || !hasPermission(permissions, "billing.manage")) ? (
+              <p className="text-xs font-semibold text-amber-700">{!isOnline ? ui.noNetwork : ui.noRights}</p>
+            ) : null}
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={parkSaving || depositSavingId !== null}
+                onClick={() => setParkModalOpen(false)}
+                className="rounded-xl border border-slate-300 py-2.5 text-sm font-bold text-slate-700 disabled:opacity-50">
+                {ui.no}
+              </button>
+              <button type="button" disabled={parkSaving || depositSavingId !== null || cart.length === 0
+                  || Boolean(parkDepositInput.trim() && (!previewDeposit || !isOnline || !hasPermission(permissions, "billing.manage")))}
+                onClick={() => void parkCurrentCart()}
+                className="rounded-xl brand-primary-btn py-2.5 text-sm font-bold text-white disabled:opacity-50">
+                {parkSaving ? ui.loading : ui.park}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <SensitiveActionApprovalModal
         open={Boolean(approvalDialog)}
         title={approvalDialog?.title ?? "Autorisation requise"}
