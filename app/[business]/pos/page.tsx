@@ -1021,8 +1021,15 @@ export default function PosPage() {
     }
   }
   async function printSaleReceipt(sale: CompletedSale) {
+    const browserPaper = defaultPrinter?.paperWidth === "58" ? "58mm" : "80mm";
     if (!defaultPrinter || !businessSlug) {
-      printReceipt({ ...sale, locale });
+      printReceipt({ ...sale, locale }, { paper: browserPaper });
+      return;
+    }
+    // Many ESC/POS models cannot encode Chinese or Arabic characters. Use
+    // browser rendering with proper fonts instead of printing corrupted text.
+    if (locale === "ar" || locale === "zh") {
+      printReceipt({ ...sale, locale }, { paper: browserPaper });
       return;
     }
     try {
@@ -1041,7 +1048,7 @@ export default function PosPage() {
         `Impression thermique impossible (${getErrorMessage(e)}), aperçu navigateur ouvert.`,
         "warning",
       );
-      printReceipt({ ...sale, locale });
+      printReceipt({ ...sale, locale }, { paper: browserPaper });
     }
   }
   async function handleOpenDrawer() {
