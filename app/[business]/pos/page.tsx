@@ -1487,7 +1487,7 @@ export default function PosPage() {
         roomId: selectedReservation.room_id,
         reservationId: selectedReservation.id,
         customerId: selectedReservation.customer_id,
-        currency: saleCurrency,
+        currency: saleCurrency === "USD" ? "USD" : "HTG",
         note: `Commande POS - ${(customerNameForSale || selectedReservation.guest_name).slice(0, 100)}`,
         totalAmount: Math.round(grandTotal * 100) / 100,
         items: cart.map((item) => ({
@@ -2437,6 +2437,18 @@ export default function PosPage() {
               {" "}
               {checkoutLoading ? "Traitement..." : "Passer a la caisse"}{" "}
             </button>{" "}
+            {selectedReservation && canChargeRoom ? (
+              <button
+                type="button"
+                onClick={() => void chargeSelectedRoom()}
+                disabled={postingRoomCharge || checkoutLoading || !isOnline || cart.length === 0}
+                className="w-full rounded-xl border border-indigo-300 bg-indigo-50 py-3 text-sm font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+              >
+                {postingRoomCharge
+                  ? "Ajout au folio en cours..."
+                  : `Porter ${formatMoney(grandTotal, saleCurrency)} à la chambre ${selectedReservation.room?.room_number || ""}`}
+              </button>
+            ) : null}
           </section>{" "}
           <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
             {" "}
@@ -2449,6 +2461,29 @@ export default function PosPage() {
               placeholder="Note (ex: Client table 5)"
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />{" "}
+            <label className="block text-xs font-semibold text-slate-700">
+              Plafond de consommation facultatif ({activeSpendingLimit !== null ? activeSpendingCurrency : saleCurrency})
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={spendingLimitInput}
+                disabled={activeSpendingLimit !== null}
+                onChange={(event) => setSpendingLimitInput(event.target.value)}
+                placeholder="Sans limite par défaut"
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+              />
+              <span className="mt-1 block font-normal text-amber-700">
+                Limite de dépense uniquement : ne constitue pas un dépôt encaissé. Pour une chambre, utilisez l'encaissement du folio ci-dessus.
+              </span>
+            </label>
+            {activeSpendingLimit !== null ? (
+              <div className="rounded-lg bg-slate-50 p-2 text-xs text-slate-700">
+                Plafond : {formatMoney(spendingLimitInSaleCurrency ?? 0, saleCurrency)}.
+                Reste estimé : {formatMoney(Math.max(0, (spendingLimitInSaleCurrency ?? 0) - cartGrossTotal(sourceCart)), saleCurrency)}.
+                Les ajouts au-delà sont bloqués.
+              </div>
+            ) : null}
             <button
               onClick={() => {
                 void parkCurrentCart();
@@ -2473,6 +2508,9 @@ export default function PosPage() {
                       {parked.note}
                     </div>{" "}
                     <div className="text-xs text-slate-500">
+                      {parked.customerName ? `Client : ${parked.customerName} · ` : ""}
+                      {parked.reservationId ? `Séjour #${parked.reservationId} · ` : ""}
+                      {parked.spendingLimit != null ? `Plafond : ${formatMoney(parked.spendingLimit, parked.spendingCurrency || saleCurrency)} · ` : ""}
                       {" "}
                       {parked.items.reduce(
                         (sum, item) => sum + item.qty,
