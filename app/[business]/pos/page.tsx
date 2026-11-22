@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import BarcodeScannerModal from "@/components/BarcodeScannerModal";
+import ParkedCartsPanel from "@/components/pos/ParkedCartsPanel";
 import SensitiveActionApprovalModal, {
   type SensitiveActionApproval,
 } from "@/components/SensitiveActionApprovalModal";
@@ -339,7 +340,6 @@ export default function PosPage() {
   const [depositDrafts, setDepositDrafts] = useState<Record<string, { amount: string; currency: "HTG" | "USD"; requestKey?: string }>>({});
   const [deposits, setDeposits] = useState<UnpostedDepositMemo[]>([]);
   const [depositTotals, setDepositTotals] = useState<UnpostedDepositSummary["totals"]>({ HTG: "0.00", USD: "0.00" });
-  const [depositsLoading, setDepositsLoading] = useState(false);
   const [depositReadStatus, setDepositReadStatus] = useState<"loading" | "ready" | "unavailable">("loading");
   const [depositSavingId, setDepositSavingId] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState<ParkedCart | null>(null);
@@ -719,7 +719,6 @@ export default function PosPage() {
     setDepositReadStatus("unavailable");
     if (!businessSlug || !branchId || !isOnline) return undefined;
     setDepositReadStatus("loading");
-    setDepositsLoading(true);
     void listUnpostedDeposits(businessSlug).then(result => {
       if (active) {
         setDeposits(result.data);
@@ -729,7 +728,7 @@ export default function PosPage() {
     }).catch(() => {
       // A read error must not block sales or imply that no deposits exist.
       if (active) setDepositReadStatus("unavailable");
-    }).finally(() => { if (active) setDepositsLoading(false); });
+    }).finally(() => {});
     return () => { active = false; };
   }, [businessSlug, branchId, isOnline]);
 
@@ -2317,81 +2316,34 @@ export default function PosPage() {
               {checkoutLoading ? "Traitement..." : "Passer a la caisse"}{" "}
             </button>{" "}
           </section>{" "}
-          <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
-            {" "}
-            <div className="font-bold text-slate-900">
-              Panier en attente
-            </div>{" "}
-            <input
-              value={parkNote}
-              onChange={(event) => setParkNote(event.target.value)}
-              placeholder="Note (ex: Client table 5)"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />{" "}
-            <button
-              onClick={() => {
-                void parkCurrentCart();
-              }}
-              disabled={cart.length === 0}
-              className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-            >
-              {" "}
-              <PauseCircle className="h-4 w-4" /> Mettre le panier en
-              attente{" "}
-            </button>{" "}
-            {parkedCarts.length > 0 ? (
-              <div className="space-y-2 max-h-[180px] overflow-y-auto">
-                {" "}
-                {parkedCarts.map((parked) => (
-                  <div
-                    key={parked.id}
-                    className="rounded-xl border border-slate-200 p-2.5"
-                  >
-                    {" "}
-                    <div className="text-sm font-semibold text-slate-800">
-                      {parked.note}
-                    </div>{" "}
-                    <div className="text-xs text-slate-500">
-                      {" "}
-                      {parked.items.reduce(
-                        (sum, item) => sum + item.qty,
-                        0,
-                      )}{" "}
-                      article(s) -{" "}
-                      {new Date(parked.createdAt).toLocaleTimeString(
-                        "fr-FR",
-                      )}{" "}
-                    </div>{" "}
-                    <div className="mt-2 flex items-center gap-2">
-                      {" "}
-                      <button
-                        onClick={() => {
-                          void resumeParkedCart(parked.id);
-                        }}
-                        className="flex-1 rounded-lg brand-primary-btn text-white text-xs font-semibold py-1.5 inline-flex items-center justify-center gap-1"
-                      >
-                        {" "}
-                        <PlayCircle className="h-3.5 w-3.5" /> Reprendre{" "}
-                      </button>{" "}
-                      <button
-                        onClick={() => {
-                          void discardParkedCart(parked.id);
-                        }}
-                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                      >
-                        {" "}
-                        Suppr{" "}
-                      </button>{" "}
-                    </div>{" "}
-                  </div>
-                ))}{" "}
-              </div>
-            ) : (
-              <div className="text-xs text-slate-500">
-                Aucun panier en attente.
-              </div>
-            )}{" "}
-          </section>{" "}
+          <ParkedCartsPanel
+            locale={locale}
+            count={cart.length}
+            carts={parkedCarts}
+            note={parkNote}
+            onNote={setParkNote}
+            depositAmount={parkDepositInput}
+            onDepositAmount={setParkDepositInput}
+            depositCurrency={parkDepositCurrency}
+            onDepositCurrency={setParkDepositCurrency}
+            drafts={depositDrafts}
+            onDraft={(id, value) => setDepositDrafts(prev => ({ ...prev, [id]: value }))}
+            totals={depositTotals}
+            perCart={depositByCart}
+            status={depositReadStatus}
+            savingDepositId={depositSavingId}
+            canRecord={hasPermission(permissions, "billing.manage")}
+            online={isOnline}
+            branchReady={Boolean(branchId)}
+            onPark={() => void parkCurrentCart()}
+            onResume={id => void resumeParkedCart(id)}
+            onRecord={(id, draft) => void recordDepositForCart(id, draft)}
+            onRequestDelete={id => setConfirmDiscard(parkedCarts.find(park => park.id === id) ?? null)}
+            confirming={confirmDiscard}
+            deletingId={discardingId}
+            onCancelDelete={() => setConfirmDiscard(null)}
+            onConfirmDelete={id => void discardParkedCart(id)}
+          />
         </aside>{" "}
       </div>{" "}
       <SensitiveActionApprovalModal
