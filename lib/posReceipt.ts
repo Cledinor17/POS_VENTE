@@ -2,6 +2,7 @@ import { formatMoney } from "./currency";
 import { printHtmlDocument } from "./printHtml";
 import { receiptLabels, receiptLocale, RECEIPT_LOCALE_TAG } from "./receiptI18n";
 import type { Locale } from "./locale";
+import { safePrintTemplate, type PrintTemplate } from "./printTemplateModel";
 
 export type PosReceiptItem = {
   name: string;
@@ -78,7 +79,10 @@ function safeImageSrc(value: string | null | undefined): string {
 }
 
 export type ReceiptPaper = "58mm" | "80mm" | "a4";
-export type ReceiptPrintOptions = { paper?: ReceiptPaper };
+export type ReceiptPrintOptions = {
+  paper?: ReceiptPaper;
+  template?: PrintTemplate | null;
+};
 
 export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions = {}): string {
   const locale = receiptLocale(sale.locale);
@@ -86,6 +90,13 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
   const dir = locale === "ar" ? "rtl" : "ltr";
   const a4 = options.paper === "a4";
   const narrow = options.paper === "58mm";
+  const paper = options.paper ?? "80mm";
+  const template = safePrintTemplate(options.template, paper);
+  const layout = template.layout;
+  const logoPosition = template.logo_position;
+  const logoSize = narrow ? Math.min(64, template.logo_size) : template.logo_size;
+  const nameSize = template.name_size;
+  const accent = template.accent_color;
   const localeTag = RECEIPT_LOCALE_TAG[locale];
   const linesHtml = sale.items
     .map((item) => {
@@ -105,15 +116,17 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
       ? `<div class="row"><span>${escapeHtml(t.received)}</span><strong>${escapeHtml(formatMoney(sale.cashReceived, sale.paymentCurrency))}</strong></div><div class="row"><span>${escapeHtml(t.change)}</span><strong>${escapeHtml(formatMoney(sale.change, sale.paymentCurrency))}</strong></div>`
       : "";
   const logoUrl = safeImageSrc(sale.businessLogoSrc);
-  const logoBlock = logoUrl
+  const logoBlock = template.show_logo && logoUrl
     ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(t.logoAlt)}" class="logo" />`
     : "";
   const qrUrl = safeImageSrc(sale.receiptQrCodeDataUri);
-  const qrBlock = qrUrl
+  const qrBlock = template.show_qr && qrUrl
     ? `<div class="qr-card"><div class="qr-title">${escapeHtml(t.qrPayment)}</div><img src="${escapeHtml(qrUrl)}" alt="${escapeHtml(t.qrAlt)}" class="qr-image" /><div class="muted small">${escapeHtml(t.qrScan)}</div></div>`
     : "";
-  const footerBlock = sale.invoiceFooter.trim()
-    ? `<div class="footer-note">${escapeHtml(sale.invoiceFooter).replace(/\n/g, "<br />")}</div>`
+  const footerContent = template.footer_text !== null
+    ? template.footer_text : sale.invoiceFooter;
+  const footerBlock = template.show_footer && footerContent.trim()
+    ? `<div class="footer-note">${escapeHtml(footerContent).replace(/\n/g, "<br />")}</div>`
     : "";
   const statusLabels = t.statuses;
   const copyBlock = sale.reprint ? `<div class="center copy"><strong>${escapeHtml(t.reprint)}</strong></div>` : "";
@@ -141,11 +154,15 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
         : ''
     : '';
   // The business identity is the first visual block on every paper format.
-  const brandHeader = `<header class="brand-header">
-    <div class="brand-main">${logoBlock}<div class="brand-name">${escapeHtml(sale.businessName)}</div></div>
-    <div class="brand-rule" aria-hidden="true"></div>
-    ${sale.businessAddress ? `<div class="brand-address">${escapeHtml(sale.businessAddress)}</div>` : ""}
-    ${sale.businessPhone || sale.businessEmail ? `<div class="brand-contact">${[sale.businessPhone, sale.businessEmail].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
+  const contact = [
+    template.show_phone ? sale.businessPhone : "",
+    template.show_email ? sale.businessEmail : "",
+  ].filter(Boolean).map(escapeHtml).join(" · ");
+  const brandHeader = `<header class="brand-header layout-${layout} logo-pos-${logoPosition}">
+    <div class="brand-main">${logoBlock}${template.show_name ? `<div class="brand-name">${escapeHtml(sale.businessName)}</div>` : ""}</div>
+    ${template.show_separator ? '<div class="brand-rule" aria-hidden="true"></div>' : ""}
+    ${template.show_address && sale.businessAddress ? `<div class="brand-address">${escapeHtml(sale.businessAddress)}</div>` : ""}
+    ${contact ? `<div class="brand-contact">${contact}</div>` : ""}
   </header>`;
   const css = `
     @page { ${a4 ? "size: A4; margin: 14mm;" : "margin: 4mm;"} }
@@ -158,13 +175,22 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
     .center {text-align:center;} .muted {color:#64748b;} .small {font-size:.87em;line-height:1.45;}
     .copy {margin:0 0 8px;font-size:11px;letter-spacing:.08em;}
     .brand-header {text-align:center; margin:0 0 13px; break-inside:avoid;}
+    .brand-header.logo-pos-right .brand-main {flex-direction:row-reverse;}
+    .brand-header.logo-pos-center .brand-main {justify-content:center; flex-wrap:wrap;}
+    .brand-header.logo-pos-center .brand-name {text-align:center; flex-basis:100%;}
+    .brand-header.layout-classic .brand-main {flex-direction:column; justify-content:center;}
+    .brand-header.layout-classic .brand-name {text-align:center; flex:auto;}
+    .brand-header.layout-compact {margin-bottom:5px;}
+    .brand-header.layout-compact .brand-main {min-height:35px; gap:5px; margin-bottom:2px;}
+    .brand-header.layout-compact .brand-rule {margin:4px 0 3px;}
+
     .brand-main {display:flex; flex-direction:row; gap:9px; align-items:center; justify-content:center;
       min-height:60px; margin-bottom:7px;}
-    .brand-main .logo {width:${narrow ? "43px" : "60px"};height:${narrow ? "43px" : "60px"};flex:none;object-fit:contain;object-position:center;}
-    .brand-name {font-size:${narrow ? "15px" : "18px"};line-height:1.12;font-weight:800;overflow-wrap:anywhere;
+    .brand-main .logo {width:${logoSize}px;height:${logoSize}px;flex:none;object-fit:contain;object-position:center;}
+    .brand-name {font-size:${nameSize}px;line-height:1.12;font-weight:800;overflow-wrap:anywhere;
       text-align:start; flex:1; }
     .brand-main:not(:has(.logo)) .brand-name {text-align:center;}
-    .brand-rule {border-top:2px solid #172554;margin:7px 0 6px;width:100%;}
+    .brand-rule {border-top:2px solid ${accent};margin:7px 0 6px;width:100%;}
     .brand-address {font-weight:600;line-height:1.4;word-break:break-word;}
     .brand-contact {color:#475569;font-size:.93em;line-height:1.4;margin-top:3px;word-break:break-word;}
     .sep {border-top:1px dashed #94a3b8;margin:10px 0;}
@@ -174,7 +200,7 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
     td {padding:4px 2px;vertical-align:top;overflow-wrap:anywhere;}
     td:first-child {width:43%;padding-inline-start:0;} td:last-child {padding-inline-end:0;}
     tr,.header-card,.qr-card,.footer-note {break-inside:avoid;page-break-inside:avoid;}
-    .grand {font-size:1.22em;font-weight:800;}
+    .grand {font-size:1.22em;font-weight:800;color:${accent};}
     .header-card,.qr-card,.footer-note {border:1px solid #e2e8f0;border-radius:10px;
       padding:9px;background:#fff;margin-bottom:10px;}
     .item-name {font-weight:700;} .item-meta {color:#64748b;font-size:.85em;}
@@ -183,8 +209,8 @@ export function buildReceiptHtml(sale: PosReceipt, options: ReceiptPrintOptions 
     .qr-image {width:96px;height:96px;display:block;margin:0 auto 8px;object-fit:contain;}
     .footer-note {font-size:.95em;line-height:1.5;color:#334155;white-space:normal;}
     .paper-a4 .brand-main {justify-content:flex-start;gap:18px;min-height:100px;}
-    .paper-a4 .brand-main .logo {width:100px;height:100px;}
-    .paper-a4 .brand-name {font-size:30px;}
+    .paper-a4 .brand-main .logo {width:${logoSize}px;height:${logoSize}px;}
+    .paper-a4 .brand-name {font-size:${nameSize}px;}
     .paper-a4 .brand-header {margin-bottom:22px;}
     .paper-a4 .brand-rule {margin:14px 0 10px;border-top-width:3px;}
     .paper-a4 .brand-address {font-size:14px;}
