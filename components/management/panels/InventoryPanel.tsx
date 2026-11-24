@@ -20,13 +20,7 @@ import {
   type InventorySummaryResult,
 } from "@/lib/inventoryApi";
 import { toastError, toastSuccess } from "@/lib/toast";
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
+import { convertAmount, formatMoney, normalizeCurrency } from "@/lib/currency";
 function formatQty(value: number): string {
   return new Intl.NumberFormat("fr-FR", {
     minimumFractionDigits: 0,
@@ -58,7 +52,7 @@ function movementActorLabel(movement: InventoryMovement): string {
   return "N/A";
 }
 const EMPTY_SUMMARY: InventorySummaryResult = {
-  currency: "USD",
+  currency: "HTG",
   summary: {
     totalProducts: 0,
     trackedProducts: 0,
@@ -75,6 +69,8 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
   const businessSlug = params?.business ?? "";
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [summary, setSummary] = useState<InventorySummaryResult>(EMPTY_SUMMARY);
+  const currency = normalizeCurrency(summary.currency, "HTG");
+  const exchange = { exchangeBuyRate: summary.exchangeBuyRate, exchangeSellRate: summary.exchangeSellRate };
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [loadingBase, setLoadingBase] = useState(true);
   const [loadingMovements, setLoadingMovements] = useState(true);
@@ -350,7 +346,7 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
         />
         <StatCard
           label="Valeur stock"
-          value={formatMoney(summary.summary.stockValue)}
+          value={formatMoney(summary.summary.stockValue, currency)}
           tone="text-sky-700"
         />
       </section>
@@ -412,7 +408,7 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
                         {formatQty(product.reorderLevel)}
                       </td>
                       <td className="py-3 pr-3 text-slate-700">
-                        {formatMoney(product.stock * product.cost)}
+                        {formatMoney(convertAmount(product.stock * product.cost, product.costCurrency, currency, exchange), currency)}
                       </td>
                       <td className="py-3">
                         <button
@@ -512,7 +508,7 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
               step="0.01"
               value={unitCost}
               onChange={(event) => setUnitCost(event.target.value)}
-              placeholder="Cout unitaire (optionnel)"
+              placeholder={`Coût unitaire (${selectedProduct?.costCurrency ?? currency}, optionnel)`}
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />
             <textarea
@@ -654,7 +650,7 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
                       {formatQty(movement.quantity)}
                     </td>
                     <td className="py-3 pr-3 text-slate-700">
-                      {formatMoney(movement.unitCost)}
+                      {movement.unitCostCurrency ? formatMoney(convertAmount(movement.unitCost, movement.unitCostCurrency, currency, exchange), currency) : `${movement.unitCost.toFixed(2)} (devise non renseignée)`}
                     </td>
                     <td className="py-3 pr-3 text-slate-600">
                       {movement.reason}
