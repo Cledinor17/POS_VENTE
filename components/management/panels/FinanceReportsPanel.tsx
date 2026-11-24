@@ -316,15 +316,15 @@ export default function FinanceReportsPanel({ active = true }: ManagementPanelPr
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-blue-200 bg-gradient-to-r from-[#0b4f88] via-[#0d63b8] to-emerald-600 p-5 text-white shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-2xl font-semibold">Tableau de bord financier</h2>
-            <p className="mt-1 text-sm text-slate-200">
+            <p className="mt-1 text-sm text-slate-600">
               Revenus par departement, P&L, bilan et ecritures comptables.
             </p>
             {lastUpdated ? (
-              <p className="mt-2 text-xs text-slate-300">
+              <p className="mt-2 text-xs text-slate-600">
                 Mis a jour: {new Date(lastUpdated).toLocaleString("fr-FR")}
               </p>
             ) : null}
@@ -337,8 +337,8 @@ export default function FinanceReportsPanel({ active = true }: ManagementPanelPr
                 onClick={() => { setRangeKey(opt.id); setUseCustom(false); }}
                 className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
                   !useCustom && rangeKey === opt.id
-                    ? "border-white bg-white text-slate-900"
-                    : "border-slate-300/40 bg-white/10 text-white hover:bg-white/20"
+                    ? "border-[#0a4d8f] bg-[#0a4d8f] text-white"
+                    : "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
                 }`}
               >
                 {opt.label}
@@ -348,7 +348,7 @@ export default function FinanceReportsPanel({ active = true }: ManagementPanelPr
               type="button"
               onClick={() => void loadAll(true)}
               disabled={loading || refreshing}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300/40 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60"
             >
               <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               Actualiser
@@ -358,21 +358,21 @@ export default function FinanceReportsPanel({ active = true }: ManagementPanelPr
 
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="space-y-0.5 text-xs">
-            <span className="text-slate-300">Du</span>
+            <span className="text-slate-600">Du</span>
             <input
               type="date"
               value={useCustom ? customFrom : from}
               onChange={(e) => { setCustomFrom(e.target.value); setUseCustom(true); }}
-              className="block w-40 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white placeholder-slate-300 focus:outline-none"
+              className="block w-40 rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
             />
           </label>
           <label className="space-y-0.5 text-xs">
-            <span className="text-slate-300">Au</span>
+            <span className="text-slate-600">Au</span>
             <input
               type="date"
               value={useCustom ? customTo : to}
               onChange={(e) => { setCustomTo(e.target.value); setUseCustom(true); }}
-              className="block w-40 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white placeholder-slate-300 focus:outline-none"
+              className="block w-40 rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
             />
           </label>
         </div>
@@ -589,7 +589,7 @@ export default function FinanceReportsPanel({ active = true }: ManagementPanelPr
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs font-medium text-slate-600">
                 <tr>
                   <th className="px-3 py-2">Code</th>
                   <th className="px-3 py-2">Compte</th>
@@ -639,8 +639,8 @@ function Panel({
   className?: string;
 }) {
   return (
-    <section className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <h2 className="mb-3 border-b border-slate-100 pb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+    <section className={`rounded-lg border border-slate-200 bg-white p-4 ${className}`}>
+      <h2 className="mb-3 border-b border-slate-100 pb-3 text-sm font-semibold text-slate-800">
         {title}
       </h2>
       {loading ? <div className="py-12 text-center text-sm text-slate-500">Chargement...</div> : children}
@@ -672,11 +672,11 @@ function KpiCard({
   };
   const c = colors[color];
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-          <p className={`mt-2 truncate text-2xl font-bold ${c.value}`}>{value}</p>
+          <p className="text-xs font-medium text-slate-600">{title}</p>
+          <p className={`mt-2 break-words text-xl font-semibold tabular-nums ${c.value}`}>{value}</p>
           <p className="mt-1 text-xs text-slate-500">{sub}</p>
         </div>
         <span className={`inline-flex rounded-xl p-2 ${c.badge}`}>
@@ -699,8 +699,8 @@ function BsCard({
   badgeOk?: boolean;
 }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+    <article className="rounded-lg border border-slate-200 bg-white p-4">
+      <p className="text-xs font-medium text-slate-600">{label}</p>
       <p className="mt-2 text-xl font-bold text-slate-900">{value}</p>
       {badge ? <StatusBadge ok={badgeOk ?? false} label={badge} /> : null}
     </article>
@@ -718,8 +718,8 @@ function CfCard({
 }) {
   const toneClass = tone === "emerald" ? "text-emerald-800" : tone === "rose" ? "text-rose-800" : "text-slate-900";
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+    <article className="rounded-lg border border-slate-200 bg-white p-4">
+      <p className="text-xs font-medium text-slate-600">{label}</p>
       <p className={`mt-2 text-xl font-bold ${toneClass}`}>{value}</p>
     </article>
   );
