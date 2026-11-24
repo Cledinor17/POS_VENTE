@@ -1853,11 +1853,11 @@ export default function PosPage() {
           </section>
         </div>
       ) : null}
-      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,1fr)] 2xl:grid-cols-[minmax(0,1.2fr)_minmax(460px,1fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(460px,1.12fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(520px,1fr)]">
         {" "}
         <section className="min-w-0 space-y-3">
           {" "}
-          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+          <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-3">
             {" "}
             <div className="relative">
               {" "}
@@ -1906,7 +1906,7 @@ export default function PosPage() {
               ))}{" "}
             </select>{" "}
           </div>{" "}
-          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="bg-white p-3 rounded-lg border border-slate-200">
             {" "}
             {loadingProducts ? (
               <div className="py-10 text-center text-slate-500">
@@ -2059,11 +2059,11 @@ export default function PosPage() {
         </section>{" "}
         <aside id="pos-cart-section" className="min-w-0 space-y-3 scroll-mt-4">
           {" "}
-          <section className="overflow-hidden bg-white rounded-2xl border-2 border-indigo-300 shadow-lg">
+          <section className="overflow-hidden bg-white rounded-lg border border-slate-300">
             {" "}
-            <div className="px-3 py-2.5 border-b border-indigo-100 bg-indigo-50 flex items-center justify-between">
+            <div className="px-3 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               {" "}
-              <div className="text-base font-extrabold text-indigo-950">{ui.cart}</div>{" "}
+              <div className="text-base font-semibold text-slate-900">{ui.cart}</div>{" "}
               <div className="text-sm text-slate-500">
                 {itemCount} article(s)
               </div>{" "}
@@ -2086,7 +2086,7 @@ export default function PosPage() {
 
                   return (
                     <div key={item.productId} className="space-y-1.5">
-                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                      <div className="overflow-x-auto border-b border-slate-200 bg-white">
                         <div className="flex min-w-[430px] items-center gap-2 px-2 py-2">
                           <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
                             <Image src={imageSrc} alt={item.name} fill sizes="28px"
@@ -2155,7 +2155,7 @@ export default function PosPage() {
                 })
               )}{" "}
             </div>{" "}
-            <div className="p-3 border-t border-indigo-100 bg-indigo-50/50 space-y-1 text-sm">
+            <div className="p-3 border-t border-slate-200 bg-slate-50 space-y-1 text-sm tabular-nums">
               {" "}
               <div className="flex justify-between text-slate-600">
                 {" "}
@@ -2186,7 +2186,7 @@ export default function PosPage() {
                   <span>- {formatMoney(couponDiscountAmount, saleCurrency)}</span>{" "}
                 </div>
               ) : null}{" "}
-              <div className="flex justify-between gap-2 text-xl font-extrabold text-indigo-950 pt-2 border-t border-indigo-200">
+              <div className="flex justify-between gap-2 text-2xl font-semibold tabular-nums text-slate-950 pt-2 border-t border-slate-300">
                 {" "}
                 <span>Total</span> <span>{formatMoney(grandTotal, saleCurrency)}</span>{" "}
               </div>{" "}
@@ -2221,7 +2221,7 @@ export default function PosPage() {
             onCancelDelete={() => setConfirmDiscard(null)}
             onConfirmDelete={id => void discardParkedCart(id)}
           />
-          <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
+          <section className="bg-white rounded-lg border border-slate-200 p-3 space-y-3">
             {" "}
             <div className="font-bold text-slate-900">Paiement</div>{" "}
             <div className="space-y-1.5 relative">
@@ -2517,7 +2517,7 @@ export default function PosPage() {
                   setParkModalOpen(true);
                 }}
                 disabled={cart.length === 0 || branchLoading || !branchId || parkSaving}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-indigo-200 bg-indigo-50 px-3 py-2.5 text-sm font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50">
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                 <PauseCircle className="h-4 w-4 shrink-0" />{activeParked ? "Remettre la fiche en attente" : ui.park}
               </button>
             </div>{" "}
