@@ -121,7 +121,7 @@ export default function AuditSettingsPanel({ embedded = false }: SettingsPanelPr
 
   return (
     <div className="space-y-5">
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <Heading className="text-xl font-bold text-slate-900">Audit & securite</Heading>
         <p className="text-sm text-slate-500 mt-1">Journaux d&apos;audit backend (`audit/logs`).</p>
       </section>
@@ -132,7 +132,7 @@ export default function AuditSettingsPanel({ embedded = false }: SettingsPanelPr
         </section>
       ) : null}
 
-      <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <input
             value={action}
@@ -196,7 +196,7 @@ export default function AuditSettingsPanel({ embedded = false }: SettingsPanelPr
         </div>
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <section className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <div className="px-4 py-3 border-b text-sm text-slate-600">{total} log(s)</div>
         {loading ? (
           <div className="py-10 text-center text-slate-500">Chargement...</div>
