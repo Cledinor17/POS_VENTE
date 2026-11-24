@@ -2448,7 +2448,7 @@ export default function HotelReservationsPage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-900">Hotel - Reservations</h1>
+            <h1 className="text-xl font-semibold text-slate-900">Hotel - Reservations</h1>
             <p className="mt-1 text-sm text-slate-600">Gestion des reservations de chambres.</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -3254,11 +3254,11 @@ export default function HotelReservationsPage() {
 
                   <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <div>
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Statut</div>
+                      <div className="mb-1 text-xs font-semibold text-slate-600">Statut</div>
                       {renderReservationStatusControl(reservation)}
                     </div>
                     <div>
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</div>
+                      <div className="mb-1 text-xs font-semibold text-slate-600">Actions</div>
                       {renderReservationActions(reservation)}
                     </div>
                   </div>
@@ -3487,7 +3487,7 @@ export default function HotelReservationsPage() {
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client</div>
+                <div className="text-xs font-semibold text-slate-600">Client</div>
                 <div className="mt-2 text-base font-semibold text-slate-900">{detailReservation.guest_name || "-"}</div>
                 <div className="mt-1 text-sm text-slate-600">Telephone: {formatPhoneDisplay(detailReservation.guest_phone) || "-"}</div>
                 <div className="mt-1 text-sm text-slate-600">Email: {detailReservation.guest_email || "-"}</div>
@@ -3497,7 +3497,7 @@ export default function HotelReservationsPage() {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sejour</div>
+                <div className="text-xs font-semibold text-slate-600">Sejour</div>
                 <div className="mt-2 text-sm text-slate-700">
                   Arrivee prevue: <span className="font-semibold text-slate-900">{formatReservationDate(detailReservation.check_in)}</span>
                 </div>
@@ -3512,7 +3512,7 @@ export default function HotelReservationsPage() {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Suivi</div>
+                <div className="text-xs font-semibold text-slate-600">Suivi</div>
                 <div className="mt-2">
                   <span
                     className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getStatusBadgeClasses(
@@ -3531,7 +3531,7 @@ export default function HotelReservationsPage() {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</div>
+                <div className="text-xs font-semibold text-slate-600">Notes</div>
                 <div className="mt-2 text-sm text-slate-700">{detailReservation.notes?.trim() || "Aucune note."}</div>
               </div>
             </div>
