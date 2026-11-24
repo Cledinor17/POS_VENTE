@@ -194,10 +194,10 @@ export default function PrintersSettingsPanel({ embedded = false }: SettingsPane
 
   return (
     <div className="space-y-6">
-      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <div className="flex items-center justify-between">
           <div>
-            <Heading className="text-2xl font-bold text-slate-900">Imprimantes</Heading>
+            <Heading className="text-xl font-semibold text-slate-900">Imprimantes</Heading>
             <p className="text-slate-500 mt-1">
               Configure les imprimantes de tickets et l&apos;ouverture du tiroir-caisse.
             </p>
@@ -217,7 +217,7 @@ export default function PrintersSettingsPanel({ embedded = false }: SettingsPane
         </section>
       ) : null}
 
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-slate-600">
             Une imprimante reseau s&apos;utilise directement (aucun logiciel a installer). Une
