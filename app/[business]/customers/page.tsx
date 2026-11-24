@@ -522,10 +522,10 @@ export default function CustomersPage() {
 
   return (
     <div className="space-y-6">
-      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">{t("page_title")}</h1>
+            <h1 className="text-xl font-semibold text-slate-900">{t("page_title")}</h1>
             <p className="text-slate-500 mt-1">{t("page_subtitle")}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -992,7 +992,7 @@ export default function CustomersPage() {
         </div>
       ) : null}
 
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-4">
         {!canReadCustomers ? (
           <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-600">
             {t("list_hidden")}
@@ -1017,7 +1017,7 @@ export default function CustomersPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px] whitespace-nowrap text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                  <tr className="text-left text-xs font-medium text-slate-600 bg-slate-50 border-b border-slate-200">
                     <th className="py-3 pr-3 font-semibold">{t("reference.table_code")}</th>
                     <th className="py-3 pr-3 font-semibold">{t("table_customer")}</th>
                     <th className="py-3 pr-3 font-semibold">{t("reference.table_phone")}</th>
@@ -1037,7 +1037,7 @@ export default function CustomersPage() {
                         <td className="py-3 pr-3 font-medium text-slate-600">{item.code || "-"}</td>
                         <td className="py-3 pr-3">
                           <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0d63b8] to-[#f59e0b] text-xs font-bold text-white">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">
                               {getCustomerInitials(item, t("default_customer_name"))}
                             </div>
                             <div className="flex items-center gap-2">
