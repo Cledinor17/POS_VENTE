@@ -125,8 +125,8 @@ function BackupContent({ business, embedded }: { business: string; embedded: boo
   ];
 
   return <div className="space-y-5" aria-busy={disabled}>
-    <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
-      <Heading className="text-2xl font-bold text-slate-900">Sauvegarder et récupérer mes données</Heading>
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <Heading className="text-xl font-semibold text-slate-900">Sauvegarder et récupérer mes données</Heading>
       <p className="mt-2 text-slate-500">
         Gardez une copie des données de <strong className="text-slate-700">{summary?.businessName || "votre entreprise"}</strong> pour les retrouver après une panne ou une erreur.
       </p>
@@ -145,7 +145,7 @@ function BackupContent({ business, embedded }: { business: string; embedded: boo
         : "Le propriétaire doit d’abord configurer l’espace de données dans les paramètres de l’entreprise."}
     </p>}
 
-    <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
       <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><Download className="h-5 w-5 text-[#0d63b8]" />1. Garder une copie</h2>
       <p className="mt-2 max-w-3xl text-sm text-slate-600">
         Téléchargez un fichier Excel contenant les données de cette entreprise et ses pièces jointes disponibles : ventes, stock, clients, équipe et réglages.
@@ -168,7 +168,7 @@ function BackupContent({ business, embedded }: { business: string; embedded: boo
       </p>
     </section>
 
-    <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
       <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900"><RotateCcw className="h-5 w-5 text-[#0d63b8]" />2. Retrouver mes données</h2>
       <p className="mt-2 text-sm text-slate-600">Choisissez une sauvegarde de cette entreprise. Vous pourrez vérifier son nom et sa date avant de continuer.</p>
       {loading ? <p role="status" className="mt-4 text-sm text-slate-500">Chargement…</p> : !summary ? <button type="button"
@@ -215,7 +215,7 @@ function BackupContent({ business, embedded }: { business: string; embedded: boo
       </form>}
     </section>
 
-    {!!summary?.recoveryPoints.length && <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
+    {!!summary?.recoveryPoints.length && <section className="rounded-lg border border-slate-200 bg-white p-4">
       <h2 className="text-lg font-bold text-slate-900">Copies conservées avant une récupération</h2>
       <p className="mt-2 text-sm text-slate-600">Pour revenir à la situation précédente, saisissez votre mot de passe de sauvegarde dans « Garder une copie », puis téléchargez une de ces copies et choisissez-la ci-dessus. Les trois dernières copies sont conservées.</p>
       <ul className="mt-3 divide-y divide-slate-100">
