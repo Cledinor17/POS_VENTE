@@ -45,7 +45,7 @@ export default function StockReportsPanel({ active: panelActive = true }: Manage
   if (!allowed) return null;
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="flex items-center gap-2 text-2xl font-bold text-slate-900"><Package className="h-6 w-6" /> Rapport de stock</h2>
+      <div><h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900"><Package className="h-6 w-6" /> Rapport de stock</h2>
         <p className="mt-1 text-sm text-slate-500">Approvisionnements, ventes, stock restant et valorisation par produit.</p></div>
       <button onClick={() => void exportPdf()} disabled={!report || loading || exporting}
         className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
