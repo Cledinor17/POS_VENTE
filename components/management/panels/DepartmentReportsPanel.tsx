@@ -98,19 +98,19 @@ export default function DepartmentReportsPanel({ active = true }: ManagementPane
   return (
     <div className="space-y-6">
       {/* Header */}
-      <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-slate-800 to-slate-700 p-5 text-white shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-200">
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
               <BarChart3 className="h-3.5 w-3.5" /> Rapports
             </div>
             <h2 className="mt-3 text-2xl font-semibold">Revenus par département</h2>
-            <p className="mt-1 text-sm text-slate-300">
+            <p className="mt-1 text-sm text-slate-600">
               Comparez les revenus des activités de votre entreprise.
             </p>
           </div>
           <button type="button" onClick={() => void load(true)} disabled={loading || refreshing}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-60">
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60">
             <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             Actualiser
           </button>
@@ -150,17 +150,17 @@ export default function DepartmentReportsPanel({ active = true }: ManagementPane
           {/* Summary */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Revenu total</p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-900">
+              <p className="text-xs font-medium text-slate-600">Revenu total</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
                 {formatMoney(report.totalRevenue, report.currency)}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Total operations</p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-900">{report.totalOrders}</p>
+              <p className="text-xs font-medium text-slate-600">Total operations</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{report.totalOrders}</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Periode</p>
+              <p className="text-xs font-medium text-slate-600">Periode</p>
               <p className="mt-1 text-sm font-semibold text-slate-700">
                 {new Date(report.from).toLocaleDateString("fr-FR")} – {new Date(report.to).toLocaleDateString("fr-FR")}
               </p>
@@ -221,7 +221,7 @@ export default function DepartmentReportsPanel({ active = true }: ManagementPane
           {/* Detailed table */}
           <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs font-medium text-slate-600">
                 <tr>
                   <th className="px-5 py-3">Departement</th>
                   <th className="px-5 py-3 text-right">Operations</th>
