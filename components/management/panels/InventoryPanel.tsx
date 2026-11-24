@@ -302,10 +302,10 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
   }
   return (
     <div className="space-y-6">
-      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">
+            <h2 className="text-xl font-semibold text-slate-900">
               Stock et inventaire
             </h2>
             <p className="text-slate-500 mt-1">
@@ -355,7 +355,7 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
         />
       </section>
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <section className="xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+        <section className="xl:col-span-2 bg-white p-4 rounded-lg border border-slate-200 space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <h2 className="text-base font-bold text-slate-900">
               Produits en stock
@@ -451,7 +451,7 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
           )}
         </section>
         <aside className="space-y-4">
-          <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+          <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-3">
             <h3 className="font-bold text-slate-900">Approvisionnement et ajustement</h3>
             <select
               value={selectedProductId}
@@ -532,7 +532,7 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
               {submittingAdjustment ? "Traitement..." : "Appliquer ajustement"}
             </button>
           </section>
-          <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+          <section className="bg-white p-4 rounded-lg border border-slate-200">
             <h3 className="font-bold text-slate-900 mb-2">
               Produits en alerte
             </h3>
@@ -559,7 +559,7 @@ export default function InventoryPanel({ active = true }: ManagementPanelProps =
           </section>
         </aside>
       </div>
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h2 className="text-base font-bold text-slate-900">
             Mouvements de stock ({movementTotal})
@@ -708,12 +708,12 @@ function StatCard({
   tone: string;
 }) {
   return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+    <div className="bg-white p-4 rounded-lg border border-slate-200">
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm text-slate-500">{label}</p>
         <Boxes className="h-4 w-4 text-slate-300" />
       </div>
-      <p className={`mt-2 text-2xl font-bold ${tone}`}>{value}</p>
+      <p className={`mt-2 text-xl font-semibold tabular-nums ${tone}`}>{value}</p>
     </div>
   );
 }
