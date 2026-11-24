@@ -208,13 +208,13 @@ export default function CategoriesPanel({ active = true, onSelectTab }: Manageme
   return (
     <div className="space-y-6">
       {" "}
-      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         {" "}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           {" "}
           <div>
             {" "}
-            <h2 className="text-2xl font-bold text-slate-900">
+            <h2 className="text-xl font-semibold text-slate-900">
               Categories produits
             </h2>{" "}
             <p className="text-slate-500 mt-1">
@@ -252,7 +252,7 @@ export default function CategoriesPanel({ active = true, onSelectTab }: Manageme
         {" "}
         <form
           onSubmit={handleCreateCategory}
-          className="lg:col-span-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4"
+          className="lg:col-span-1 bg-white p-4 rounded-lg border border-slate-200 space-y-4"
         >
           {" "}
           <h2 className="text-base font-bold text-slate-900">
@@ -292,7 +292,7 @@ export default function CategoriesPanel({ active = true, onSelectTab }: Manageme
             {saving ? "Ajout..." : "Ajouter la categorie"}{" "}
           </button>{" "}
         </form>{" "}
-        <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+        <div className="lg:col-span-2 bg-white p-4 rounded-lg border border-slate-200 space-y-4">
           {" "}
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             {" "}
