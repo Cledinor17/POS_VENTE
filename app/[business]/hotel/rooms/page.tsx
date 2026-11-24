@@ -322,7 +322,7 @@ export default function HotelRoomsPage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-900">Hotel - Chambres</h1>
+            <h1 className="text-xl font-semibold text-slate-900">Hotel - Chambres</h1>
             <p className="mt-1 text-sm text-slate-600">Affichage en tableau, creation en modal, details avec slideshow.</p>
           </div>
           <div className="flex gap-2">
@@ -344,12 +344,12 @@ export default function HotelRoomsPage() {
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total chambres</div>
-            <div className="mt-1 text-2xl font-extrabold text-slate-900">{rooms.length}</div>
+            <div className="text-xs font-semibold text-slate-600">Total chambres</div>
+            <div className="mt-1 text-xl font-semibold text-slate-900">{rooms.length}</div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Occupees</div>
-            <div className="mt-1 text-2xl font-extrabold text-slate-900">{occupiedCount}</div>
+            <div className="text-xs font-semibold text-slate-600">Occupees</div>
+            <div className="mt-1 text-xl font-semibold text-slate-900">{occupiedCount}</div>
           </div>
         </div>
       </div>
