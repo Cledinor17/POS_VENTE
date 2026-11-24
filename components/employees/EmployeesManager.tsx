@@ -583,10 +583,10 @@ export default function EmployeesManager({ embedded = false }: { embedded?: bool
 
   return (
     <div className="space-y-6">
-      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            {embedded ? <h2 className="text-2xl font-bold text-slate-900">Employés</h2> : <h1 className="text-2xl font-bold text-slate-900">Employés</h1>}
+            {embedded ? <h2 className="text-xl font-semibold text-slate-900">Employés</h2> : <h1 className="text-xl font-semibold text-slate-900">Employés</h1>}
             <p className="text-slate-500 mt-1">
               Gere les employes et enregistre les paiements de salaire.
             </p>
@@ -626,7 +626,7 @@ export default function EmployeesManager({ embedded = false }: { embedded?: bool
         </section>
       ) : null}
 
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_170px_auto] gap-3">
             <input
               value={queryInput}
@@ -669,7 +669,7 @@ export default function EmployeesManager({ embedded = false }: { embedded?: bool
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1280px] whitespace-nowrap text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                  <tr className="text-left text-xs font-medium text-slate-600 border-b border-slate-200">
                     <th className="py-3 pr-3 font-semibold">Employé</th>
                     <th className="py-3 pr-3 font-semibold">Poste</th>
                     <th className="py-3 pr-3 font-semibold">E-mail</th>
@@ -777,7 +777,7 @@ export default function EmployeesManager({ embedded = false }: { embedded?: bool
           </div>
       </section>
 
-      <section id="employee-payments" className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 scroll-mt-24">
+      <section id="employee-payments" className="bg-white p-4 rounded-lg border border-slate-200 space-y-4 scroll-mt-24">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-bold text-slate-900">
               Historique paiements
@@ -838,7 +838,7 @@ export default function EmployeesManager({ embedded = false }: { embedded?: bool
           )}
       </section>
 
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-4">
           <h2 className="font-bold text-slate-900">
             Deductions
             {selectedEmployee ? ` - ${selectedEmployee.name}` : ""}
