@@ -67,7 +67,7 @@ export default function ReceivablesReportsPanel({ active = true }: ManagementPan
 
   return (
     <div className="space-y-5">
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <h2 className="text-xl font-bold text-slate-900">Créances clients</h2>
         <p className="text-sm text-slate-500 mt-1">Suivez les sommes dues par vos clients et les retards de paiement.</p>
       </section>
@@ -78,7 +78,7 @@ export default function ReceivablesReportsPanel({ active = true }: ManagementPan
         </section>
       ) : null}
 
-      <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <div className="flex items-center gap-3">
           <label className="text-sm text-slate-600">Date de reference</label>
           <input
@@ -103,7 +103,7 @@ export default function ReceivablesReportsPanel({ active = true }: ManagementPan
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
           <div className="px-4 py-3 border-b text-sm font-semibold text-slate-700">AR Summary par client</div>
           {loading ? (
             <div className="py-8 text-center text-slate-500">Chargement...</div>
@@ -131,7 +131,7 @@ export default function ReceivablesReportsPanel({ active = true }: ManagementPan
           )}
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
           <div className="text-sm font-semibold text-slate-700 mb-3">Aging buckets</div>
           <div className="space-y-2 text-sm">
             <Bucket label="Current" value={aging.totals.current} currency={reportCurrency} />
@@ -148,9 +148,9 @@ export default function ReceivablesReportsPanel({ active = true }: ManagementPan
 
 function StatCard({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+    <div className="bg-white p-4 rounded-lg border border-slate-200">
       <p className="text-sm text-slate-500">{label}</p>
-      <p className={`mt-2 text-2xl font-bold ${tone}`}>{value}</p>
+      <p className={`mt-2 text-xl font-semibold tabular-nums ${tone}`}>{value}</p>
     </div>
   );
 }
