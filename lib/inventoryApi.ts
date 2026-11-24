@@ -22,6 +22,8 @@ export type LowStockProduct = {
 
 export type InventorySummaryResult = {
   currency: string;
+  exchangeBuyRate?: number;
+  exchangeSellRate?: number;
   summary: InventorySummary;
   lowStockProducts: LowStockProduct[];
 };
@@ -35,6 +37,7 @@ export type InventoryMovement = {
   reason: string;
   quantity: number;
   unitCost: number;
+  unitCostCurrency?: string;
   sourceType: string | null;
   sourceId: string | null;
   notes: string | null;
@@ -132,7 +135,9 @@ function normalizeSummary(raw: unknown): InventorySummaryResult {
   const lowRaw = Array.isArray(obj.low_stock_products) ? obj.low_stock_products : [];
 
   return {
-    currency: toString(obj.currency, "USD"),
+    currency: toString(obj.currency, "HTG"),
+    exchangeBuyRate: toNumber(obj.exchange_buy_rate) || undefined,
+    exchangeSellRate: toNumber(obj.exchange_sell_rate) || undefined,
     summary: {
       totalProducts: toNumber(summaryRaw.total_products, 0),
       trackedProducts: toNumber(summaryRaw.tracked_products, 0),
@@ -168,6 +173,7 @@ function normalizeMovement(raw: unknown): InventoryMovement {
     reason: toString(obj.reason, ""),
     quantity: toNumber(obj.quantity, 0),
     unitCost: toNumber(obj.unit_cost, 0),
+    unitCostCurrency: toString(obj.unit_cost_currency) || undefined,
     sourceType: toString(obj.source_type, "") || null,
     sourceId: toString(obj.source_id, "") || null,
     notes: toString(obj.notes, "") || null,
