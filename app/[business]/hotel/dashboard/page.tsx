@@ -753,18 +753,18 @@ export default function HotelDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-blue-200 bg-gradient-to-r from-[#0b4f88] via-[#0d63b8] to-[#f59e0b] p-5 text-white shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-100">
+            <div className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
               <Sparkles className="h-3.5 w-3.5" />
               Dashboard 360 hotel
             </div>
             <h1 className="mt-3 text-2xl font-semibold">Vue globale du systeme</h1>
-            <p className="mt-1 text-sm text-slate-200">
+            <p className="mt-1 text-sm text-slate-600">
               Reservations, facturation, stock, depenses, creances et operations hotel sur le meme ecran.
             </p>
-            <p className="mt-2 text-xs text-slate-300">
+            <p className="mt-2 text-xs text-slate-500">
               Derniere mise a jour: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "en attente"}
             </p>
           </div>
@@ -777,8 +777,8 @@ export default function HotelDashboardPage() {
                 onClick={() => setRange(option.id)}
                 className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
                   range === option.id
-                    ? "border-white bg-white text-slate-900"
-                    : "border-slate-300/40 bg-white/10 text-white hover:bg-white/20"
+                    ? "border-[#0a4d8f] bg-[#0a4d8f] text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 {option.label}
@@ -788,7 +788,7 @@ export default function HotelDashboardPage() {
               type="button"
               onClick={() => void loadDashboard(true)}
               disabled={loading || refreshing}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300/40 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               Actualiser
@@ -1034,7 +1034,7 @@ export default function HotelDashboardPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-left text-xs font-medium text-slate-600">
                   <tr>
                     <th className="px-3 py-2">Commande</th>
                     <th className="px-3 py-2">Client / chambre</th>
@@ -1046,7 +1046,7 @@ export default function HotelDashboardPage() {
                 </thead>
                 <tbody>
                   {insights.recentOrders.map((order, index) => (
-                    <tr key={order.id || `${order.invoiceNumber}-${index}`} className="border-b border-slate-100 last:border-0">
+                    <tr key={order.id || `${order.invoiceNumber}-${index}`} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                       <td className="px-3 py-2 font-semibold text-slate-800">{order.invoiceNumber || `CMD-${order.id}`}</td>
                       <td className="px-3 py-2 text-slate-700">
                         <div>{order.customer?.name || "Client chambre"}</div>
@@ -1113,8 +1113,8 @@ function Panel({
   className?: string;
 }) {
   return (
-    <section className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <h2 className="mb-3 border-b border-slate-100 pb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+    <section className={`rounded-lg border border-slate-200 bg-white p-4 ${className}`}>
+      <h2 className="mb-3 border-b border-slate-100 pb-3 text-sm font-semibold text-slate-800">
         {title}
       </h2>
       {loading ? <div className="py-12 text-center text-sm text-slate-500">Chargement...</div> : children}
@@ -1150,11 +1150,11 @@ function MetricCard({
   const style = tones[tone];
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+    <article className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-          <p className={`mt-2 truncate text-2xl font-bold ${style.value}`}>{value}</p>
+          <p className="text-xs font-medium text-slate-600">{title}</p>
+          <p className={`mt-2 break-words text-xl font-semibold tabular-nums ${style.value}`}>{value}</p>
           <p className="mt-1 text-xs text-slate-500">{note}</p>
         </div>
         <span className={`inline-flex rounded-xl p-2 ${style.badge}`}>
@@ -1167,9 +1167,9 @@ function MetricCard({
 
 function PulseCard({ title, value, note }: { title: string; value: string; note: string }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+    <article className="rounded-lg border border-slate-200 bg-white p-4">
+      <p className="text-xs font-medium text-slate-600">{title}</p>
+      <p className="mt-2 text-xl font-semibold tabular-nums text-slate-900">{value}</p>
       <p className="mt-1 text-xs text-slate-500">{note}</p>
     </article>
   );
