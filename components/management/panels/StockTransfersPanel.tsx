@@ -215,10 +215,10 @@ export default function StockTransfersPanel({ active = true }: ManagementPanelPr
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Transferts de stock</h2>
+            <h2 className="text-xl font-semibold text-slate-900">Transferts de stock</h2>
             <p className="mt-1 text-slate-500">
               Envoie du stock vers une autre succursale. Il quitte la succursale de depart
               immediatement et n&apos;entre chez le destinataire qu&apos;a la reception.
@@ -259,7 +259,7 @@ export default function StockTransfersPanel({ active = true }: ManagementPanelPr
       ) : null}
 
       {formOpen ? (
-        <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
           <form onSubmit={handleSend} className="space-y-4">
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[220px] flex-1">
@@ -355,7 +355,7 @@ export default function StockTransfersPanel({ active = true }: ManagementPanelPr
         </section>
       ) : null}
 
-      <section className="space-y-3 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+      <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
         {loading ? (
           <div className="py-8 text-center text-slate-500">Chargement des transferts...</div>
         ) : transfers.length === 0 ? (
