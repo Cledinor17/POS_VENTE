@@ -178,10 +178,10 @@ export default function BranchesSettingsPanel({ embedded = false }: SettingsPane
 
   return (
     <div className="space-y-6">
-      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <div className="flex items-center justify-between">
           <div>
-            <Heading className="text-2xl font-bold text-slate-900">Succursales</Heading>
+            <Heading className="text-xl font-semibold text-slate-900">Succursales</Heading>
             <p className="text-slate-500 mt-1">
               Gere les points de vente ou entrepots de ce business. Le stock, la caisse et les
               ventes sont suivis separement pour chaque succursale.
@@ -202,7 +202,7 @@ export default function BranchesSettingsPanel({ embedded = false }: SettingsPane
         </section>
       ) : null}
 
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-slate-600">
             Toute entreprise demarre avec une succursale &quot;Main&quot; qui ne peut pas etre
