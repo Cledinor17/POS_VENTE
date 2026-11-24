@@ -93,8 +93,8 @@ function ManagementTabs({ business, section, initialTab }: { business: string; s
   }
 
   return <div className="space-y-5">
-    <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
-      <h1 className="flex items-center gap-3 text-2xl font-bold text-slate-900"><Icon className="h-6 w-6 text-[#0d63b8]" aria-hidden="true" />{title}</h1>
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <h1 className="flex items-center gap-3 text-xl font-semibold text-slate-900"><Icon className="h-6 w-6 text-[#0d63b8]" aria-hidden="true" />{title}</h1>
       {isReports && <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{reports("description")}</p>}
       {isAccounting && <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{accounting("description")}</p>}
       {isReports && activeTab && <label className="mt-5 block space-y-2 border-t border-slate-100 pt-4 md:hidden">
@@ -115,7 +115,7 @@ function ManagementTabs({ business, section, initialTab }: { business: string; s
           return <button key={tab.id} type="button" role="tab" id={`${id}-tab-${tab.id}`} aria-selected={active}
             aria-controls={`${id}-panel-${tab.id}`} tabIndex={active ? 0 : -1}
             onClick={() => selectTab(tab.id)} onKeyDown={event => keyboard(event, index)}
-            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0d63b8] ${isReports || isAccounting ? "min-w-0 justify-start text-start" : ""} ${active ? "border-[#0d63b8] bg-[#0d63b8] text-white shadow-sm" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-[#0d63b8]"}`}>
+            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0d63b8] ${isReports || isAccounting ? "min-w-0 justify-start text-start" : ""} ${active ? "border-[#0a4d8f] bg-[#0a4d8f] text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-[#0d63b8]"}`}>
             <TabIcon className="h-4 w-4 shrink-0" aria-hidden="true" />{t(tab.label)}
           </button>;
         })}
