@@ -134,7 +134,7 @@ export default function HotelPlanningPage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-900">Hotel • Planning disponibilite</h1>
+            <h1 className="text-xl font-semibold text-slate-900">Hotel • Planning disponibilite</h1>
             <p className="mt-1 text-sm text-slate-600">Vue 14 jours pour chambres, reservations et moments 2h.</p>
           </div>
           <Link
