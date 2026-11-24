@@ -420,10 +420,10 @@ export default function UsersSettingsPanel({ embedded = false, active = true, on
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <Heading className="text-2xl font-bold text-slate-900">Utilisateurs</Heading>
+            <Heading className="text-xl font-semibold text-slate-900">Utilisateurs</Heading>
             <p className="mt-1 text-slate-500">
               Attribue les acces par utilisateur selon le role, puis ajuste-les a tout moment.
             </p>
@@ -457,7 +457,7 @@ export default function UsersSettingsPanel({ embedded = false, active = true, on
         </section>
       ) : null}
 
-      <section className="space-y-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
         {loading ? (
           <div className="py-8 text-center text-slate-500">Chargement des utilisateurs...</div>
         ) : items.length === 0 ? (
