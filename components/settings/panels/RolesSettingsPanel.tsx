@@ -150,10 +150,10 @@ export default function RolesSettingsPanel({ embedded = false }: SettingsPanelPr
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <Heading className="text-2xl font-bold text-slate-900">Roles personnalises</Heading>
+            <Heading className="text-xl font-semibold text-slate-900">Roles personnalises</Heading>
             <p className="mt-1 text-sm text-slate-500">
               Cree des roles specifiques a ce business, en plus des roles standards.
             </p>
@@ -175,7 +175,7 @@ export default function RolesSettingsPanel({ embedded = false }: SettingsPanelPr
         <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{info}</section>
       ) : null}
 
-      <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         {loading ? (
           <div className="py-8 text-center text-slate-500">Chargement...</div>
         ) : roles.length === 0 ? (
