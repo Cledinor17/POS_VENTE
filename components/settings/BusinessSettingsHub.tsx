@@ -77,13 +77,13 @@ export default function BusinessSettingsHub({ business }: { business: string }) 
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex items-start gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#0d63b8]">
             <Settings className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="break-words text-2xl font-bold text-slate-900">{businessName}</h1>
+            <h1 className="break-words text-xl font-semibold text-slate-900">{businessName}</h1>
             <p className="mt-1 text-sm text-slate-500">{t("description")}</p>
           </div>
         </div>
