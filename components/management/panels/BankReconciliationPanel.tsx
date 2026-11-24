@@ -212,43 +212,43 @@ export default function BankReconciliationPanel({ active = true }: ManagementPan
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-blue-200 bg-gradient-to-r from-[#0b4f88] via-[#0d63b8] to-emerald-600 p-5 text-white shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-2xl font-semibold">Rapprochement bancaire</h2>
-            <p className="mt-1 text-sm text-slate-200">
+            <p className="mt-1 text-sm text-slate-600">
               Importez un releve CSV (colonnes date, description, amount, reference) et rapprochez-le avec la comptabilite.
             </p>
           </div>
           <button
             type="button"
             onClick={() => setAccountFormOpen((v) => !v)}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white px-4 py-2 text-sm font-semibold text-[#0b4f88] hover:bg-slate-100"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-[#0b4f88] hover:bg-slate-100"
           >
             Nouveau compte bancaire
           </button>
         </div>
 
         {accountFormOpen ? (
-          <form onSubmit={onCreateAccount} className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl bg-white/10 p-4">
+          <form onSubmit={onCreateAccount} className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl bg-slate-50 p-4">
             <label className="space-y-0.5 text-xs">
-              <span className="text-slate-200">Nom du compte</span>
+              <span className="text-slate-600">Nom du compte</span>
               <input
                 type="text"
                 required
                 value={accountName}
                 onChange={(e) => setAccountName(e.target.value)}
                 placeholder="Compte principal"
-                className="block w-56 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white placeholder-slate-300 focus:outline-none"
+                className="block w-56 rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
             <label className="space-y-0.5 text-xs">
-              <span className="text-slate-200">Devise</span>
+              <span className="text-slate-600">Devise</span>
               <input
                 type="text"
                 value={accountCurrency}
                 onChange={(e) => setAccountCurrency(e.target.value.toUpperCase())}
-                className="block w-24 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white focus:outline-none"
+                className="block w-24 rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
             <button
@@ -270,8 +270,8 @@ export default function BankReconciliationPanel({ active = true }: ManagementPan
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-1">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Comptes bancaires</h2>
+        <section className="rounded-lg border border-slate-200 bg-white p-4 xl:col-span-1">
+          <h2 className="mb-3 text-sm font-semibold text-slate-800">Comptes bancaires</h2>
           {loading ? (
             <div className="py-10 text-center text-sm text-slate-500">Chargement...</div>
           ) : accounts.length === 0 ? (
@@ -301,13 +301,13 @@ export default function BankReconciliationPanel({ active = true }: ManagementPan
           )}
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 xl:col-span-3">
           {!selectedAccount ? (
             <div className="py-16 text-center text-sm text-slate-500">Selectionnez un compte bancaire.</div>
           ) : (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{selectedAccount.name}</h2>
+                <h2 className="text-sm font-semibold text-slate-800">{selectedAccount.name}</h2>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[#0b4f88] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0d63b8]">
                   {uploading ? "Import..." : "Importer un releve CSV"}
                   <input type="file" accept=".csv,text/csv" className="hidden" disabled={uploading} onChange={onImport} />
