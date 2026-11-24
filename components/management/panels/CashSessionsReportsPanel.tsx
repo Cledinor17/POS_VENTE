@@ -135,7 +135,7 @@ export default function CashSessionsReportsPanel({ active = true }: ManagementPa
   return (
     <div className="space-y-5">
       {/* Header */}
-      <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-slate-900">Historique des sessions de caisse</h2>
@@ -154,7 +154,7 @@ export default function CashSessionsReportsPanel({ active = true }: ManagementPa
       </section>
 
       {/* Filters */}
-      <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap gap-3">
           <label className="space-y-1 text-xs font-semibold text-slate-600">
             Du
@@ -194,7 +194,7 @@ export default function CashSessionsReportsPanel({ active = true }: ManagementPa
       )}
 
       {/* Table */}
-      <section className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+      <section className="rounded-lg border border-slate-200 bg-white overflow-hidden">
         {loading ? (
           <div className="py-16 text-center text-sm text-slate-400">Chargement...</div>
         ) : sessions.length === 0 ? (
@@ -203,7 +203,7 @@ export default function CashSessionsReportsPanel({ active = true }: ManagementPa
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr className="bg-slate-50 text-left text-xs font-semibold text-slate-600">
                   <th className="px-4 py-3">Caissier</th>
                   <th className="px-4 py-3">Ouverture</th>
                   <th className="px-4 py-3">Fonds départ</th>
