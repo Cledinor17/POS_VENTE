@@ -410,12 +410,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-blue-200 bg-gradient-to-r from-[#0b4f88] via-[#0d63b8] to-[#9a4b00] p-5 text-white shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">{t("title")}</h1>
-            <p className="mt-1 text-sm text-white">{t("subtitle")}</p>
-            <p className="mt-2 text-xs text-white">
+            <p className="mt-1 text-sm text-slate-600">{t("subtitle")}</p>
+            <p className="mt-2 text-xs text-slate-500">
               {t("last_update", {
                 value: lastUpdatedAt ? parseDate(lastUpdatedAt)?.toLocaleString(locale) ?? "" : t("last_update_pending"),
               })}
@@ -429,8 +429,8 @@ export default function DashboardPage() {
                 onClick={() => setRange(option.id)}
                 className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
                   range === option.id
-                    ? "border-white bg-white text-slate-900"
-                    : "border-slate-300/40 bg-white/10 text-white hover:bg-white/20"
+                    ? "border-[#0a4d8f] bg-[#0a4d8f] text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 {t(option.labelKey)}
@@ -440,7 +440,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => void loadDashboard(true)}
               disabled={loading || refreshing}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300/40 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               <RefreshCcw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               {t("refresh")}
@@ -577,7 +577,7 @@ export default function DashboardPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs font-medium text-slate-600">
                 <tr>
                   <th className="px-3 py-2">{t("table_ticket")}</th>
                   <th className="px-3 py-2">{t("table_customer")}</th>
@@ -590,7 +590,7 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {recentSales.map((sale, index) => (
-                  <tr key={sale.id || `${sale.receiptNo}-${sale.createdAt}-${index}`} className="border-b border-slate-100 last:border-0">
+                  <tr key={sale.id || `${sale.receiptNo}-${sale.createdAt}-${index}`} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                     <td className="px-3 py-2 font-semibold text-slate-800">{sale.receiptNo || "-"}</td>
                     <td className="px-3 py-2 text-slate-700">{sale.customerName || t("counter_customer")}</td>
                     <td className="px-3 py-2 text-slate-600">{parseDate(sale.createdAt)?.toLocaleString(locale) || "-"}</td>
@@ -626,8 +626,8 @@ function Panel({
 }) {
   const t = useTranslations("dashboard");
   return (
-    <section className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <h2 className="mb-3 border-b border-slate-100 pb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+    <section className={`rounded-lg border border-slate-200 bg-white p-4 ${className}`}>
+      <h2 className="mb-3 border-b border-slate-100 pb-3 text-sm font-semibold text-slate-800">
         {title}
       </h2>
       {loading ? <div className="py-12 text-center text-sm text-slate-500">{t("loading")}</div> : children}
@@ -663,11 +663,11 @@ function MetricCard({
   const style = tones[tone];
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+    <article className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-          <p className={`mt-2 truncate text-2xl font-bold ${style.value}`}>{value}</p>
+          <p className="text-xs font-medium text-slate-600">{title}</p>
+          <p className={`mt-2 break-words text-xl font-semibold tabular-nums ${style.value}`}>{value}</p>
           <p className="mt-1 text-xs text-slate-500">{note}</p>
         </div>
         <span className={`inline-flex rounded-xl p-2 ${style.badge}`}>
