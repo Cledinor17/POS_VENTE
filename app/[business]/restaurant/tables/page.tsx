@@ -143,7 +143,7 @@ export default function RestaurantTablesPage() {
           <div>
             <div className="inline-flex items-center gap-2 text-slate-900">
               <UtensilsCrossed className="h-6 w-6 text-[#0d63b8]" />
-              <h1 className="text-2xl font-extrabold">Restaurant — Tables</h1>
+              <h1 className="text-xl font-semibold">Restaurant — Tables</h1>
             </div>
             <p className="mt-1 text-sm text-slate-600">Gestion des tables par section, statuts en temps reel.</p>
           </div>
@@ -168,8 +168,8 @@ export default function RestaurantTablesPage() {
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {(["available", "occupied", "reserved", "cleaning"] as RestaurantTableStatus[]).map((s) => (
             <div key={s} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-500">{STATUS_LABELS[s]}</p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-900">{stats[s]}</p>
+              <p className="text-xs font-medium text-slate-600">{STATUS_LABELS[s]}</p>
+              <p className="mt-1 text-xl font-semibold text-slate-900">{stats[s]}</p>
             </div>
           ))}
         </div>
