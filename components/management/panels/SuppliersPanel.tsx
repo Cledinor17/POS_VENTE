@@ -201,13 +201,13 @@ export default function SuppliersPanel({ active = true }: ManagementPanelProps =
   return (
     <div className="space-y-6">
       {" "}
-      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         {" "}
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           {" "}
           <div>
             {" "}
-            <h2 className="text-2xl font-bold text-slate-900">
+            <h2 className="text-xl font-semibold text-slate-900">
               Fournisseurs
             </h2>{" "}
             <p className="text-slate-500 mt-1">
@@ -269,7 +269,7 @@ export default function SuppliersPanel({ active = true }: ManagementPanelProps =
           Importer
         </button>
       </section>
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+      <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-4">
         <div className="space-y-4">
           {loading ? (
             <div className="py-8 text-center text-slate-500">
@@ -284,7 +284,7 @@ export default function SuppliersPanel({ active = true }: ManagementPanelProps =
               {" "}
               <table className="w-full min-w-[880px] whitespace-nowrap text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                  <tr className="text-left text-xs font-medium text-slate-600 bg-slate-50 border-b border-slate-200">
                     <th className="py-3 pr-3 font-semibold">Fournisseur</th>
                     <th className="py-3 pr-3 font-semibold">Téléphone</th>
                     <th className="py-3 pr-3 font-semibold">E-mail</th>
@@ -299,7 +299,7 @@ export default function SuppliersPanel({ active = true }: ManagementPanelProps =
                     <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
                       <td className="py-3 pr-3 font-semibold text-slate-800">
                         <div className="flex items-center gap-2">
-                          <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0d63b8] to-[#f59e0b] text-xs font-bold text-white">
+                          <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">
                             {item.name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "F"}
                           </span>
                           <Link href={`/${businessSlug}/suppliers/${item.id}`} className="hover:text-blue-700 hover:underline">{item.name}</Link>
