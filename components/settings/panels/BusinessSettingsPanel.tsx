@@ -392,10 +392,10 @@ export default function BusinessSettingsPanel({ embedded = false }: SettingsPane
 
   return (
     <div className="space-y-6">
-      <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <Heading className="text-2xl font-bold text-slate-900">MY Business</Heading>
+            <Heading className="text-xl font-semibold text-slate-900">MY Business</Heading>
             <p className="text-slate-500 mt-1">
               Modifie les informations du business actif.
             </p>
@@ -411,7 +411,7 @@ export default function BusinessSettingsPanel({ embedded = false }: SettingsPane
 
       <form
         onSubmit={onSubmit}
-        className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5"
+        className="bg-white p-4 rounded-lg border border-slate-200 space-y-5"
       >
         {error ? (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
