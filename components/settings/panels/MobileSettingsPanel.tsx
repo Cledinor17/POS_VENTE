@@ -51,9 +51,9 @@ export default function MobileSettingsPanel({ embedded = false }: SettingsPanelP
   if (!canEdit) return <p className="p-6 text-slate-600">{t("restricted")}</p>;
 
   return (
-    <section className="max-w-3xl space-y-6 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+    <section className="max-w-3xl space-y-6 rounded-lg border border-slate-200 bg-white p-4">
       <div>
-        <Heading className="text-2xl font-bold text-slate-900">{t("title")}</Heading>
+        <Heading className="text-xl font-semibold text-slate-900">{t("title")}</Heading>
         <p className="mt-2 text-slate-500">{t("description")}</p>
       </div>
       {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
