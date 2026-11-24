@@ -518,7 +518,7 @@ export default function DocumentsPage() {
   return (
     <div className="space-y-5">
       {" "}
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         {" "}
         <h1 className="text-xl font-bold text-slate-900">
           Devis & proforma
@@ -539,7 +539,7 @@ export default function DocumentsPage() {
           {info}{" "}
         </section>
       ) : null}{" "}
-      <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         {" "}
         <form onSubmit={handleCreateDocument} className="space-y-3">
           {" "}
@@ -751,7 +751,7 @@ export default function DocumentsPage() {
           </div>{" "}
         </form>{" "}
       </section>{" "}
-      <section className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+      <section className="bg-white p-4 rounded-lg border border-slate-200 space-y-3">
         {" "}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {" "}
@@ -811,7 +811,7 @@ export default function DocumentsPage() {
           </button>{" "}
         </div>{" "}
       </section>{" "}
-      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <section className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         {" "}
         <div className="px-4 py-3 border-b text-sm text-slate-600">
           {total} document(s)
