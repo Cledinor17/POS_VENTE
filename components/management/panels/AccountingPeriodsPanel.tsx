@@ -141,7 +141,7 @@ export default function AccountingPeriodsPanel({ active = true }: ManagementPane
   return (
     <div className="space-y-5">
       {" "}
-      <section className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+      <section className="bg-white p-4 rounded-lg border border-slate-200">
         {" "}
         <h2 className="text-xl font-bold text-slate-900">
           Périodes comptables
@@ -166,7 +166,7 @@ export default function AccountingPeriodsPanel({ active = true }: ManagementPane
         {" "}
         <form
           onSubmit={handleCreate}
-          className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3"
+          className="bg-white p-4 rounded-lg border border-slate-200 space-y-3"
         >
           {" "}
           <h2 className="font-bold text-slate-900">Nouvelle periode</h2>{" "}
@@ -204,7 +204,7 @@ export default function AccountingPeriodsPanel({ active = true }: ManagementPane
             {saving ? "Creation..." : "Creer"}{" "}
           </button>{" "}
         </form>{" "}
-        <section className="xl:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <section className="xl:col-span-2 bg-white rounded-lg border border-slate-200 overflow-hidden">
           {" "}
           <div className="px-4 py-3 border-b text-sm text-slate-600">
             {total} periode(s)
