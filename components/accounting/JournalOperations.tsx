@@ -63,7 +63,7 @@ export default function JournalOperations({ business, active = true }: { busines
   }, [allowed, business, page, permissionsLoading, reload, active]);
 
   return (
-    <section aria-labelledby="journal-operations-title" className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+    <section aria-labelledby="journal-operations-title" className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="journal-operations-title" className="text-lg font-bold text-slate-900">Journal des opérations</h2>
@@ -91,7 +91,7 @@ export default function JournalOperations({ business, active = true }: { busines
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] whitespace-nowrap text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-600">
                   <th scope="col" className="py-3 pr-4 font-semibold">Date</th>
                   <th scope="col" className="py-3 pr-4 font-semibold">Opération</th>
                   <th scope="col" className="py-3 pr-4 font-semibold">Type</th>
