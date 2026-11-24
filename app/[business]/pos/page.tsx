@@ -2236,19 +2236,19 @@ export default function PosPage() {
             onConfirmDelete={id => void discardParkedCart(id)}
           />
         </section>
-        <aside id="pos-payment-section" className="min-w-0 space-y-3 scroll-mt-4">
-          <section className="bg-white rounded-lg border border-slate-200 p-3 space-y-3">
+        <aside id="pos-payment-section" className="min-w-0 scroll-mt-4">
+          <section className="pos-payment-panel bg-white rounded-lg border border-slate-200 p-3 space-y-2 ">
             {" "}
-            <div className="font-bold text-slate-900">Paiement</div>{" "}
-            <div className="space-y-1.5 relative">
-              <label className="text-sm font-medium text-slate-700">Client</label>
+            <div className="border-b border-slate-200 pb-2 text-sm font-semibold text-slate-900">Paiement</div>{" "}
+            <div className="space-y-0.5 relative">
+              <label className="text-xs font-medium text-slate-700">Client</label>
               {!isOnline ? (
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500">
                   <UserRound className="h-4 w-4 shrink-0 text-slate-300" />
                   Indisponible hors-ligne (client comptoir)
                 </div>
               ) : selectedCustomer ? (
-                <div className="flex items-center justify-between rounded-xl border border-slate-300 px-3 py-2.5">
+                <div className="flex items-center justify-between rounded-md border border-slate-300 px-3 py-1.5">
                   <div className="flex min-w-0 items-center gap-2">
                     <UserRound className="h-4 w-4 shrink-0 text-slate-400" />
                     <span className="truncate text-sm font-semibold text-slate-800">
@@ -2278,15 +2278,15 @@ export default function PosPage() {
                     }}
                     onFocus={() => setCustomerDropdownOpen(true)}
                     onBlur={() => window.setTimeout(() => setCustomerDropdownOpen(false), 150)}
-                    placeholder="Rechercher un client (optionnel - client comptoir par defaut)"
-                    className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                    placeholder="Rechercher un client (facultatif)"
+                    className="w-full rounded-md border border-slate-300 pl-9 pr-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   />
                   {customerDropdownOpen && customerQuery.trim().length >= 2 ? (
-                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
                       {customerSearchLoading ? (
-                        <div className="px-3 py-2.5 text-sm text-slate-500">Recherche...</div>
+                        <div className="px-3 py-1.5 text-sm text-slate-500">Recherche...</div>
                       ) : customerResults.length === 0 ? (
-                        <div className="px-3 py-2.5 text-sm text-slate-500">Aucun client trouve.</div>
+                        <div className="px-3 py-1.5 text-sm text-slate-500">Aucun client trouve.</div>
                       ) : (
                         customerResults.map((item) => (
                           <button
@@ -2297,7 +2297,7 @@ export default function PosPage() {
                               setCustomerDropdownOpen(false);
                               setCustomerQuery("");
                             }}
-                            className="block w-full px-3 py-2.5 text-left text-sm hover:bg-slate-50"
+                            className="block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50"
                           >
                             <div className="font-semibold text-slate-800">{item.name}</div>
                             {item.phone ? <div className="text-xs text-slate-500">{item.phone}</div> : null}
@@ -2310,7 +2310,7 @@ export default function PosPage() {
               )}
             </div>{" "}
             {loyaltyEnabled && selectedCustomer && isOnline ? (
-              <div className="space-y-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
+              <div className="space-y-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-1.5">
                 <div className="flex items-center gap-1.5 text-sm text-amber-900">
                   <Star className="h-4 w-4" />
                   <span>
@@ -2319,7 +2319,7 @@ export default function PosPage() {
                   </span>
                 </div>
                 {maxRedeemablePoints > 0 ? (
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     <label className="text-xs font-medium text-amber-900">
                       Points a utiliser (max {maxRedeemablePoints})
                     </label>
@@ -2330,15 +2330,15 @@ export default function PosPage() {
                       step="1"
                       value={redeemPointsInput}
                       onChange={(event) => setRedeemPointsInput(event.target.value)}
-                      className="w-full rounded-xl border border-amber-200 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                      className="w-full rounded-md border border-amber-200 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
                     />
                   </div>
                 ) : null}
               </div>
             ) : null}{" "}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">Rabais</label>
+            <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-2">
+              <div className="space-y-0.5">
+                <label className="text-xs font-medium text-slate-700">Rabais</label>
                 <select
                   value={discountType}
                   onChange={(event) =>
@@ -2348,15 +2348,15 @@ export default function PosPage() {
                         : "none",
                     )
                   }
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  className="min-w-0 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="none">Aucun</option>
                   <option value="percent">Pourcentage</option>
                   <option value="fixed">Montant fixe</option>
                 </select>
               </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-slate-700">
+              <div className="space-y-0.5">
+                <label className="text-xs font-medium text-slate-700">
                   Valeur du rabais {discountType === "percent" ? "(%)" : `(${saleCurrency})`}
                 </label>
                 <input
@@ -2367,24 +2367,24 @@ export default function PosPage() {
                   onChange={(event) => { setDiscountValueInput(event.target.value); setDiscountCurrency(saleCurrency); }}
                   disabled={discountType === "none"}
                   placeholder={discountType === "percent" ? "10" : "0.00"}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-50"
+                  className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-50"
                 />
               </div>
             </div>
             {discountAmount > 0 ? (
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+              <div className="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800">
                 Rabais applique: {formatMoney(discountAmount, saleCurrency)}
                 {!canApplyDiscount ? " - validation manager requise a la confirmation." : ""}
               </div>
             ) : null}
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">Code promo</label>
+            <div className="space-y-0.5">
+              <label className="text-xs font-medium text-slate-700">Code promo</label>
               {!isOnline ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500">
                   Indisponible hors-ligne
                 </div>
               ) : appliedCoupon ? (
-                <div className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5">
+                <div className="flex items-center justify-between rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5">
                   <span className="text-sm font-semibold text-indigo-800">
                     {appliedCoupon.code} (- {formatMoney(couponDiscountAmount, saleCurrency)})
                   </span>
@@ -2398,7 +2398,7 @@ export default function PosPage() {
                   </button>
                 </div>
               ) : (
-                <div className="flex gap-2">
+                <div className="flex gap-2 min-w-0">
                   <input
                     value={couponCodeInput}
                     onChange={(event) => setCouponCodeInput(event.target.value.toUpperCase())}
@@ -2409,13 +2409,13 @@ export default function PosPage() {
                       }
                     }}
                     placeholder="Code promo"
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                    className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   />
                   <button
                     type="button"
                     onClick={() => void handleApplyCoupon()}
                     disabled={couponValidating || !couponCodeInput.trim()}
-                    className="shrink-0 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    className="shrink-0 rounded-md border border-slate-300 px-4 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   >
                     {couponValidating ? "..." : "Appliquer"}
                   </button>
@@ -2423,8 +2423,9 @@ export default function PosPage() {
               )}
               {couponError ? <div className="text-xs text-rose-600">{couponError}</div> : null}
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">
+            <div className="grid grid-cols-2 gap-2">
+            <div className="min-w-0 space-y-0.5">
+              <label className="text-xs font-medium text-slate-700">
                 Devise de paiement
               </label>
               <select
@@ -2432,13 +2433,28 @@ export default function PosPage() {
                 onChange={(event) =>
                   { setPaymentCurrency(event.target.value === "USD" ? "USD" : "HTG"); setCashReceivedInput(""); }
                 }
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               >
                 <option value="HTG">HTG</option>
                 <option value="USD">USD ($)</option>
               </select>
             </div>{" "}
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900">
+            <div className="min-w-0 space-y-0.5">
+              <label className="text-xs font-medium text-slate-700">Moyen de paiement</label>
+              <select
+                value={paymentMethod}
+                onChange={(event) => setPaymentMethod(event.target.value as PaymentMethodId)}
+                className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              >
+                {paymentMethods.map((method) => (
+                  <option key={method.id} value={method.id}>
+                    {method.label}
+                  </option>
+                ))}
+              </select>
+            </div>{" "}
+            </div>
+            <div className="rounded-md border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-sm text-indigo-900">
               {activeParked ? (
                 <div className="font-semibold text-indigo-900">
                   Fiche reprise : {activeParked.note}
@@ -2465,28 +2481,14 @@ export default function PosPage() {
                   <div className="text-xs text-indigo-700">Imputé une seule fois à la confirmation de cette vente.</div>
                 </>
               ) : null}
-              <div className="mt-1 font-bold">
-                A encaisser: {formatMoney(amountDueInPaymentCurrency, paymentCurrency)}
+              <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-2 border-t border-indigo-200 pt-1.5 font-semibold">
+                <span>À encaisser</span><strong className="text-xl tabular-nums">{formatMoney(amountDueInPaymentCurrency, paymentCurrency)}</strong>
               </div>
             </div>{" "}
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">Moyen de paiement</label>
-              <select
-                value={paymentMethod}
-                onChange={(event) => setPaymentMethod(event.target.value as PaymentMethodId)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              >
-                {paymentMethods.map((method) => (
-                  <option key={method.id} value={method.id}>
-                    {method.label}
-                  </option>
-                ))}
-              </select>
-            </div>{" "}
             {paymentMethod === "cash" ? (
-              <div className="space-y-2 pt-1">
+              <div className="space-y-1">
                 {" "}
-                <label className="text-sm font-medium text-slate-700">
+                <label className="text-xs font-medium text-slate-700">
                   Montant recu du client ({paymentCurrency})
                 </label>{" "}
                 <input
@@ -2496,11 +2498,11 @@ export default function PosPage() {
                   value={cashReceivedInput}
                   onChange={(event) => setCashReceivedInput(event.target.value)}
                   placeholder="0.00"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                 />{" "}
                 {cashReceivedInput.trim() !== "" ? (
                   <div
-                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${cashDelta >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold ${cashDelta >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
                   >
                     {" "}
                     {cashDelta >= 0
@@ -2510,20 +2512,20 @@ export default function PosPage() {
                 ) : null}{" "}
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-600">
                 Le client reglera {formatMoney(amountDueInPaymentCurrency, paymentCurrency)} via{" "}
                 {paymentMethods.find((method) => method.id === paymentMethod)?.label || paymentMethod}.
               </div>
             )}{" "}
             {!cashSessionLoading && !registerOpen ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
                 Caisse fermee - ouvrez-la ci-dessus pour pouvoir encaisser.
               </div>
             ) : null}
-            <div className="space-y-2 border-t border-slate-200 pt-3">
+            <div className="sticky bottom-0 z-10 -mx-1 space-y-1.5 border-t border-slate-200 bg-white px-1 py-2">
               <button type="button" onClick={() => void checkoutSale()}
                 disabled={checkoutLoading || cart.length === 0 || cashSessionLoading || !registerOpen}
-                className="w-full rounded-xl brand-primary-btn px-3 py-3 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
+                className="w-full rounded-md brand-primary-btn px-3 py-2 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
                 {checkoutLoading ? "Traitement..." : "Passer à la caisse"}
               </button>
               <button type="button"
@@ -2533,7 +2535,7 @@ export default function PosPage() {
                   setParkModalOpen(true);
                 }}
                 disabled={cart.length === 0 || branchLoading || !branchId || parkSaving}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                 <PauseCircle className="h-4 w-4 shrink-0" />{activeParked ? "Remettre la fiche en attente" : ui.park}
               </button>
             </div>{" "}
