@@ -200,7 +200,7 @@ export default function RestaurantOrdersPage() {
           <div className="flex items-center gap-2">
             <ChefHat className="h-6 w-6 text-[#0d63b8]" />
             <div>
-              <h1 className="text-2xl font-extrabold text-slate-900">Restaurant — Commandes</h1>
+              <h1 className="text-xl font-semibold text-slate-900">Restaurant — Commandes</h1>
               <p className="text-sm text-slate-600">{total} commande(s) au total</p>
             </div>
           </div>
@@ -250,7 +250,7 @@ export default function RestaurantOrdersPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs font-medium text-slate-600">
                 <tr>
                   <th className="px-4 py-3">Commande</th>
                   <th className="px-4 py-3">Table</th>
