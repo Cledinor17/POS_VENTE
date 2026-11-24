@@ -40,11 +40,13 @@ body {
 }
 
 .app-sidebar-surface {
-  background: linear-gradient(180deg, #ffffff 0%, var(--brand-blue-soft) 100%);
+  background: #ffffff;
+  border-inline-end: 1px solid #e2e8f0;
 }
 
 .app-topbar-surface {
-  background: rgba(248, 250, 252, 0.92);
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .brand-primary-btn {
@@ -54,27 +56,23 @@ body {
     transform 0.18s ease,
     background-color 0.2s ease,
     box-shadow 0.2s ease;
-  box-shadow: 0 8px 18px rgba(10, 77, 143, 0.24);
 }
 
 .brand-primary-btn:hover {
   background: var(--brand-blue-strong);
-  transform: translateY(-1px);
 }
 
 .brand-secondary-btn {
   background: var(--brand-orange);
-  color: white;
+  color: #0f172a;
   transition:
     transform 0.18s ease,
     background-color 0.2s ease,
     box-shadow 0.2s ease;
-  box-shadow: 0 8px 18px rgba(245, 158, 11, 0.22);
 }
 
 .brand-secondary-btn:hover {
   background: var(--brand-orange-strong);
-  transform: translateY(-1px);
 }
 
 button.border-slate-300.text-slate-700:not(.cancel-default),
@@ -95,8 +93,6 @@ a.border-slate-300.text-slate-700:not(.cancel-default):hover {
   border-color: var(--brand-blue-strong);
   background: var(--brand-blue);
   color: #ffffff;
-  box-shadow: 0 8px 18px rgba(10, 77, 143, 0.2);
-  transform: translateY(-1px);
 }
 
 button.border-slate-300.text-slate-700:not(.cancel-default):focus-visible,
@@ -111,6 +107,31 @@ button.border-slate-300.text-slate-700:not(.cancel-default):disabled {
   background: #f8fafc;
   box-shadow: none;
   transform: none;
+}
+
+/* Operational workspace: restrained surfaces, readable controls and stable layout. */
+@media screen {
+  .app-accessible-ui :is(.rounded-2xl, .rounded-3xl) {
+    border-radius: 0.625rem;
+  }
+
+  .app-accessible-ui :is(.shadow-sm, .shadow-md, .shadow-lg) {
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+  }
+
+  .app-accessible-ui :is(table, input[type="number"]) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .app-accessible-ui thead th {
+    font-weight: 600;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .app-accessible-ui :is(button, a) {
+      transition: none;
+    }
+  }
 }
 
 /* Management UI only: retain the existing palette, layout and print sizing. */
