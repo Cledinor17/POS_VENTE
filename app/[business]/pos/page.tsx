@@ -324,6 +324,7 @@ export default function PosPage() {
   const [, setError] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [query, setQuery] = useState("");
+  const [catalogOpen, setCatalogOpen] = useState(false);
   useSearchFromUrl(setQuery);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [productPageSelection, setProductPageSelection] = useState({ key: "", page: 1 });
@@ -1853,7 +1854,7 @@ export default function PosPage() {
           </section>
         </div>
       ) : null}
-      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(460px,1.12fr)] 2xl:grid-cols-[minmax(0,1.1fr)_minmax(520px,1fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,380px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(380px,420px)]">
         {" "}
         <section className="min-w-0 space-y-3">
           {" "}
@@ -1905,7 +1906,17 @@ export default function PosPage() {
                 </option>
               ))}{" "}
             </select>{" "}
+            <button type="button" aria-expanded={catalogOpen || query.trim() !== "" || categoryFilter !== "all"}
+              onClick={() => {
+                if (catalogOpen || query.trim() !== "" || categoryFilter !== "all") {
+                  setCatalogOpen(false); setQuery(""); setCategoryFilter("all");
+                } else { setCatalogOpen(true); }
+              }}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              {catalogOpen || query.trim() !== "" || categoryFilter !== "all" ? "Masquer le catalogue" : "Parcourir les produits"}
+            </button>
           </div>{" "}
+          {(catalogOpen || query.trim() !== "" || categoryFilter !== "all") ? (
           <div className="bg-white p-3 rounded-lg border border-slate-200">
             {" "}
             {loadingProducts ? (
@@ -1917,7 +1928,7 @@ export default function PosPage() {
                 Aucun produit trouve.
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-4">
                 {" "}
                 {paginatedProducts.map((product) => {
                   const productId = String(product.id);
@@ -2055,11 +2066,9 @@ export default function PosPage() {
                 </div>
               </nav>
             ) : null}
-          </div>{" "}
-        </section>{" "}
-        <aside id="pos-cart-section" className="min-w-0 space-y-3 scroll-mt-4">
-          {" "}
-          <section className="overflow-hidden bg-white rounded-lg border border-slate-300">
+          </div>
+          ) : null}
+          <section id="pos-cart-section" className="scroll-mt-4 overflow-hidden bg-white rounded-lg border border-slate-300">
             {" "}
             <div className="px-3 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               {" "}
@@ -2068,11 +2077,16 @@ export default function PosPage() {
                 {itemCount} article(s)
               </div>{" "}
             </div>{" "}
-            <div className="p-2.5 space-y-2 min-h-[140px] max-h-[45vh] overflow-y-auto">
+            <div className="min-h-[240px] max-h-[55vh] overflow-auto">
               {" "}
+              {cart.length > 0 ? (
+                <div className="sticky top-0 z-10 grid min-w-[650px] grid-cols-[32px_minmax(140px,1fr)_100px_116px_100px_44px_44px] items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+                  <span aria-hidden="true" /><span>Article</span><span className="text-right">Prix unitaire</span><span className="text-center">Quantité</span><span className="text-right">Montant</span><span className="sr-only">Remise</span><span className="sr-only">Retirer</span>
+                </div>
+              ) : null}
               {cart.length === 0 ? (
-                <div className="text-sm text-slate-500 text-center py-6">
-                  Panier vide
+                <div className="text-sm text-slate-500 text-center py-16">
+                  Panier vide — recherchez ou scannez un article pour commencer.
                 </div>
               ) : (
                 cart.map((item) => {
@@ -2086,21 +2100,21 @@ export default function PosPage() {
 
                   return (
                     <div key={item.productId} className="space-y-1.5">
-                      <div className="overflow-x-auto border-b border-slate-200 bg-white">
-                        <div className="flex min-w-[430px] items-center gap-2 px-2 py-2">
+                      <div className="border-b border-slate-200 bg-white hover:bg-slate-50">
+                        <div className="grid min-w-[650px] grid-cols-[32px_minmax(140px,1fr)_100px_116px_100px_44px_44px] items-center gap-2 px-3 py-2">
                           <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
                             <Image src={imageSrc} alt={item.name} fill sizes="28px"
                               className="h-full w-full object-cover" unoptimized
                               onError={() => setBrokenImages(prev => ({ ...prev, [item.productId]: true }))} />
                           </div>
-                          <div className="min-w-[70px] flex-1 truncate text-xs font-semibold text-slate-800"
+                          <div className="min-w-0 truncate text-sm font-semibold text-slate-800"
                             title={item.name + " · " + item.sku}>
                             {item.name}{item.sku ? <span className="font-normal text-slate-400"> · {item.sku}</span> : null}
                           </div>
-                          <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-600" title="Prix unitaire">
+                          <span className="whitespace-nowrap text-right text-xs tabular-nums text-slate-600" title="Prix unitaire">
                             {formatMoney(item.price, saleCurrency)}
                           </span>
-                          <div className="inline-flex shrink-0 items-center gap-0.5" aria-label="Quantité">
+                          <div className="inline-flex items-center justify-center gap-0.5" aria-label="Quantité">
                             <button type="button" onClick={() => updateQty(item.productId, item.qty - 1)}
                               aria-label={"Diminuer " + item.name}
                               className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-300 hover:bg-slate-50">
@@ -2113,7 +2127,7 @@ export default function PosPage() {
                               <Plus className="h-3 w-3" />
                             </button>
                           </div>
-                          <span className="shrink-0 whitespace-nowrap text-right text-xs font-bold tabular-nums text-slate-900"
+                          <span className="whitespace-nowrap text-right text-sm font-semibold tabular-nums text-slate-900"
                             title={lineDiscount > 0 ? "Prix avant remise : " + formatMoney(lineGross, saleCurrency) : "Total ligne"}>
                             {formatMoney(lineNet, saleCurrency)}
                           </span>
@@ -2221,6 +2235,8 @@ export default function PosPage() {
             onCancelDelete={() => setConfirmDiscard(null)}
             onConfirmDelete={id => void discardParkedCart(id)}
           />
+        </section>
+        <aside id="pos-payment-section" className="min-w-0 space-y-3 scroll-mt-4">
           <section className="bg-white rounded-lg border border-slate-200 p-3 space-y-3">
             {" "}
             <div className="font-bold text-slate-900">Paiement</div>{" "}
@@ -2525,10 +2541,10 @@ export default function PosPage() {
 
         </aside>{" "}
       </div>{" "}
-      <a href="#pos-cart-section"
+      <a href="#pos-payment-section"
         className="fixed bottom-3 left-3 right-3 z-40 flex items-center justify-between gap-3 rounded-xl bg-indigo-950 px-4 py-3 text-sm font-bold text-white shadow-2xl xl:hidden"
-        aria-label={ui.cart}>
-        <span>{ui.cart} · {itemCount} {ui.items}</span>
+        aria-label="Aller au paiement">
+        <span>Paiement · {itemCount} {ui.items}</span>
         <span className="tabular-nums">{formatMoney(grandTotal, saleCurrency)}</span>
       </a>
       {parkModalOpen ? (
