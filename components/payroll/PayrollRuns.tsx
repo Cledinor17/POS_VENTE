@@ -171,43 +171,43 @@ export default function PayrollRuns() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-blue-200 bg-gradient-to-r from-[#0b4f88] via-[#0d63b8] to-emerald-600 p-5 text-white shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 text-slate-900">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-2xl font-semibold">Bulletins de paie</h2>
-            <p className="mt-1 text-sm text-slate-200">
+            <p className="mt-1 text-sm text-slate-600">
               Generez les bulletins de salaire par periode et finalisez pour poser les paiements et ecritures comptables.
             </p>
           </div>
           <button
             type="button"
             onClick={() => setFormOpen((v) => !v)}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white px-4 py-2 text-sm font-semibold text-[#0b4f88] hover:bg-slate-100"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-[#0b4f88] hover:bg-slate-100"
           >
             Nouvelle paie
           </button>
         </div>
 
         {formOpen ? (
-          <form onSubmit={onCreateRun} className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl bg-white/10 p-4">
+          <form onSubmit={onCreateRun} className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl bg-slate-50 p-4">
             <label className="space-y-0.5 text-xs">
-              <span className="text-slate-200">Debut de periode</span>
+              <span className="text-slate-600">Debut de periode</span>
               <input
                 type="date"
                 required
                 value={periodStart}
                 onChange={(e) => setPeriodStart(e.target.value)}
-                className="block w-40 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white focus:outline-none"
+                className="block w-40 rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
             <label className="space-y-0.5 text-xs">
-              <span className="text-slate-200">Fin de periode</span>
+              <span className="text-slate-600">Fin de periode</span>
               <input
                 type="date"
                 required
                 value={periodEnd}
                 onChange={(e) => setPeriodEnd(e.target.value)}
-                className="block w-40 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white focus:outline-none"
+                className="block w-40 rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
             <button
@@ -245,8 +245,8 @@ export default function PayrollRuns() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-1">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Historique</h2>
+        <section className="rounded-lg border border-slate-200 bg-white p-4 xl:col-span-1">
+          <h2 className="mb-3 text-sm font-semibold text-slate-800">Historique</h2>
           {loading ? (
             <div className="py-10 text-center text-sm text-slate-500">Chargement...</div>
           ) : runs.length === 0 ? (
@@ -287,7 +287,7 @@ export default function PayrollRuns() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 xl:col-span-2">
           {!selectedId ? (
             <div className="py-16 text-center text-sm text-slate-500">
               Selectionnez une paie dans l historique ou creez en une nouvelle.
@@ -300,7 +300,7 @@ export default function PayrollRuns() {
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                 <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{detail.number}</h2>
+                  <h2 className="text-sm font-semibold text-slate-800">{detail.number}</h2>
                   <p className="text-xs text-slate-500">
                     {formatDate(detail.periodStart)} - {formatDate(detail.periodEnd)}
                   </p>
